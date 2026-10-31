@@ -309,3 +309,57 @@ func TestClientCannotSpoofAnotherTunnelAddress(t *testing.T) {
 		t.Fatal("server accepted packets from an address outside the peer's AllowedIPs")
 	}
 }
+
+func echoUDP(t *testing.T, server, client peer, wantSuccess bool) {
+	t.Helper()
+	u, err := client.net.DialUDPAddrPort(netip.AddrPort{}, netip.AddrPortFrom(server.addr, 7001))
+	if err != nil { t.Fatal(err) }
+	defer u.Close()
+	u.SetDeadline(time.Now().Add(3 * time.Second))
+	msg := []byte("native-auth-unique-probe")
+	if _, err := u.Write(msg); err != nil { t.Fatal(err) }
+	buf := make([]byte, 128)
+	n, err := u.Read(buf)
+	if wantSuccess && (err != nil || !bytes.Equal(buf[:n], msg)) { t.Fatal("authorized probe failed") }
+	if !wantSuccess && err == nil { t.Fatal("revoked or stale credentials reached the server") }
+}
+
+func TestRevocationStopsAnAlreadyAuthenticatedDevice(t *testing.T) {
+	server, client := pair(t, "client.conf")
+	echoUDP(t, server, client, true)
+	_, peers := parse(t, "server.conf")
+	public := hexKey(t, peers[0]["PublicKey"])
+	if err := server.dev.IpcSet("public_key=" + public + "\nremove=true\n"); err != nil { t.Fatal(err) }
+	echoUDP(t, server, client, false)
+	state, err := server.dev.IpcGet()
+	if err != nil { t.Fatal(err) }
+	if strings.Contains(state, "public_key=" + public) { t.Fatal("revoked peer remains authorized") }
+}
+
+func TestRotatedPSKRejectsOldCredentialsAndAcceptsNew(t *testing.T) {
+	server, client := pair(t, "client.conf")
+	echoUDP(t, server, client, true)
+	_, peers := parse(t, "rotated-server.conf")
+	public := hexKey(t, peers[0]["PublicKey"])
+	// Remove existing session keys as well as changing the authorization secret.
+	if err := server.dev.IpcSet("public_key=" + public + "\nremove=true\n"); err != nil { t.Fatal(err) }
+	uapi := "public_key=" + public + "\npreshared_key=" + hexKey(t, peers[0]["PresharedKey"]) + "\nallowed_ip=" + peers[0]["AllowedIPs"] + "\n"
+	if err := server.dev.IpcSet(uapi); err != nil { t.Fatal(err) }
+	echoUDP(t, server, client, false)
+	client.dev.Close()
+	// Read the server's bound port without leaking its private-key-containing IPC state.
+	state, err := server.dev.IpcGet()
+	if err != nil { t.Fatal(err) }
+	var port string
+	for _, line := range strings.Split(state, "\n") { if p, ok := strings.CutPrefix(line, "listen_port="); ok { port = p } }
+	if port == "" { t.Fatal("server port missing") }
+	rotated := up(t, "rotated.conf", 0, "127.0.0.1:" + port)
+	echoUDP(t, server, rotated, true)
+	if handshakeSeconds(t, rotated.dev) == 0 { t.Fatal("rotated credentials did not authenticate") }
+}
+
+func TestWrongServerIdentityNeverAuthenticates(t *testing.T) {
+	server, client := pair(t, "wrong-server.conf")
+	echoUDP(t, server, client, false)
+	if handshakeSeconds(t, client.dev) != 0 { t.Fatal("wrong server key authenticated") }
+}
