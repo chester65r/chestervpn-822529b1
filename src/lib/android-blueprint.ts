@@ -221,11 +221,11 @@ object TunnelController {
             TunnelStatus.Down
         } else try {
             val peer = backend(context).getStatistics(tunnel).peer(key)
-            val age = System.currentTimeMillis() - (peer?.latestHandshakeEpochMillis ?: 0L)
-            if (peer == null || peer.latestHandshakeEpochMillis == 0L || age > REJECT_AFTER_MS) {
+            val age = System.currentTimeMillis() - (peer?.latestHandshakeEpochMillis() ?: 0L)
+            if (peer == null || peer.latestHandshakeEpochMillis() == 0L || age > REJECT_AFTER_MS) {
                 TunnelStatus.WaitingForHandshake
             } else {
-                TunnelStatus.Connected(peer.rxBytes, peer.txBytes)
+                TunnelStatus.Connected(peer.rxBytes(), peer.txBytes())
             }
         } catch (_: Exception) {
             TunnelStatus.Failed("Statistics unavailable")
@@ -254,6 +254,7 @@ class MainActivity : AppCompatActivity() {
     private var waitingSince = 0L
     private var lastRx = 0L
     private var lastTx = 0L
+    private var stopReason: String? = null
 
     private val vpnPermission =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -277,6 +278,7 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnSave.setOnClickListener { if (validateAndSave() != null) toast("Profile saved securely") }
         binding.btnToggle.setOnClickListener {
+            stopReason = null
             if (started) stopTunnel() else validateAndSave()?.let { requestVpnPermission() }
         }
         binding.btnClear.setOnClickListener {
@@ -292,7 +294,7 @@ class MainActivity : AppCompatActivity() {
             main.post {
                 started = status != TunnelStatus.Down
                 render(status)
-                if (started) main.post(poll)
+                if (started) { main.removeCallbacks(poll); main.post(poll) }
             }
         }
     }
@@ -337,6 +339,8 @@ class MainActivity : AppCompatActivity() {
                     waitingSince = System.currentTimeMillis()
                     lastRx = 0L
                     lastTx = 0L
+                    stopReason = null
+                    main.removeCallbacks(poll)
                     main.post(poll)
                 }
                 renderButton()
@@ -353,7 +357,7 @@ class MainActivity : AppCompatActivity() {
     private fun render(status: TunnelStatus) {
         when (status) {
             TunnelStatus.Down -> {
-                showState("DISCONNECTED")
+                showState(stopReason ?: "DISCONNECTED")
                 binding.tvDownloadSpeed.text = "0.00 KB/s"
                 binding.tvUploadSpeed.text = "0.00 KB/s"
             }
@@ -361,14 +365,14 @@ class MainActivity : AppCompatActivity() {
                 showState("WAITING FOR HANDSHAKE")
                 // A full-tunnel route without a handshake blocks traffic; stop and explain.
                 if (System.currentTimeMillis() - waitingSince > 20_000) {
+                    stopReason = "No handshake: check server key, endpoint and firewall"
                     stopTunnel()
-                    showState("No handshake: check server key, endpoint and firewall")
                 }
             }
             is TunnelStatus.Connected -> {
                 showState("CONNECTED")
-                binding.tvDownloadSpeed.text = String.format("%.2f KB/s", (status.rxBytes - lastRx).coerceAtLeast(0) / 1024.0)
-                binding.tvUploadSpeed.text = String.format("%.2f KB/s", (status.txBytes - lastTx).coerceAtLeast(0) / 1024.0)
+                binding.tvDownloadSpeed.text = String.format("%.2f KB/s", (status.rxBytes - lastRx).coerceAtLeast(0L) / 1024.0)
+                binding.tvUploadSpeed.text = String.format("%.2f KB/s", (status.txBytes - lastTx).coerceAtLeast(0L) / 1024.0)
                 lastRx = status.rxBytes
                 lastTx = status.txBytes
             }
@@ -465,8 +469,8 @@ const serverSetup = String.raw`#!/usr/bin/env bash
 # Replaces the earlier WebSocket relay: both sides now speak the WireGuard protocol.
 set -euo pipefail
 umask 077
-EGRESS_IF="\${EGRESS_IF:-eth0}"       # interface that reaches the internet
-DEVICE_NAME="\${DEVICE_NAME:-android-device-1}"
+EGRESS_IF="${"$"}{EGRESS_IF:-eth0}"       # interface that reaches the internet
+DEVICE_NAME="${"$"}{DEVICE_NAME:-android-device-1}"
 
 apt-get update && apt-get install -y wireguard-tools nftables unbound
 mkdir -p /etc/wireguard/clients
@@ -488,7 +492,7 @@ fill < wg0.conf > /etc/wireguard/wg0.conf
 fill < client.conf > "/etc/wireguard/clients/$DEVICE_NAME.conf"
 
 # Forward only tunnel traffic; block tunnel clients from the server's own private networks.
-sysctl -w net.ipv4.ip_forward=1 > /etc/sysctl.d/99-wireguard.conf
+echo "net.ipv4.ip_forward=1" > /etc/sysctl.d/99-wireguard.conf && sysctl --system >/dev/null
 cat > /etc/nftables.d-wireguard.nft <<NFT
 table inet wg_filter {
   chain forward {
@@ -503,6 +507,7 @@ table ip wg_nat {
 }
 NFT
 nft -f /etc/nftables.d-wireguard.nft
+# Persist: include /etc/nftables.d-wireguard.nft from /etc/nftables.conf and enable nftables.service.
 
 # Tunnel-only DNS resolver at 10.66.66.1 (the profile's DNS), not exposed publicly.
 cat > /etc/unbound/unbound.conf.d/wireguard.conf <<UNB
