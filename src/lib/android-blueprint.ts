@@ -100,10 +100,13 @@ sealed interface TunnelStatus {
     data class Failed(val reason: String) : TunnelStatus
 }
 
+enum class EngineState { DOWN, STARTING, UP, STOPPING }
+
 /**
  * Wraps the WireGuard GoBackend packet engine. GoBackend owns the VpnService, creates the
  * TUN interface, protects its UDP sockets from the VPN, and moves IP packets through
- * wireguard-go. All backend calls run on one worker thread, so starts/stops cannot overlap.
+ * wireguard-go. All backend calls and credential mutations run on one worker thread, so
+ * starts, stops and credential changes cannot overlap. The controller (not the UI) owns state.
  */
 object TunnelController {
     private const val REJECT_AFTER_MS = 180_000L // WireGuard Reject-After-Time
@@ -111,48 +114,82 @@ object TunnelController {
     private val tunnel = AppTunnel()
     @Volatile private var backend: GoBackend? = null
     @Volatile private var serverKey: Key? = null
+    @Volatile var engineState: EngineState = EngineState.DOWN
+        private set
 
     private fun backend(context: Context): GoBackend =
         backend ?: synchronized(this) {
             backend ?: GoBackend(context.applicationContext).also { backend = it }
         }
 
-    /** Parses with the engine's own parser and enforces the single-server profile shape. */
+    /**
+     * Parses with the engine's own parser and enforces the enrolled full-tunnel profile shape:
+     * one server peer, endpoint, preshared key, one /32 address, tunnel DNS, safe MTU, and both
+     * default routes so no IPv4 or IPv6 traffic silently bypasses the tunnel.
+     */
     fun parse(configText: String): Config {
         val config = ByteArrayInputStream(configText.toByteArray(Charsets.UTF_8)).use { Config.parse(it) }
         require(config.peers.size == 1) { "Profile must contain exactly one server peer" }
         val peer = config.peers[0]
+        val iface = config.${"`"}interface${"`"}
         require(peer.endpoint.isPresent) { "Server endpoint is required" }
         require(peer.preSharedKey.isPresent) { "Preshared key is required" }
-        require(config.${"`"}interface${"`"}.addresses.isNotEmpty()) { "Interface address is required" }
+        require(iface.addresses.size == 1 && iface.addresses.first().mask == 32) { "Exactly one /32 address is required" }
+        require(iface.dnsServers.isNotEmpty()) { "Tunnel DNS is required" }
+        require(!iface.mtu.isPresent || iface.mtu.get() in 1280..1420) { "MTU must be 1280-1420" }
+        val routes = peer.allowedIps.map { it.toString() }.toSet()
+        require("0.0.0.0/0" in routes && "::/0" in routes) { "Full-tunnel routes 0.0.0.0/0 and ::/0 are required" }
         return config
     }
 
+    /** True only when the engine is confirmed down; credential changes are allowed only then. */
+    fun isIdle(): Boolean = engineState == EngineState.DOWN && tunnel.state == Tunnel.State.DOWN
+
+    /** Runs a credential mutation on the engine thread only while the engine is confirmed down. */
+    fun whileIdle(action: () -> Unit, done: (Boolean) -> Unit) = worker.execute {
+        val ok = isIdle() && try { action(); true } catch (_: Exception) { false }
+        done(ok)
+    }
+
     fun up(context: Context, configText: String, done: (String?) -> Unit) = worker.execute {
+        if (!isIdle()) return@execute done("Tunnel is already running")
+        engineState = EngineState.STARTING
         val error = try {
             val config = parse(configText)
             serverKey = config.peers[0].publicKey
             backend(context).setState(tunnel, Tunnel.State.UP, config)
+            engineState = EngineState.UP
             null
         } catch (e: Exception) {
-            serverKey = null
+            // Confirm the engine really stayed down before reporting DOWN.
+            engineState = if (tunnel.state == Tunnel.State.DOWN) EngineState.DOWN else EngineState.UP
+            if (engineState == EngineState.DOWN) serverKey = null
             // Report the category only; exception text may contain configuration details.
             if (e is IllegalArgumentException) "Invalid profile" else "Engine could not start the tunnel"
         }
         done(error)
     }
 
-    fun down(context: Context, done: () -> Unit) = worker.execute {
+    /** Reports true only after the engine confirms DOWN; on failure state stays UP (fail closed). */
+    fun down(context: Context, done: (Boolean) -> Unit) = worker.execute {
+        engineState = EngineState.STOPPING
         try { backend(context).setState(tunnel, Tunnel.State.DOWN, null) } catch (_: Exception) {}
-        serverKey = null
-        done()
+        val stopped = tunnel.state == Tunnel.State.DOWN
+        engineState = if (stopped) EngineState.DOWN else EngineState.UP
+        if (stopped) serverKey = null
+        done(stopped)
     }
 
     /** CONNECTED only after a fresh authenticated handshake with the configured server key. */
     fun status(context: Context, done: (TunnelStatus) -> Unit) = worker.execute {
         val key = serverKey
-        val result = if (tunnel.state != Tunnel.State.UP || key == null) {
+        val result = if (tunnel.state == Tunnel.State.DOWN) {
+            // Android may revoke the VPN externally (another VPN, user, system).
+            engineState = EngineState.DOWN
+            serverKey = null
             TunnelStatus.Down
+        } else if (key == null) {
+            TunnelStatus.Failed("Engine running without a tracked server; stop the tunnel")
         } else try {
             val peer = backend(context).getStatistics(tunnel).peer(key)
             val age = System.currentTimeMillis() - (peer?.latestHandshakeEpochMillis() ?: 0L)
@@ -186,8 +223,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var store: SecureConfigStore
     private lateinit var enrollment: DeviceEnrollment
     private val main = Handler(Looper.getMainLooper())
-    private var started = false
-    private var waitingSince = 0L
     private var lastRx = 0L
     private var lastTx = 0L
     private var stopReason: String? = null
@@ -198,10 +233,11 @@ class MainActivity : AppCompatActivity() {
             else showState("VPN permission denied")
         }
 
+    // UI state is always derived from TunnelController; the activity keeps no running flag.
     private val poll = object : Runnable {
         override fun run() {
             TunnelController.status(this@MainActivity) { status -> main.post { render(status) } }
-            if (started) main.postDelayed(this, 1000)
+            if (!TunnelController.isIdle()) main.postDelayed(this, 1000)
         }
     }
 
@@ -213,37 +249,39 @@ class MainActivity : AppCompatActivity() {
         store = SecureConfigStore(this)
         enrollment = DeviceEnrollment(this)
         binding.btnIdentity.setOnClickListener {
-            if (started) toast("Stop before enrollment")
-            else try { binding.tvDevicePublicKey.text = enrollment.publicKey() }
-            catch (_: Exception) { toast("Device identity unavailable") }
+            var key = ""
+            TunnelController.whileIdle({ key = enrollment.publicKey() }) { ok ->
+                main.post { if (ok) binding.tvDevicePublicKey.text = key else toast("Stop the tunnel first, or identity unavailable") }
+            }
         }
 
-        binding.btnSave.setOnClickListener { if (validateAndSave() != null) toast("Profile saved securely") }
+        binding.btnSave.setOnClickListener { validateAndSave() }
         binding.btnToggle.setOnClickListener {
             stopReason = null
-            if (started) stopTunnel() else if (store.load() != null) requestVpnPermission()
-            else toast("Enroll this device first")
+            when (TunnelController.engineState) {
+                EngineState.UP -> stopTunnel()
+                EngineState.DOWN -> if (store.load() != null) requestVpnPermission() else toast("Enroll this device first")
+                else -> toast("Please wait")
+            }
         }
         binding.btnClear.setOnClickListener {
-            if (started) toast("Stop before deleting credentials") else {
-                enrollment.clear()
-                binding.etWgConfig.setText("")
-                binding.etServerKey.setText("")
-                binding.tvDevicePublicKey.text = ""
-                toast("Device credentials deleted; revoke its public key on the server")
+            TunnelController.whileIdle({ enrollment.clear() }) { ok ->
+                main.post {
+                    if (!ok) toast("Stop the tunnel before deleting credentials") else {
+                        binding.etWgConfig.setText("")
+                        binding.etServerKey.setText("")
+                        binding.tvDevicePublicKey.text = ""
+                        toast("Device credentials deleted; revoke its public key on the server")
+                    }
+                }
             }
         }
     }
 
     override fun onResume() {
         super.onResume()
-        TunnelController.status(this) { status ->
-            main.post {
-                started = status != TunnelStatus.Down
-                render(status)
-                if (started) { main.removeCallbacks(poll); main.post(poll) }
-            }
-        }
+        main.removeCallbacks(poll)
+        main.post(poll)
     }
 
     override fun onPause() {
@@ -252,19 +290,21 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
-    private fun validateAndSave(): String? {
-        if (started) { toast("Stop before replacing credentials"); return null }
+    private fun validateAndSave() {
         val text = binding.etWgConfig.text.toString()
-        return try {
-            enrollment.enroll(text, binding.etServerKey.text.toString())
-            binding.etWgConfig.setText("")
-            store.load()
-        } catch (e: IllegalArgumentException) {
-            binding.etWgConfig.error = "Enrollment rejected; check confirmed server identity"
-            null
-        } catch (_: Exception) {
-            binding.etWgConfig.error = "Invalid WireGuard profile"
-            null
+        val serverKey = binding.etServerKey.text.toString()
+        var rejected = false
+        TunnelController.whileIdle({
+            try { enrollment.enroll(text, serverKey) } catch (e: IllegalArgumentException) { rejected = true; throw e }
+        }) { ok ->
+            main.post {
+                when {
+                    ok -> { binding.etWgConfig.setText(""); toast("Profile saved securely") }
+                    !TunnelController.isIdle() -> toast("Stop the tunnel before replacing credentials")
+                    rejected -> binding.etWgConfig.error = "Enrollment rejected; check server identity and full-tunnel profile"
+                    else -> binding.etWgConfig.error = "Invalid WireGuard profile"
+                }
+            }
         }
     }
 
@@ -276,31 +316,34 @@ class MainActivity : AppCompatActivity() {
     private fun startTunnel() {
         val text = store.load() ?: return showState("No stored profile")
         showState("STARTING")
-        binding.btnToggle.isEnabled = false
+        renderControls()
         TunnelController.up(this, text) { error ->
             main.post {
-                binding.btnToggle.isEnabled = true
-                if (error != null) {
-                    started = false
-                    showState(error)
-                } else {
-                    started = true
-                    waitingSince = System.currentTimeMillis()
+                if (error != null) showState(error) else {
                     lastRx = 0L
                     lastTx = 0L
                     stopReason = null
-                    main.removeCallbacks(poll)
-                    main.post(poll)
                 }
-                renderButton()
+                main.removeCallbacks(poll)
+                main.post(poll)
+                renderControls()
             }
         }
+        renderControls()
     }
 
     private fun stopTunnel() {
-        started = false
         main.removeCallbacks(poll)
-        TunnelController.down(this) { main.post { render(TunnelStatus.Down) } }
+        renderControls()
+        TunnelController.down(this) { stopped ->
+            main.post {
+                if (stopped) render(TunnelStatus.Down) else {
+                    showState("STOP FAILED: tunnel still active and blocking traffic")
+                    main.post(poll)
+                }
+                renderControls()
+            }
+        }
     }
 
     private fun render(status: TunnelStatus) {
@@ -310,14 +353,10 @@ class MainActivity : AppCompatActivity() {
                 binding.tvDownloadSpeed.text = "0.00 KB/s"
                 binding.tvUploadSpeed.text = "0.00 KB/s"
             }
-            TunnelStatus.WaitingForHandshake -> {
-                showState("WAITING FOR HANDSHAKE")
-                // A full-tunnel route without a handshake blocks traffic; stop and explain.
-                if (System.currentTimeMillis() - waitingSince > 20_000) {
-                    stopReason = "No handshake: check server key, endpoint and firewall"
-                    stopTunnel()
-                }
-            }
+            // Fail closed: keep the VPN up so traffic stays blocked instead of leaking outside
+            // the tunnel. Only an explicit user stop removes protection.
+            TunnelStatus.WaitingForHandshake ->
+                showState("WAITING FOR HANDSHAKE: traffic blocked. Check server key, endpoint and firewall, or stop the tunnel.")
             is TunnelStatus.Connected -> {
                 showState("CONNECTED")
                 binding.tvDownloadSpeed.text = String.format("%.2f KB/s", (status.rxBytes - lastRx).coerceAtLeast(0L) / 1024.0)
@@ -327,11 +366,18 @@ class MainActivity : AppCompatActivity() {
             }
             is TunnelStatus.Failed -> showState(status.reason)
         }
-        renderButton()
+        renderControls()
     }
 
-    private fun renderButton() {
-        binding.btnToggle.text = if (started) "STOP TUNNEL" else "START TUNNEL"
+    private fun renderControls() {
+        val state = TunnelController.engineState
+        val idle = TunnelController.isIdle()
+        binding.btnToggle.isEnabled = state == EngineState.UP || state == EngineState.DOWN
+        binding.btnToggle.text = if (state == EngineState.DOWN) "START TUNNEL" else "STOP TUNNEL"
+        // Credential controls are locked whenever the engine is not confirmed down.
+        binding.btnIdentity.isEnabled = idle
+        binding.btnSave.isEnabled = idle
+        binding.btnClear.isEnabled = idle
     }
 
     private fun showState(text: String) { binding.tvStatusInfo.text = text }
@@ -446,14 +492,23 @@ wg pubkey < /etc/wireguard/server.key > /etc/wireguard/server.pub
 } > /etc/wireguard/wg0.conf
 chmod 600 /etc/wireguard/wg0.conf
 
-# Forward only tunnel traffic; block tunnel clients from the server's own private networks.
+# Forward only tunnel traffic; block tunnel clients from private networks AND from the server
+# itself (input path) except the tunnel DNS resolver. Persisted and loaded on every boot.
 echo "net.ipv4.ip_forward=1" > /etc/sysctl.d/99-wireguard.conf && sysctl --system >/dev/null
-cat > /etc/nftables.d-wireguard.nft <<NFT
+install -d -m 755 /etc/nftables.d
+cat > /etc/nftables.d/wireguard.nft <<NFT
 table inet wg_filter {
+  chain input {
+    type filter hook input priority 0; policy accept;
+    iifname "wg0" ct state established,related accept
+    iifname "wg0" ip daddr 10.66.66.1 udp dport 53 accept
+    iifname "wg0" ip daddr 10.66.66.1 tcp dport 53 accept
+    iifname "wg0" drop
+  }
   chain forward {
     type filter hook forward priority 0; policy drop;
     ct state established,related accept
-    iifname "wg0" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16 } drop
+    iifname "wg0" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10 } drop
     iifname "wg0" oifname "$EGRESS_IF" accept
   }
 }
@@ -461,8 +516,19 @@ table ip wg_nat {
   chain postrouting { type nat hook postrouting priority 100; oifname "$EGRESS_IF" ip saddr 10.66.66.0/24 masquerade; }
 }
 NFT
-nft -f /etc/nftables.d-wireguard.nft
-# Persist: include /etc/nftables.d-wireguard.nft from /etc/nftables.conf and enable nftables.service.
+nft -c -f /etc/nftables.d/wireguard.nft
+# Persist without overwriting existing host rules: include our file from nftables.conf once.
+touch /etc/nftables.conf
+grep -qxF 'include "/etc/nftables.d/wireguard.nft"' /etc/nftables.conf \
+  || echo 'include "/etc/nftables.d/wireguard.nft"' >> /etc/nftables.conf
+nft -c -f /etc/nftables.conf
+systemctl enable nftables.service
+systemctl restart nftables.service
+nft list table inet wg_filter >/dev/null || { echo "Firewall not active; refusing to start VPN"; exit 1; }
+# Never start the VPN before the firewall on boot.
+install -d -m 755 /etc/systemd/system/wg-quick@wg0.service.d
+printf '[Unit]\nRequires=nftables.service\nAfter=nftables.service\n' > /etc/systemd/system/wg-quick@wg0.service.d/firewall.conf
+systemctl daemon-reload
 
 # Tunnel-only DNS resolver at 10.66.66.1 (the profile's DNS), not exposed publicly.
 cat > /etc/unbound/unbound.conf.d/wireguard.conf <<UNB
