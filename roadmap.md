@@ -1,5 +1,7 @@
 # Roadmap
 
+- [x] Protocol mismatch resolved in design: Android blueprint embeds the WireGuard tunnel library; server blueprint is a WireGuard server; both use one shared profile generator. Local Go fixture (`bash interop/wireguard/run.sh`) passes 4 packet-level tests (TCP 1 MiB, UDP, DNS, key/PSK/address rejection). Not Android device evidence.
+- [ ] Android build and on-device WireGuard handshake/traffic: blocked by absent Android SDK/JDK/Gradle, emulator and physical devices.
 - [x] Locally testable remediation: checked socket protection and TLS peer hostname enforcement added to Android sample; atomic counters, startup/cancellation guards and fail-closed TUN gate added. Loopback relay now requires external credential, exact target/port allowlisting and bounded resources. Three executable fixture tests verify missing/wrong credential rejection, fractional/unauthorized ports and authenticated WebSocket-to-TCP echo. These are not native TLS or VPN interoperability tests.
 - [ ] Native/device and production verification: blocked by missing Android project/toolchain/devices, interoperable packet engine, deployed relay and release evidence.
 - [ ] Requested native builds/API matrix and physical-device results: blocked by absent complete Android project, Android SDK/JDK/emulators and attached devices; do not substitute browser results.

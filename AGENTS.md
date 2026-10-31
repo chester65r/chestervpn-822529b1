@@ -16,7 +16,7 @@
 - Tunnel logic (payload macros, validation, TUNNEL:// codes) lives in pure functions in `src/lib/tunnel.ts` with tests in `src/test/tunnel.test.ts`; UI components only call them — keeps rules testable.
 - Connection/bandwidth is a client-side visual simulation (`src/lib/use-tunnel-sim.ts`); a browser cannot open a real VPN.
 - Restore browser profiles only after hydration, validate their stored shape, and guard storage writes so blocked or corrupt storage cannot crash the workspace.
-- Android and relay snippets are educational scaffolding, not an interoperable production VPN; retain explicit protocol limitations until device-tested interoperability exists.
-- The Android educational service must refuse TUN activation while its packet engine is absent; the relay remains loopback-only, secret-configured and independently exercised as a standalone Node fixture, never run inside the web server.
-- Android compatibility requirements live in a shared documentation module consumed by the checklist and its copyable test record; never mark requirements verified based on browser tests.
+- Android and server blueprints both use WireGuard (official Android tunnel library + wg-quick server) and render profiles from the shared generator in `src/lib/wireguard.ts`; never reintroduce a custom transport, so one audited protocol serves both sides.
+- Packet-level interoperability evidence comes from the standalone Go fixture in `interop/wireguard/` (`run.sh`), configured only from generator output; it is never part of the web build and never counts as Android device evidence.
+- Android compatibility requirements live in a shared documentation module consumed by the checklist and its copyable test record; "local" status means off-device engine evidence only, and nothing is marked verified from browser or local tests.
 - Sitemap URLs derive from required route staticData.sitemap decisions via the shared inventory helper; exclude private routes and omit lastmod without an authoritative page-specific timestamp.

@@ -1,94 +1,113 @@
+export type CheckStatus = "blocked" | "local" | "unverified";
+
 export type CompatibilityCheck = {
   id: string;
   title: string;
-  status: "blocked" | "unverified";
+  status: CheckStatus;
   finding: string;
   passCriteria: string;
 };
 
-// Documentation only: these statuses are not device test results.
+export const STATUS_LABEL: Record<CheckStatus, string> = {
+  blocked: "KNOWN BLOCKER",
+  local: "LOCAL TEST ONLY",
+  unverified: "UNVERIFIED",
+};
+
+/** Command that reproduces the local packet-level evidence (needs Bun and Go). */
+export const INTEROP_COMMAND = "bash interop/wireguard/run.sh";
+
+// Documentation only. "local" means an engine/protocol test passed off-device; it is never device evidence.
 export const ANDROID_COMPATIBILITY_CHECKS: CompatibilityCheck[] = [
   {
-    id: "transport", title: "Client / relay protocol", status: "blocked",
-    finding: "The Android service and relay still have different protocols: raw TLS versus WebSocket framing and a credential/target JSON handshake. Android now refuses TUN activation; this prevents a false CONNECTED result, but does not resolve interoperability. A local WebSocket-to-TCP echo test is not Android VPN proof.",
-    passCriteria: "Implement one agreed protocol on both sides. Capture a successful authenticated handshake, target acknowledgement and bidirectional exchange; only then report CONNECTED.",
+    id: "transport", title: "Client / server protocol", status: "local",
+    finding: `Resolved in design: the raw TLS client and WebSocket relay were retired. The Android blueprint embeds the official WireGuard tunnel library (GoBackend), and the server blueprint is a WireGuard server; both use profiles from one shared generator. Local evidence (${INTEROP_COMMAND}): two independent wireguard-go peers configured only from generated wg-quick files completed authenticated handshakes on loopback. The Android library build and on-device handshake are NOT RUN.`,
+    passCriteria: "On each supported device, import a server-issued profile, start the tunnel, and record a fresh handshake with the configured server key before the app shows CONNECTED.",
   },
   {
-    id: "packets", title: "TUN packet forwarding", status: "blocked",
-    finding: "TLS stream reads do not preserve IP packet boundaries. The included TCP relay does not implement IP routing, UDP forwarding or tunnel packet framing.",
-    passCriteria: "Use a compatible packet tunnel with explicit framing and server-side routing. Verify TCP, UDP and DNS round trips, split/coalesced reads, large packets and MTU handling against services you own.",
+    id: "packets", title: "TUN packet forwarding", status: "local",
+    finding: "Local evidence: IP packets crossed userspace TUN devices through WireGuard — a 1 MiB TCP echo, UDP datagrams of 1, 512 and 1252 bytes (MTU 1280), and a DNS A lookup via the tunnel resolver. The server's NAT/forwarding script and Android's GoBackend TUN are NOT RUN; the test used a simplified loopback UDP socket because this sandbox rejects the default socket options.",
+    passCriteria: "On device and against your deployed server: verify TCP, UDP and DNS to services you own, large transfers, MTU, and that no traffic bypasses the tunnel when it is up.",
   },
   {
     id: "build", title: "Android build & device matrix", status: "unverified",
-    finding: "NOT RUN: no complete Android Studio project, JDK, Gradle, Android SDK/emulator or attached device is available here. API 26, 31, 33, 34 and newer supported-version builds/runs remain unverified. Emulators can cover installation/consent; physical devices are required for representative Wi-Fi/mobile handoff, OEM background restrictions and measured real-network behavior. The sample declares minSdk 26 and target/compileSdk 34, not current store approval.",
-    passCriteria: "Record a clean debug and release build, exact Gradle/JDK/dependency versions, and install/start/stop results on API 26, 31, 33 and 34; also test every newer Android version you intend to support and current distribution target-SDK requirements.",
+    finding: "NOT RUN: no complete Android Studio project, JDK, Gradle, Android SDK/emulator or attached device is available here. API 26, 31, 33, 34 and newer builds/runs are unverified. Emulators can cover installation/consent; physical devices are required for Wi-Fi/mobile handoff, OEM background restrictions and real-network behavior. The pinned library (com.wireguard.android:tunnel:1.0.20260102) was confirmed published with arm64-v8a, armeabi-v7a, x86 and x86_64 native libraries, but not loaded on Android.",
+    passCriteria: "Record clean debug and release builds with exact Gradle/JDK/AGP versions, and install/start/stop results on API 26, 31, 33, 34 and every newer version you support, including 16 KB page-size devices.",
   },
   {
-    id: "consent", title: "VPN consent & foreground service", status: "unverified",
-    finding: "Consent, notification and foreground-service code is present, but Android permission denial and platform restrictions are not device-tested.",
-    passCriteria: "Test consent grant/deny/revoke, notification grant/deny on API 33+, foreground startup and service type on API 34+, notification removal on stop, and background-start restrictions without crashes or silent activation.",
+    id: "consent", title: "VPN consent & service lifecycle", status: "unverified",
+    finding: "The app requests VpnService consent before starting; the engine's VPN service is declared by the library manifest. Consent denial/revocation, Always-on/Lockdown interaction and background restrictions are not device-tested.",
+    passCriteria: "Test consent grant/deny/revoke, another VPN taking over, Always-on VPN and Lockdown mode, and confirm the UI never shows CONNECTED without a handshake.",
   },
   {
-    id: "tls", title: "TLS identity & protected sockets", status: "unverified",
-    finding: "The sample now requires successful protect(), matches TLS peer identity to SNI and enables HTTPS hostname verification with a handshake timeout. Native certificate rejection and routing-loop tests are still NOT RUN.",
-    passCriteria: "Require successful socket protection and verify the expected certificate hostname. Reject expired, untrusted and wrong-host certificates before activating the tunnel; confirm the relay socket cannot route back into the VPN.",
+    id: "tls", title: "Peer identity & protected sockets", status: "local",
+    finding: "WireGuard authenticates the server by its static public key plus a preshared key (no certificates or SNI). Locally, an unregistered client key and a wrong preshared key both failed to handshake. GoBackend protects its UDP sockets from the VPN, but it does not check protect()'s return value; routing-loop behavior on device is NOT RUN.",
+    passCriteria: "On device, confirm wrong server keys never handshake, the engine's UDP socket bypasses the tunnel, and traffic resumes after the tunnel is restarted.",
   },
   {
     id: "lifecycle", title: "Lifecycle, cancellation & recovery", status: "unverified",
-    finding: "The sample now rejects overlapping starts, closes sockets during cancellation and handles permission revocation. It refuses TUN activation because no compatible packet engine exists. Lifecycle and UI recovery remain device-UNVERIFIED.",
-    passCriteria: "Exercise repeated start/stop, stop during connect/handshake, activity rotation/reopen, process termination, permission revocation and peer EOF. Confirm one active tunnel, no leaked threads/sockets and truthful UI state.",
+    finding: "Start/stop calls are serialized on one worker thread; the app stops a tunnel that has no handshake after 20 seconds. Rotation, process death and repeated toggling remain device-UNVERIFIED.",
+    passCriteria: "Exercise repeated start/stop, stop during startup, rotation/reopen, process termination and permission revocation. Confirm one active tunnel and truthful UI state.",
   },
   {
     id: "network", title: "Network changes & traffic policy", status: "unverified",
-    finding: "The sample routes IPv4, configures a fixed DNS server and excludes its own app. IPv6, fail-closed behavior and reconnection are not established.",
-    passCriteria: "Define full/split-tunnel and app-exclusion policy. Test Wi-Fi/mobile handoff, offline/resume, DNS failures and IPv4/IPv6/DNS leakage; explicitly tunnel or block unsupported traffic and verify the selected disconnect policy.",
+    finding: "Profiles route 0.0.0.0/0 and ::/0 so IPv6 cannot bypass an IPv4-only tunnel; DNS uses a tunnel-only resolver. Wi-Fi/mobile handoff, roaming and leak tests are NOT RUN.",
+    passCriteria: "Test Wi-Fi/mobile handoff, offline/resume, DNS failures, and IPv4/IPv6/DNS leakage with independent leak checks.",
   },
   {
-    id: "auth", title: "Relay client authentication", status: "unverified",
-    finding: "The loopback-only relay now requires a shared credential supplied outside profile codes. Missing/incorrect credential rejection is locally tested, not production authentication evidence. Per-client identity, expiry, revocation and verified TLS remain unimplemented or unverified; app/MCP sign-in does not authenticate native traffic.",
-    passCriteria: "Add a separate authenticated relay handshake over TLS. Reject missing, invalid, expired and revoked credentials; authorize targets per client and keep credentials out of logs and shared profile codes.",
+    id: "auth", title: "Device authentication", status: "local",
+    finding: "Each device has its own key pair and preshared key; the server authorizes exactly one /32 per device and revocation is removing its peer. Locally verified: unknown keys and wrong preshared keys are rejected, and a valid key using another tunnel address cannot reach the server. Key expiry/rotation tooling is not implemented.",
+    passCriteria: "On the deployed server, confirm revoked devices stop working after wg syncconf, rotate keys on a schedule, and keep private keys out of logs, backups and share codes.",
   },
   {
-    id: "targets", title: "Relay target restrictions", status: "unverified",
-    finding: "The relay requires exact host:port allowlisting and non-coerced integer ports; fractional and unauthorized ports are locally rejected in tests. Resolved-address policy, DNS rebinding defense and per-client authorization remain unimplemented or unverified. Do not expose the sample publicly.",
-    passCriteria: "Reject malformed JSON, non-integer/out-of-range ports and unauthorized host/port pairs. Enforce resolved-address policy, including loopback/private/metadata addresses and DNS changes; allow private destinations only when explicitly authorized.",
+    id: "targets", title: "Server forwarding restrictions", status: "unverified",
+    finding: "The setup script forwards only wg0 → internet with NAT and drops tunnel traffic to private and link-local ranges. The nftables rules were syntax-reviewed, not executed here.",
+    passCriteria: "On the server, confirm clients cannot reach the server's private networks, metadata services or each other unless explicitly allowed, and that rules persist after reboot.",
   },
   {
     id: "limits", title: "Resource limits & resilience", status: "unverified",
-    finding: "The sample adds handshake/connect/idle deadlines, payload and connection limits, bounded buffers with overload disconnects and error cleanup. Slow-peer, sustained-load and rate-limit evidence remains absent; graceful backpressure and per-client rate limiting are not established.",
-    passCriteria: "Set and test these limits under slow peers, oversized messages, stalled upstreams, abrupt disconnects and sustained load. Confirm bounded memory, reliable cleanup and recovery after relay restart.",
+    finding: "WireGuard drops unauthenticated packets cheaply, but no load, rate-limit or sustained-throughput testing has been done.",
+    passCriteria: "Load-test the server with the expected number of devices, confirm bounded CPU/memory, and recovery after server restart.",
   },
   {
     id: "telemetry", title: "Real telemetry & privacy", status: "unverified",
-    finding: "The browser graphs remain simulated. Android counters now use atomic increments and resets, and runtime exceptions omit configuration details. No compiled native concurrency, measured-transfer or privacy assessment exists.",
-    passCriteria: "Use thread-safe counters and compare native byte/speed totals with measured transfers. Verify zero/reset behavior, disconnect reporting, profile handling and logs that exclude payloads and credentials.",
+    finding: "Android speeds now come from the engine's per-peer byte counters; the browser graphs remain simulated. Error messages omit configuration details. Native measurements are NOT RUN.",
+    passCriteria: "Compare reported byte totals with measured transfers and confirm logs contain no keys or endpoints.",
   },
   {
     id: "release", title: "Deployment & release readiness", status: "unverified",
-    finding: "No production relay deployment, security/load assessment, signed APK verification or store-policy review is demonstrated.",
-    passCriteria: "Verify TLS termination, firewall exposure, least privilege, dependency updates, monitoring and secret rotation. Record signed release testing, VPN/store disclosures, privacy policy and an independent security review before distribution.",
+    finding: "No production server deployment, security/load assessment, signed APK verification or store-policy review is demonstrated.",
+    passCriteria: "Record signed release testing, VPN/store disclosures, privacy policy, secret handling and an independent security review before distribution.",
   },
 ];
 
+export function checklistCounts() {
+  return ANDROID_COMPATIBILITY_CHECKS.reduce(
+    (counts, check) => ({ ...counts, [check.status]: counts[check.status] + 1 }),
+    { blocked: 0, local: 0, unverified: 0 } as Record<CheckStatus, number>,
+  );
+}
+
 export function androidChecklistMarkdown(): string {
+  const counts = checklistCounts();
   return [
-    "# Android / relay compatibility checklist",
+    "# Android / server compatibility checklist",
     "",
-    "NOT PRODUCTION READY. No native build, device run or relay interoperability test has been verified. Browser tests are not Android evidence.",
-    "Known protocol and packet-forwarding blockers must be resolved before end-to-end testing. All remaining production requirements are UNVERIFIED.",
+    `NOT PRODUCTION READY. ${counts.blocked} known blockers, ${counts.local} items with local engine tests only, ${counts.unverified} unverified. No native build or device run has been verified. Browser and local engine tests are not Android evidence.`,
+    `Reproduce local packet evidence: ${INTEROP_COMMAND}`,
     "",
     "## Test record",
     "Date: __________ | Tester: __________ | App commit: __________",
-    "Device / Android API: __________ | Relay version / deployment: __________",
-    "Build tools / JDK: __________ | Evidence links (redact secrets): __________",
+    "Device / Android API: __________ | Server version / deployment: __________",
+    "Build tools / JDK: __________ | Evidence links (redact keys): __________",
     "",
     ...ANDROID_COMPATIBILITY_CHECKS.flatMap((check) => [
-      `## ${check.title} — ${check.status === "blocked" ? "KNOWN BLOCKER" : "UNVERIFIED"}`,
+      `## ${check.title} — ${STATUS_LABEL[check.status]}`,
       check.finding,
       `Pass criteria: ${check.passCriteria}`,
-      "Result: NOT RUN | Evidence: __________ | Follow-up: __________",
+      "Device result: NOT RUN | Evidence: __________ | Follow-up: __________",
       "",
     ]),
-    "Release decision: NOT APPROVED until all blockers are resolved and every applicable requirement has recorded passing evidence; explain any non-applicable item.",
+    "Release decision: NOT APPROVED until every applicable requirement has recorded passing device and deployment evidence; explain any non-applicable item.",
   ].join("\n");
 }
