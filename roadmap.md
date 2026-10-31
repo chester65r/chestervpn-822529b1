@@ -1,5 +1,7 @@
 # Roadmap
 
+- [ ] Help connect an ad account: awaiting user's choice of Google Ads or Facebook/Instagram.
+
 - [x] Address database connection request: project already uses Lovable Cloud for the database and accounts; no separate connection needed.
 
 - [ ] Finish Google Search Console setup for https://chestervpn.lovable.app/: Google account linked and property list accessible; add verification tag, correct stale sitemap origin, publish with approval, verify ownership, add property and submit live sitemap.
