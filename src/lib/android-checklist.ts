@@ -21,7 +21,7 @@ export const INTEROP_COMMAND = "bash interop/wireguard/run.sh";
 export const ANDROID_COMPATIBILITY_CHECKS: CompatibilityCheck[] = [
   {
     id: "transport", title: "Client / server protocol", status: "local",
-    finding: `Resolved in design: the raw TLS client and WebSocket relay were retired. The Android blueprint embeds the official WireGuard tunnel library (GoBackend), and the server blueprint is a WireGuard server; both use profiles from one shared generator. Local evidence (${INTEROP_COMMAND}): two independent wireguard-go peers configured only from generated wg-quick files completed authenticated handshakes on loopback. The Android library build and on-device handshake are NOT RUN.`,
+    finding: `Resolved in design: the raw TLS client and WebSocket relay were retired. The Android blueprint embeds the official WireGuard tunnel library (GoBackend), and the server blueprint is a WireGuard server; both use profiles from one shared generator. Local evidence (${INTEROP_COMMAND}): two independent wireguard-go peers configured only from generated wg-quick files completed authenticated handshakes on loopback. The Android project compiled successfully with the library on 2026-10-31; library runtime loading and on-device handshake are NOT RUN.`,
     passCriteria: "On each supported device, import a server-issued profile, start the tunnel, and record a fresh handshake with the configured server key before the app shows CONNECTED.",
   },
   {
