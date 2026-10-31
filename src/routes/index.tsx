@@ -11,10 +11,14 @@ import { useTunnelSim } from "@/lib/use-tunnel-sim";
 import {
   EMPTY_PROFILE,
   ROUTE_PRESETS,
+  SAVED_PROFILES_KEY,
   exportProfile,
   importProfile,
+  parseSavedProfiles,
+  serializeSavedProfiles,
   validateProfile,
   type ProfileErrors,
+  type SavedProfile,
   type TunnelProfile,
 } from "@/lib/tunnel";
 
@@ -56,17 +60,19 @@ function Index() {
   const [presetId, setPresetId] = useState("custom");
   const [errors, setErrors] = useState<ProfileErrors>({});
   const [exported, setExported] = useState<string | null>(null);
+  const [saved, setSaved] = useState<SavedProfile[]>([]);
   const loaded = useRef(false);
   const sim = useTunnelSim();
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const savedRaw = localStorage.getItem(STORAGE_KEY);
+      if (savedRaw) {
+        const parsed = JSON.parse(savedRaw);
         setProfile({ ...EMPTY_PROFILE, ...parsed.profile });
         setPresetId(parsed.presetId ?? "custom");
       }
+      setSaved(parseSavedProfiles(localStorage.getItem(SAVED_PROFILES_KEY)));
     } catch {
       /* ignore corrupt storage */
     }
@@ -77,6 +83,11 @@ function Index() {
     if (!loaded.current) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ profile, presetId }));
   }, [profile, presetId]);
+
+  useEffect(() => {
+    if (!loaded.current) return;
+    localStorage.setItem(SAVED_PROFILES_KEY, serializeSavedProfiles(saved));
+  }, [saved]);
 
   const change = (patch: Partial<TunnelProfile>) => {
     setProfile((p) => ({ ...p, ...patch }));
@@ -148,6 +159,36 @@ function Index() {
     return true;
   };
 
+  const saveCurrent = (name: string) => {
+    if (!checkProfile()) return false;
+    const entry: SavedProfile = {
+      id: crypto.randomUUID(),
+      name: name.trim() || `${profile.ip}:${profile.port}`,
+      presetId,
+      profile,
+      savedAt: Date.now(),
+    };
+    setSaved((list) => [entry, ...list]);
+    toast.success(`Saved "${entry.name}"`);
+    return true;
+  };
+
+  const loadSaved = (id: string) => {
+    const entry = saved.find((s) => s.id === id);
+    if (!entry) return;
+    setProfile(entry.profile);
+    setPresetId(entry.presetId);
+    setErrors({});
+    toast.success(`Loaded "${entry.name}"`);
+    setTab("config");
+  };
+
+  const deleteSaved = (id: string) => {
+    const entry = saved.find((s) => s.id === id);
+    setSaved((list) => list.filter((s) => s.id !== id));
+    if (entry) toast(`Deleted "${entry.name}"`);
+  };
+
   const serverLabel = profile.ip ? `${profile.ip}:${profile.port || "443"}` : "No server configured";
 
   return (
@@ -189,7 +230,17 @@ function Index() {
               onChange={change}
             />
           )}
-          {tab === "share" && <ShareTab exportedCode={exported} onExport={doExport} onImport={doImport} />}
+          {tab === "share" && (
+            <ShareTab
+              exportedCode={exported}
+              saved={saved}
+              onExport={doExport}
+              onImport={doImport}
+              onSave={saveCurrent}
+              onLoad={loadSaved}
+              onDelete={deleteSaved}
+            />
+          )}
           {tab === "android" && <BlueprintTab />}
         </main>
 
