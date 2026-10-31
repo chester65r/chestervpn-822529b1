@@ -17,8 +17,6 @@ column header. Free-text notes are excluded to avoid copying embedded credential
 or tokens. The earlier dated snapshot is retained. This is not a live database
 mirror; later changes need a new export.
 
-## Exclusions and restoration
-
 ## Recurring export
 
 The prepared `/api/public/database-backup` callback requires managed scheduled-job

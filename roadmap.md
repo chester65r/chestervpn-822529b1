@@ -1,7 +1,7 @@
 # Roadmap
 
 - [x] Verify latest GitHub documentation/roadmap/backups: present on remote inventory; current-source review found no accidental real credentials/tokens. Public environment settings and generated test fixture keys are not private credentials; past Git history is outside this review.
-- [ ] Set up recurring safe selected server-record exports to private GitHub, excluding credentials/tokens; verify scheduler and secure runtime access before enabling.
+- [ ] Recurring safe export implementation and first real GitHub snapshot pass (4 exclusion tests, zero current rows). Daily activation waits for publishing the new callback; no schedule enabled against an unpublished route.
 - [ ] Sync finished review, recurring-backup implementation and documentation to GitHub now, then verify remote files.
 
 - [x] Run repeatable Android build and attempt API 34 emulator checks: native debug/unsigned release/test APK builds and lint PASS; emulator installation blocked without KVM, no instrumentation result. Dated report: native/android/verification-2026-10-31.md.
