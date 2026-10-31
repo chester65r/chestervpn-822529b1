@@ -3,6 +3,7 @@ import { Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { BLUEPRINT_FILES } from "@/lib/android-blueprint";
 import { Button } from "@/components/ui/button";
+import { AndroidChecklist } from "@/components/tunnel/AndroidChecklist";
 
 export function BlueprintTab() {
   const [active, setActive] = useState(0);
@@ -28,6 +29,8 @@ export function BlueprintTab() {
         WebSocket relay use different protocols and cannot connect to each other as supplied.
         A compatible, authenticated packet tunnel and Android device testing are required before use.
       </p>
+
+      <AndroidChecklist />
 
       <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
         {BLUEPRINT_FILES.map((f, i) => (
