@@ -17,8 +17,9 @@ sdkmanager 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' 'emulato
 sdkmanager --licenses
 # Use an independently verified Gradle 8.9 installation just to create the wrapper:
 gradle -p /tmp/tunnel-android wrapper --gradle-version 8.9 --distribution-type bin
-# Add distributionSha256Sum from https://services.gradle.org/distributions/gradle-8.9-bin.zip.sha256
-# to /tmp/tunnel-android/gradle/wrapper/gradle-wrapper.properties before first wrapper execution.
+# The generated wrapper task pins the official Gradle 8.9 binary checksum:
+# d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab
+# Verify it matches distributionSha256Sum in gradle/wrapper/gradle-wrapper.properties.
 bash native/android/run-checks.sh /tmp/tunnel-android build
 ```
 
@@ -57,7 +58,7 @@ results only; the runner does NOT automatically claim any VPN/network test passe
 ```sh
 adb devices
 # Use the explicit serial of a disposable test phone; enable USB debugging yourself.
-bash native/android/run-checks.sh /tmp/tunnel-android physical <PHONE_SERIAL>
+bash native/android/run-checks.sh /tmp/tunnel-android physical 'PHONE_SERIAL'
 ```
 
 Run the same credential instrumentation, then record these **manual** checks:

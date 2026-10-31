@@ -31,7 +31,7 @@ export const ANDROID_COMPATIBILITY_CHECKS: CompatibilityCheck[] = [
   },
   {
     id: "build", title: "Android build & device matrix", status: "unverified",
-    finding: "NOT RUN: no complete Android Studio project, JDK, Gradle, Android SDK/emulator or attached device is available here. API 26, 31, 33, 34 and newer builds/runs are unverified. Emulators can cover installation/consent; physical devices are required for Wi-Fi/mobile handoff, OEM background restrictions and real-network behavior. The pinned library (com.wireguard.android:tunnel:1.0.20260102) was confirmed published with arm64-v8a, armeabi-v7a, x86 and x86_64 native libraries, but not loaded on Android.",
+    finding: "NOT RUN: a repeatable project generator, pinned JDK17/Gradle8.9/AGP8.7.3/Kotlin2.0.21 build workflow and explicit build/emulator/physical runner are supplied in android-workflow.md. This workspace has no JDK, Android SDK/emulator or attached device. API 26, 31, 33, 34 and newer builds/runs are unverified. Emulators can cover installation/consent and Keystore instrumentation; physical devices are required for hardware-backed key properties, Wi-Fi/mobile handoff, OEM restrictions and real-network behavior. The pinned WireGuard library's native ABIs were confirmed published but not loaded on Android.",
     passCriteria: "Record clean debug and release builds with exact Gradle/JDK/AGP versions, and install/start/stop results on API 26, 31, 33, 34 and every newer version you support, including 16 KB page-size devices.",
   },
   {

@@ -1,5 +1,8 @@
 import { clientConfig, serverConfig } from "./wireguard";
 import { secureStoreSource, deviceEnrollmentSource, peerAdminSource, nativeCredentialTestsSource, enrollmentGuide } from "./native-auth-blueprint";
+import androidWorkflow from "../../native/android/README.md?raw";
+import androidRunner from "../../native/android/run-checks.sh?raw";
+import androidGenerator from "../../native/android/generate-project.ts?raw";
 
 export type BlueprintFile = { name: string; path: string; lang: string; code: string };
 
@@ -477,6 +480,9 @@ echo "Server initialized without authorized devices. Use peer-admin.py enroll wi
 `;
 
 export const BLUEPRINT_FILES: BlueprintFile[] = [
+  { name: "android-workflow.md", path: "native/android/README.md", lang: "markdown", code: androidWorkflow },
+  { name: "run-checks.sh", path: "native/android/run-checks.sh", lang: "bash", code: androidRunner },
+  { name: "generate-project.ts", path: "native/android/generate-project.ts", lang: "typescript", code: androidGenerator },
   { name: "AndroidManifest.xml", path: "app/src/main/AndroidManifest.xml", lang: "xml", code: manifest },
   { name: "TunnelController.kt", path: "app/src/main/java/com/example/advancedtunnel/TunnelController.kt", lang: "kotlin", code: controller },
   { name: "MainActivity.kt", path: "app/src/main/java/com/example/advancedtunnel/MainActivity.kt", lang: "kotlin", code: mainActivity },

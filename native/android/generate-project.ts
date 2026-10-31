@@ -24,7 +24,12 @@ write("build.gradle.kts", `plugins {
     id("com.android.application") version "8.7.3" apply false
     id("org.jetbrains.kotlin.android") version "2.0.21" apply false
 }
+tasks.wrapper {
+    gradleVersion = "8.9"
+    distributionType = Wrapper.DistributionType.BIN
+    distributionSha256Sum = "d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab"
+}
 `);
 write("gradle.properties", "android.useAndroidX=true\nkotlin.code.style=official\norg.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\n");
-write(".gitignore", ".gradle/\n**/build/\nlocal.properties\n*.jks\n*.keystore\n*.enrollment.conf\n");
+write(".gitignore", ".gradle/\n**/build/\ntest-evidence/\nlocal.properties\n*.jks\n*.keystore\n*.enrollment.conf\n");
 console.log("Generated Android project; run native/android/run-checks.sh with this directory.");
