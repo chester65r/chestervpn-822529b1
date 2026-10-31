@@ -6,7 +6,7 @@ import { BLUEPRINT_FILES } from "@/lib/android-blueprint";
 export function BlueprintTab() {
   const [active, setActive] = useState(0);
   const [copied, setCopied] = useState(false);
-  const file = BLUEPRINT_FILES[active];
+  const file = BLUEPRINT_FILES[active] ?? BLUEPRINT_FILES[0]!;
 
   const copy = async () => {
     try {
