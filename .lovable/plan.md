@@ -1,27 +1,39 @@
-# Advanced Tunnel: ready-to-build Android project
+# Tunnel Dashboard (web app)
 
-I can't produce a finished APK here because there are no Android build tools in this environment. What I can do is give you a complete, corrected project in a ZIP. Open it in Android Studio and click Build > Build APK to get the APK.
+I can't build the carrier-bypass parts of your brief, even for teaching. These are the Mobily and STC presets, the spoofed-host payload and the "free capture portal" option. They would work as a ready-made tool for getting free data from a carrier, whatever the reason for building them. Everything else in your brief is fine, so I'll build that as a clean, realistic tunnel app.
 
-## What you get
-A file named `AdvancedTunnel-android.zip` in your Files, containing:
-- Gradle setup: `settings.gradle.kts`, the root `build.gradle.kts`, `gradle.properties`, and the Gradle wrapper settings
-- `app/build.gradle.kts`, with the broken line in the constraintlayout dependency fixed
-- `AndroidManifest.xml`, with the namespace URL corrected and a foreground-service permission plus service type added
-- `activity_main.xml`, a new screen layout. Your paste didn't include one. It has fields for server IP, port, SNI host and payload, plus a Start/Stop button
-- `TunnelData.kt`, `AdvancedVpnService.kt` and `MainActivity.kt`, with these fixes:
-  - Missing closing braces added
-  - Words that were split across lines (`getSt ring`, `vpnInter face`, `start Service`) joined back together
-  - `super.onCreate(savedInstanceState: Bundle?)` changed to `super.onCreate(savedInstanceState)`
-  - `private synchronized fun` changed to `@Synchronized private fun`, since Kotlin has no `synchronized` keyword
-  - The service now runs as a foreground service with a notification. Without this, Android 8 and later stops it
-  - The VPN excludes its own app (`addDisallowedApplication`) so the tunnel's own connection doesn't loop back into itself
-- Live speed panel from your new notes. It shows download and upload speed every second and a status line (Disconnected / Connecting / Connected). Upload speed is counted too, not left at 0. Updates stay inside the app, which also prevents a crash on Android 14.
-- Share codes from your new notes (`ConfigEncoder.kt`). Export copies a `TUNNEL://...` code to the clipboard, and Import pastes a code to fill in the fields. Note: this code is only Base64, so anyone can read it. It is not encrypted.
-- The service sets the button and status correctly when the tunnel stops or fails
-- `README.md` with step-by-step instructions to build the APK in Android Studio
+## What gets built (at `/`)
+A dark, mobile-first dashboard, laid out like a 9:16 phone app and responsive on desktop:
 
-## Limitation
-Your code sends raw device packets straight into the TLS socket. That only works if your VPS runs a matching server that accepts raw IP packets after the payload. I'll say this in the README and won't change how the tunnel works.
+1. **Home**
+   - Status card with a smooth teal "CONNECTED" or muted red/grey "DISCONNECTED" state
+   - Simulated download and upload speeds that move while connected
+   - A live graph and a large Connect/Disconnect button
+   - A short "Connecting..." phase between the two states
+2. **Configure**
+   - Preset dropdown with neutral options: "My own server (TLS)", "Custom manual configuration", and so on
+   - Fields for server IP or domain, port, and server name (SNI) for your own server's certificate
+   - Handshake payload textarea with `[host]` and `[crlf]` macros and a live preview
+   - Validation with clear warnings: required fields, port 1-65535, a valid IP or domain
+3. **Share**
+   - Export Profile turns the settings into a `TUNNEL://` Base64 code and copies it to the clipboard
+   - Import Profile takes a pasted code and fills the form, with an error message if the code is invalid
+   - A note that Base64 is encoding, not encryption
+4. **Native Android Blueprint** (separate tab)
+   - Copyable blocks for `AndroidManifest.xml`, `AdvancedVpnService.kt` and the storage class
+   - The blocks use your corrected code (balanced braces, `@Synchronized`, foreground service, own app excluded from the VPN)
+   - It has no spoofed-host or carrier presets
+
+The simulated speeds are only visual. A website cannot create a real VPN.
+
+## Not included
+- Carrier presets (Mobily, STC) and default spoofed-host handshakes
+- Instructions for getting free data
+- An APK. This environment has no Android build tools
 
 ## Technical details
-I'll write the files under /tmp, list and check them, zip them, and copy the ZIP to /mnt/documents. Nothing in the web app changes.
+- TanStack Start routes: `/` (the dashboard, with tabs inside the page), with its own `head()` title and description
+- Settings are kept in `localStorage`, read after the page loads
+- Colours go in `src/styles.css` as design tokens (dark theme, teal accent, red/grey for disconnected)
+- The speed graph is drawn with plain SVG, no new packages
+- A small test checks the export/import round trip, port validation and `[host]`/`[crlf]` replacement
