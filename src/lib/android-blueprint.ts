@@ -592,6 +592,67 @@ const layout = String.raw`<?xml version="1.0" encoding="utf-8"?>
     </LinearLayout>
 </ScrollView>`;
 
+const relay = String.raw`// relay-server.mjs — WebSocket → TCP relay for Tunnel Console / Advanced Tunnel
+//
+// Run this on a server YOU own (e.g. a VPS). It accepts WebSocket connections
+// and forwards the byte stream to the target the client asks for, so the
+// Android blueprint (or any WebSocket client) can reach TCP services through it.
+//
+// Setup:
+//   1. Install Node.js 18+ on your server
+//   2. npm install ws
+//   3. ALLOWED_HOSTS=your-service.example.com PORT=8443 node relay-server.mjs
+//   4. Put a TLS terminator (Caddy/nginx) in front for wss:// in production
+//
+// Only relay traffic you are authorized to carry. Keep the allowlist tight.
+
+import { WebSocketServer } from "ws";
+import net from "node:net";
+
+const PORT = Number(process.env.PORT || 8443);
+
+// Hosts this relay will connect to. Edit for your own infrastructure.
+const ALLOWED_HOSTS = (process.env.ALLOWED_HOSTS || "example.com,example.org")
+  .split(",")
+  .map((h) => h.trim())
+  .filter(Boolean);
+
+const wss = new WebSocketServer({ port: PORT });
+
+wss.on("connection", (ws) => {
+  let upstream = null;
+
+  ws.on("message", (data) => {
+    if (!upstream) {
+      // First message must be JSON: {"host":"example.com","port":443}
+      let target;
+      try {
+        target = JSON.parse(data.toString());
+      } catch {
+        ws.close(1002, "first message must be JSON target");
+        return;
+      }
+      const host = String(target.host || "");
+      const port = Number(target.port || 0);
+      if (!ALLOWED_HOSTS.includes(host) || port < 1 || port > 65535) {
+        ws.close(1008, "target not allowed");
+        return;
+      }
+      upstream = net.connect(port, host, () => ws.send(JSON.stringify({ ok: true })));
+      upstream.on("data", (chunk) => ws.send(chunk));
+      upstream.on("close", () => ws.close());
+      upstream.on("error", () => ws.close(1011, "upstream error"));
+      return;
+    }
+    upstream.write(data);
+  });
+
+  ws.on("close", () => upstream?.destroy());
+});
+
+console.log("relay listening on :" + PORT + ", allowlist: " + ALLOWED_HOSTS.join(", "));
+`;
+
 export const BLUEPRINT_FILES: BlueprintFile[] = [
   { name: "AndroidManifest.xml", path: "app/src/main/AndroidManifest.xml", lang: "xml", code: manifest },
   { name: "AdvancedVpnService.kt", path: "app/src/main/java/com/example/advancedtunnel/AdvancedVpnService.kt", lang: "kotlin", code: service },
@@ -599,4 +660,5 @@ export const BLUEPRINT_FILES: BlueprintFile[] = [
   { name: "TunnelData.kt", path: "app/src/main/java/com/example/advancedtunnel/TunnelData.kt", lang: "kotlin", code: storage },
   { name: "activity_main.xml", path: "app/src/main/res/layout/activity_main.xml", lang: "xml", code: layout },
   { name: "build.gradle.kts", path: "app/build.gradle.kts", lang: "kotlin", code: gradle },
+  { name: "relay-server.mjs", path: "relay/relay-server.mjs", lang: "javascript", code: relay },
 ];

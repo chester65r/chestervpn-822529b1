@@ -23,8 +23,9 @@ export function BlueprintTab() {
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
         Copy these into an Android Studio project with namespace{" "}
-        <code className="font-mono text-primary">com.example.advancedtunnel</code>. It's a learning skeleton: it
-        needs a relay server you run that understands the packet framing.
+        <code className="font-mono text-primary">com.example.advancedtunnel</code>. The{" "}
+        <code className="font-mono text-primary">relay-server.mjs</code> file runs on a server you own (VPS) and
+        forwards the traffic — the Android app cannot reach the internet without it.
       </p>
 
       <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
