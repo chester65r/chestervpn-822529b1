@@ -202,6 +202,7 @@ def main():
             fd = os.open(response, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             try:
                 with os.fdopen(fd, "w") as stream: stream.write(enrollment); stream.flush(); os.fsync(stream.fileno())
+                if args.action == "rotate": run(["wg", "set", args.interface, "peer", public, "remove"])
                 apply(config, args.interface, updated)
             except Exception:
                 response.unlink(missing_ok=True); raise
