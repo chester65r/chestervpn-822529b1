@@ -23,3 +23,4 @@
 - Generate standalone Android projects from the displayed blueprint with native/android/generate-project.ts; its pinned build and explicit emulator/physical lanes keep native evidence reproducible and never promote emulator results to physical-device verification.
 - Android compatibility requirements live in a shared documentation module consumed by the checklist and its copyable test record; "local" status means off-device engine evidence only, and nothing is marked verified from browser or local tests.
 - Sitemap URLs derive from required route staticData.sitemap decisions via the shared inventory helper; exclude private routes and omit lastmod without an authoritative page-specific timestamp.
+- Database record backups are dated, explicit snapshots separate from schema migrations and exclude credentials and managed auth data; this prevents accidental restores and avoids treating Git as a live database mirror.
