@@ -1,6 +1,6 @@
 # Database backup
 
-Snapshot checked at 2026-10-31T04:38:38Z (UTC).
+Latest snapshot checked at 2026-10-31T04:40:15Z (UTC).
 
 ## Structure
 
@@ -11,9 +11,11 @@ were checked against this migration when this snapshot was prepared.
 
 ## Saved server records
 
-`backups/relay-servers-2026-10-31.csv` contains the selected server-record snapshot.
+`backups/relay-servers-2026-10-31T044015Z.csv` contains the latest selected server-record snapshot.
 There were **zero saved server records** at export time, so it contains only the
-column header. It is not a live database mirror; later changes need a new export.
+column header. Free-text notes are excluded to avoid copying embedded credentials
+or tokens. The earlier dated snapshot is retained. This is not a live database
+mirror; later changes need a new export.
 
 ## Exclusions and restoration
 
