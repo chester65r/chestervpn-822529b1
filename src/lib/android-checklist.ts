@@ -10,7 +10,7 @@ export type CompatibilityCheck = {
 export const ANDROID_COMPATIBILITY_CHECKS: CompatibilityCheck[] = [
   {
     id: "transport", title: "Client / relay protocol", status: "blocked",
-    finding: "The Android service sends HTTP-like headers over raw TLS. The relay expects WebSocket framing and an initial JSON target message.",
+    finding: "The Android service and relay still have different protocols: raw TLS versus WebSocket framing and a credential/target JSON handshake. Android now refuses TUN activation; this prevents a false CONNECTED result, but does not resolve interoperability. A local WebSocket-to-TCP echo test is not Android VPN proof.",
     passCriteria: "Implement one agreed protocol on both sides. Capture a successful authenticated handshake, target acknowledgement and bidirectional exchange; only then report CONNECTED.",
   },
   {
@@ -20,7 +20,7 @@ export const ANDROID_COMPATIBILITY_CHECKS: CompatibilityCheck[] = [
   },
   {
     id: "build", title: "Android build & device matrix", status: "unverified",
-    finding: "No Android Studio build, emulator run or physical-device test has been performed here. The sample declares minSdk 26 and target/compileSdk 34.",
+    finding: "NOT RUN: no complete Android Studio project, JDK, Gradle, Android SDK/emulator or attached device is available here. API 26, 31, 33, 34 and newer supported-version builds/runs remain unverified. Emulators can cover installation/consent; physical devices are required for representative Wi-Fi/mobile handoff, OEM background restrictions and measured real-network behavior. The sample declares minSdk 26 and target/compileSdk 34, not current store approval.",
     passCriteria: "Record a clean debug and release build, exact Gradle/JDK/dependency versions, and install/start/stop results on API 26, 31, 33 and 34; also test every newer Android version you intend to support and current distribution target-SDK requirements.",
   },
   {
