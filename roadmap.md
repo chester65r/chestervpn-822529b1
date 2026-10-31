@@ -2,7 +2,8 @@
 
 - [x] Run repeatable Android build and attempt API 34 emulator checks: native debug/unsigned release/test APK builds and lint PASS; emulator installation blocked without KVM, no instrumentation result. Dated report: native/android/verification-2026-10-31.md.
 - [x] GitHub repository made private and existing project files compared successfully (144 matching files, no differences). Git sync status itself is managed in Lovable Settings and cannot be inspected by the agent.
-- [x] Prepare GitHub backup additions: original marketing documents, database backup guide and dated server-record CSV (zero saved rows); existing schema migration checked against live columns and owner-only policy. Credentials and account data excluded. Automatic Git sync of these new files awaits remote read-back confirmation.
+- [x] Prepare GitHub backup additions: original marketing documents, database backup guide and dated server-record CSV (zero saved rows); existing schema migration checked against live columns and owner-only policy. Credentials and account data excluded. All 150 repository files present and matching on remote read-back at 04:40 UTC.
+- [x] Fresh safe server snapshot at 2026-10-31T04:40:15Z: zero rows, free-text notes excluded along with credentials and tokens; latest backup guide updated. Explicit GitHub delivery requested; verify remote contents after the push.
 
 - [x] Native authentication implementation: local device identity, Keystore-wrapped credentials, public-only enrollment, pinned server identity and root-only revoke/rotation tool; 7 real local WireGuard packet tests and mocked server administration test pass. Native instrumentation supplied, NOT RUN.
 - [x] Repeatable Android build/device workflow: project generator, pinned toolchain/checksum, explicit build/emulator/physical runner and API matrix/manual evidence record supplied; Android execution remains unavailable here.
