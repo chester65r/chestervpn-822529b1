@@ -46,7 +46,7 @@ export const ANDROID_COMPATIBILITY_CHECKS: CompatibilityCheck[] = [
   },
   {
     id: "lifecycle", title: "Lifecycle, cancellation & recovery", status: "unverified",
-    finding: "Start/stop calls are serialized on one worker thread; the app stops a tunnel that has no handshake after 20 seconds. Rotation, process death and repeated toggling remain device-UNVERIFIED.",
+    finding: "Start/stop calls are serialized on one worker thread; the controller owns engine state, fails closed (keeps blocking traffic while waiting for a handshake, reports stop failures) and locks credential changes until the engine is confirmed down. Rotation, process death and repeated toggling remain device-UNVERIFIED.",
     passCriteria: "Exercise repeated start/stop, stop during startup, rotation/reopen, process termination and permission revocation. Confirm one active tunnel and truthful UI state.",
   },
   {
