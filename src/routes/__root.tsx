@@ -80,6 +80,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "google-site-verification", content: "JbzVlfuQ1ChmPJTFCE-FRuNjN7uZ_Qj6CinWP_U9Vag" },
       { title: "Tunnel Console" },
       { name: "description", content: "Mobile-first tunnel dashboard and Android VPN blueprint." },
             { property: "og:title", content: "Tunnel Console" },
