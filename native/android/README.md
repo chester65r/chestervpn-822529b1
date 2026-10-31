@@ -1,8 +1,11 @@
 # Repeatable Android build and device checks
 
 This workflow generates the complete Android source shown in Tunnel Console. It has
-**not been built or run here**: this workspace has no JDK, Android SDK or Android devices.
-Local WireGuard Go tests are not substitutes for these results.
+**built successfully on 2026-10-31**: debug, unsigned release, instrumentation APK
+compilation and debug lint passed. API 34 emulator setup was attempted without KVM;
+boot/installation did not complete, so instrumentation and VPN checks remain unrun.
+See `verification-2026-10-31.md` for exact results and warnings. Local WireGuard Go
+tests are not substitutes for Android runtime results.
 
 ## Generate and pin the tools
 
@@ -93,6 +96,7 @@ Non-secret evidence location:
 Follow-up / limitation:
 ```
 
-Initial status: every Android build, emulator and physical-device result is **NOT RUN**.
+Default status for a new API/device record is **NOT RUN**; the dated report above
+records the executed native build and blocked emulator attempt.
 Only mark concrete checks PASS after execution. Never promote emulator PASS to physical
 PASS or generated-source checks to native evidence.

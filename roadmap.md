@@ -1,13 +1,16 @@
 # Roadmap
 
+- [x] Run repeatable Android build and attempt API 34 emulator checks: native debug/unsigned release/test APK builds and lint PASS; emulator installation blocked without KVM, no instrumentation result. Dated report: native/android/verification-2026-10-31.md.
+- [ ] Connect/create GitHub repository and sync project source: requires the project owner's Git connection in Lovable Settings; database data and standalone Project Files require separate exports.
+
 - [x] Native authentication implementation: local device identity, Keystore-wrapped credentials, public-only enrollment, pinned server identity and root-only revoke/rotation tool; 7 real local WireGuard packet tests and mocked server administration test pass. Native instrumentation supplied, NOT RUN.
 - [x] Repeatable Android build/device workflow: project generator, pinned toolchain/checksum, explicit build/emulator/physical runner and API matrix/manual evidence record supplied; Android execution remains unavailable here.
 
 - [x] Protocol mismatch resolved in design: Android blueprint embeds the WireGuard tunnel library; server blueprint is a WireGuard server; both use one shared profile generator. Local Go fixture (`bash interop/wireguard/run.sh`) passes 4 packet-level tests (TCP 1 MiB, UDP, DNS, key/PSK/address rejection). Not Android device evidence.
-- [ ] Android build and on-device WireGuard handshake/traffic: blocked by absent Android SDK/JDK/Gradle, emulator and physical devices.
+- [ ] On-device WireGuard handshake/traffic: native build now passes; blocked by incomplete software-emulator boot, absent physical phones and an owned deployed test server.
 - [x] Locally testable remediation: checked socket protection and TLS peer hostname enforcement added to Android sample; atomic counters, startup/cancellation guards and fail-closed TUN gate added. Loopback relay now requires external credential, exact target/port allowlisting and bounded resources. Three executable fixture tests verify missing/wrong credential rejection, fractional/unauthorized ports and authenticated WebSocket-to-TCP echo. These are not native TLS or VPN interoperability tests.
-- [ ] Native/device and production verification: blocked by missing Android toolchain/devices, deployed WireGuard server and release evidence; standalone project generator is now supplied.
-- [ ] Requested native builds/API matrix and physical-device results: blocked by absent Android SDK/JDK/emulators and attached devices; do not substitute browser results.
+- [ ] Native/device and production verification: toolchain installed and build passed; blocked by emulator runtime, absent physical phones, deployed WireGuard server and release evidence.
+- [ ] Requested runtime API matrix and physical-device results: API 34 setup attempted, installation blocked without KVM; accelerated emulator host and physical phones required. Do not substitute build/browser results.
 - [x] Compatible packet engine: WireGuard replaced the custom client/relay protocol; local engine evidence is available, but Android device evidence remains blocked by the native toolchain/devices.
 
 - [x] Agent connection guide: runtime URL, copy buttons, ChatGPT / Claude / Claude Code / other client connect and refresh instructions, visible workspace link; browser copy and mobile overflow checks pass. Existing MCP server unchanged; republish to include the page.
