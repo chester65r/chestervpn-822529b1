@@ -11,13 +11,13 @@ describe("public sitemap", () => {
   });
 
   it("uses the published origin without inventing a modification date", () => {
-    const xml = sitemapXML("https://tunnel-guardian-compass.lovable.app", [{ path: "/" }]);
-    expect(xml).toContain("<loc>https://tunnel-guardian-compass.lovable.app/</loc>");
+    const xml = sitemapXML("https://chestervpn.lovable.app", [{ path: "/" }]);
+    expect(xml).toContain("<loc>https://chestervpn.lovable.app/</loc>");
     expect(xml).not.toContain("<lastmod>");
   });
 
   it("rejects offsite and traversal paths", () => {
-    expect(() => sitemapXML("https://tunnel-guardian-compass.lovable.app", [{ path: "//example.com" }])).toThrow();
-    expect(() => sitemapXML("https://tunnel-guardian-compass.lovable.app", [{ path: "/../private" }])).toThrow();
+    expect(() => sitemapXML("https://chestervpn.lovable.app", [{ path: "//example.com" }])).toThrow();
+    expect(() => sitemapXML("https://chestervpn.lovable.app", [{ path: "/../private" }])).toThrow();
   });
 });

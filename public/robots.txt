@@ -13,4 +13,4 @@ Allow: /
 User-agent: *
 Allow: /
 
-Sitemap: https://tunnel-guardian-compass.lovable.app/sitemap.xml
+Sitemap: https://chestervpn.lovable.app/sitemap.xml
