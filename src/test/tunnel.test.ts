@@ -5,6 +5,7 @@ import {
   exportProfile,
   importProfile,
   parsePayload,
+  parseActiveProfile,
   parseSavedProfiles,
   serializeSavedProfiles,
   validateProfile,
@@ -93,5 +94,19 @@ describe("saved profiles storage", () => {
   it("drops malformed entries but keeps valid ones", () => {
     const raw = JSON.stringify([entry, { id: 42, name: "broken" }, null]);
     expect(parseSavedProfiles(raw)).toEqual([entry]);
+  });
+});
+
+describe("active profile recovery", () => {
+  it("restores a draft and its matching neutral preset", () => {
+    const profile = { ip: "vpn.example.com", port: "443", sni: "alpha.example.com", payload: "" };
+    expect(parseActiveProfile(JSON.stringify({ profile, presetId: "alpha" }))).toEqual({ profile, presetId: "alpha" });
+  });
+
+  it("replaces malformed drafts instead of passing non-string fields to the UI", () => {
+    expect(parseActiveProfile(JSON.stringify({ profile: { ip: 42, port: "443", sni: null, payload: [] } }))).toEqual({
+      profile: { ip: "", port: "443", sni: "", payload: "" }, presetId: "custom",
+    });
+    expect(parseActiveProfile("bad json").presetId).toBe("custom");
   });
 });

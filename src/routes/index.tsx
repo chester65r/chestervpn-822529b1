@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Code2, Home, Server, Share2, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
@@ -15,6 +15,7 @@ import {
   SAVED_PROFILES_KEY,
   exportProfile,
   importProfile,
+  parseActiveProfile,
   parseSavedProfiles,
   serializeSavedProfiles,
   validateProfile,
@@ -63,33 +64,50 @@ function Index() {
   const [errors, setErrors] = useState<ProfileErrors>({});
   const [exported, setExported] = useState<string | null>(null);
   const [saved, setSaved] = useState<SavedProfile[]>([]);
-  const loaded = useRef(false);
+  const [loaded, setLoaded] = useState(false);
   const sim = useTunnelSim();
 
   useEffect(() => {
     try {
-      const savedRaw = localStorage.getItem(STORAGE_KEY);
-      if (savedRaw) {
-        const parsed = JSON.parse(savedRaw);
-        setProfile({ ...EMPTY_PROFILE, ...parsed.profile });
-        setPresetId(parsed.presetId ?? "custom");
-      }
+      const restored = parseActiveProfile(localStorage.getItem(STORAGE_KEY));
+      setProfile(restored.profile);
+      setPresetId(restored.presetId);
+    } catch {
+      /* Storage may be blocked; the dashboard still works in memory. */
+    }
+    try {
       setSaved(parseSavedProfiles(localStorage.getItem(SAVED_PROFILES_KEY)));
     } catch {
       /* ignore corrupt storage */
     }
-    loaded.current = true;
+    setLoaded(true);
   }, []);
 
   useEffect(() => {
-    if (!loaded.current) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ profile, presetId }));
-  }, [profile, presetId]);
+    if (!loaded) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ profile, presetId }));
+    } catch {
+      toast.error("Changes can't be stored on this device", { description: "Export your profile to keep a copy." });
+    }
+  }, [loaded, profile, presetId]);
 
   useEffect(() => {
-    if (!loaded.current) return;
-    localStorage.setItem(SAVED_PROFILES_KEY, serializeSavedProfiles(saved));
-  }, [saved]);
+    if (!loaded) return;
+    try {
+      localStorage.setItem(SAVED_PROFILES_KEY, serializeSavedProfiles(saved));
+    } catch {
+      toast.error("Saved profiles can't be stored on this device", { description: "Export your profile to keep a copy." });
+    }
+  }, [loaded, saved]);
+
+  useEffect(() => setExported(null), [profile]);
+
+  const canEdit = () => {
+    if (sim.status === "disconnected") return true;
+    toast.error("Disconnect before changing the configuration");
+    return false;
+  };
 
   const change = (patch: Partial<TunnelProfile>) => {
     setProfile((p) => ({ ...p, ...patch }));
@@ -147,6 +165,7 @@ function Index() {
   };
 
   const doImport = (code: string) => {
+    if (!canEdit()) return false;
     const imported = importProfile(code);
     if (!imported) {
       toast.error("Invalid profile code");
@@ -176,6 +195,7 @@ function Index() {
   };
 
   const loadSaved = (id: string) => {
+    if (!canEdit()) return;
     const entry = saved.find((s) => s.id === id);
     if (!entry) return;
     setProfile(entry.profile);
@@ -192,7 +212,8 @@ function Index() {
   };
 
   const useServer = (host: string, port: number) => {
-    setProfile((p) => ({ ...p, ip: host, port: String(port) }));
+    if (!canEdit()) return;
+    setProfile((p) => ({ ...p, ip: host, port: String(port), sni: host }));
     setPresetId("custom");
     setErrors({});
     toast.success("Server applied to Configure");
