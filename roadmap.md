@@ -1,5 +1,6 @@
 # Roadmap
 
+- [ ] Replace the incompatible native TLS/WebSocket path with a proven packet engine and matching relay configuration; run packet-level interoperability tests and record their exact scope separately from Android/device verification.
 - [x] Locally testable remediation: checked socket protection and TLS peer hostname enforcement added to Android sample; atomic counters, startup/cancellation guards and fail-closed TUN gate added. Loopback relay now requires external credential, exact target/port allowlisting and bounded resources. Three executable fixture tests verify missing/wrong credential rejection, fractional/unauthorized ports and authenticated WebSocket-to-TCP echo. These are not native TLS or VPN interoperability tests.
 - [ ] Native/device and production verification: blocked by missing Android project/toolchain/devices, interoperable packet engine, deployed relay and release evidence.
 - [ ] Requested native builds/API matrix and physical-device results: blocked by absent complete Android project, Android SDK/JDK/emulators and attached devices; do not substitute browser results.
