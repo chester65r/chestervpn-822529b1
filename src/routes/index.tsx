@@ -93,7 +93,10 @@ function Index() {
     const preset = ROUTE_PRESETS.find((p) => p.id === id);
     if (preset) {
       setProfile((p) => ({ ...p, sni: preset.sni }));
-      setErrors((e) => ({ ...e, sni: undefined }));
+      setErrors((e) => {
+        const { sni: _omit, ...rest } = e;
+        return rest;
+      });
     }
   };
 
