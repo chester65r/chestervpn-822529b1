@@ -4,7 +4,7 @@
 
 - [x] Address database connection request: project already uses Lovable Cloud for the database and accounts; no separate connection needed.
 
-- [ ] Finish Google Search Console setup for https://chestervpn.lovable.app/: Google account linked and property list accessible; add verification tag, correct stale sitemap origin, publish with approval, verify ownership, add property and submit live sitemap.
+- [x] Finish Google Search Console setup for https://chestervpn.lovable.app/: linked Google account confirmed, verification tag and corrected sitemap published; ownership verified, property listed as siteOwner, sitemap submitted and downloaded by Google with 2 public URLs, zero errors and warnings (2026-10-31).
 
 - [x] Verified latest GitHub documentation/roadmap/backups (all 154 project files present, none missing) and re-scanned repository files for credentials/tokens — no real secrets found. Fixed the backup route swallowing failures without logging.
 - [ ] Set up recurring safe selected server-record exports to private GitHub, excluding credentials/tokens; route and tests are ready, scheduler not yet created — needs a publish so the callback URL exists, then enable the daily schedule.
