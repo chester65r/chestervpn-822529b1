@@ -724,7 +724,7 @@ wss.on("connection", (ws) => {
   ws.on("close", () => { state = "closed"; clearTimeout(deadline); clearInterval(watchdog); upstream?.destroy(); });
 });
 
-console.log("Educational relay listening on loopback; production compatibility is unverified.");
+wss.on("listening", () => console.log("Educational relay listening on loopback; production compatibility is unverified."));
 `;
 
 export const BLUEPRINT_FILES: BlueprintFile[] = [
