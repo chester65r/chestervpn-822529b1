@@ -190,7 +190,7 @@ object TunnelController {
         val peer = config.peers[0]
         require(peer.endpoint.isPresent) { "Server endpoint is required" }
         require(peer.preSharedKey.isPresent) { "Preshared key is required" }
-        require(config.\`interface\`.addresses.isNotEmpty()) { "Interface address is required" }
+        require(config.${"`"}interface${"`"}.addresses.isNotEmpty()) { "Interface address is required" }
         return config
     }
 
