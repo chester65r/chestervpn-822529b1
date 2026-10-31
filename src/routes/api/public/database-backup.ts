@@ -10,8 +10,9 @@ export const Route = createFileRoute('/api/public/database-backup')({
       const { runDatabaseBackup } = await import('@/lib/database-backup.server')
       const result = await runDatabaseBackup()
       return Response.json({ ok: true, ...result }, { headers: { 'Cache-Control': 'no-store' } })
-    } catch {
+    } catch (error) {
       // Never return provider responses, private rows or credentials to HTTP callers.
+      console.error('[database-backup]', error instanceof Error ? error.message : error)
       return Response.json({ ok: false, error: 'Backup failed; check server logs' }, { status: 500 })
     }
   } } },
