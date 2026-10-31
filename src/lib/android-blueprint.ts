@@ -19,7 +19,6 @@ const manifest = String.raw`<?xml version="1.0" encoding="utf-8"?>
     -->
     <application
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
         android:label="Tunnel Console"
         android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
 
@@ -368,6 +367,7 @@ const layout = String.raw`<?xml version="1.0" encoding="utf-8"?>
             android:hint="Enrollment response from your administrator"
             android:saveEnabled="false"
             android:importantForAutofill="no"
+            android:longClickable="false"
             android:inputType="textMultiLine|textNoSuggestions|textPassword"
             android:fontFamily="monospace" android:minLines="8" />
 

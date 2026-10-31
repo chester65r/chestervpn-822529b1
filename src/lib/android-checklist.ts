@@ -56,8 +56,8 @@ export const ANDROID_COMPATIBILITY_CHECKS: CompatibilityCheck[] = [
   },
   {
     id: "auth", title: "Device authentication", status: "local",
-    finding: "Each device has its own key pair and preshared key; the server authorizes exactly one /32 per device and revocation is removing its peer. Locally verified: unknown keys and wrong preshared keys are rejected, and a valid key using another tunnel address cannot reach the server. Key expiry/rotation tooling is not implemented.",
-    passCriteria: "On the deployed server, confirm revoked devices stop working after wg syncconf, rotate keys on a schedule, and keep private keys out of logs, backups and share codes.",
+    finding: "DeviceEnrollment generates the private identity on Android, exports only the public key and pins an independently confirmed server public key. A root-only peer-admin.py enrolls, rotates PSKs and revokes live/persisted peers without device private keys. Seven local packet-engine tests pass, including wrong server identity, removal of an already authenticated peer and rejection of old PSKs after rotation. The peer-admin workflow passes a mocked-command test, NOT a deployed wg syncconf test. Native enrollment and Keystore instrumentation tests are supplied but NOT RUN. Encrypted no-backup storage fails closed on tampering/key loss; no hardware-backed Keystore claim is made.",
+    passCriteria: "Run NativeCredentialsTest on supported APIs: encrypted round-trip, fresh nonce, tamper/truncation/key-loss rejection, deletion, local identity and server pinning. Against the deployed server verify secure enrollment delivery, live revocation and rotation, persistence after reboot; private keys must not enter logs, backups, clipboard, view state or share codes. Physical devices are required to record hardware-backed Keystore properties.",
   },
   {
     id: "targets", title: "Server forwarding restrictions", status: "unverified",
