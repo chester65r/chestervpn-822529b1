@@ -1,7 +1,7 @@
 # Roadmap
 
-- [ ] Verify latest GitHub documentation/roadmap/backups and review current repository files for accidentally committed credentials or tokens.
-- [ ] Set up recurring safe selected server-record exports to private GitHub, excluding credentials/tokens; verify scheduler and secure runtime access before enabling.
+- [x] Verified latest GitHub documentation/roadmap/backups (all 154 project files present, none missing) and re-scanned repository files for credentials/tokens — no real secrets found. Fixed the backup route swallowing failures without logging.
+- [ ] Set up recurring safe selected server-record exports to private GitHub, excluding credentials/tokens; route and tests are ready, scheduler not yet created — needs a publish so the callback URL exists, then enable the daily schedule.
 
 - [x] Run repeatable Android build and attempt API 34 emulator checks: native debug/unsigned release/test APK builds and lint PASS; emulator installation blocked without KVM, no instrumentation result. Dated report: native/android/verification-2026-10-31.md.
 - [x] GitHub repository made private and existing project files compared successfully (144 matching files, no differences). Git sync status itself is managed in Lovable Settings and cannot be inspected by the agent.
