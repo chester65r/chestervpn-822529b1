@@ -1,6 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Code2, Home, Server, Share2, SlidersHorizontal } from "lucide-react";
+import { Code2, Home, Server, Share2, SlidersHorizontal, Plug } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useWebMCP } from "use-webmcp-tool";
@@ -251,11 +251,14 @@ function Index() {
             <h1 className="text-lg font-bold tracking-tight">Tunnel Console</h1>
             <p className="text-xs text-muted-foreground">Network optimization utility</p>
           </div>
+          <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" asChild><Link to="/connect" aria-label="Connect your assistant" title="Connect your assistant"><Plug className="h-4 w-4" /></Link></Button>
           <span
             className={`h-2.5 w-2.5 rounded-full transition-colors duration-500 ${
               sim.status === "connected" ? "bg-primary" : sim.status === "connecting" ? "bg-chart-4" : "bg-destructive"
             }`}
           />
+          </div>
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-2">
