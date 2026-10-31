@@ -25,7 +25,7 @@ const serverFile = { privateKey: server.privateKey, address: "10.66.66.1/24", li
 const authorized: WireGuardClient = {
   privateKey: client.privateKey, address: "10.66.66.2/32", dns: "10.66.66.1", mtu: 1280,
   serverPublicKey: server.publicKey, presharedKey: clientPsk, endpointHost: "127.0.0.1", endpointPort: 51820,
-  allowedIps: ["0.0.0.0/0"], keepalive: 25,
+  allowedIps: ["0.0.0.0/0", "::/0"], keepalive: 25,
 };
 const variants: Record<string, WireGuardClient> = {
   "client.conf": authorized,

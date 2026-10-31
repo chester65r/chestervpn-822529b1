@@ -45,6 +45,16 @@ export function isIpv4Cidr(value: string): boolean {
   const match = value.match(IPV4_CIDR);
   return octetsOk(match) && Number(match?.[5]) <= 32;
 }
+export function isIpv6Cidr(value: string): boolean {
+  const match = value.match(/^([0-9a-fA-F:]+)\/(\d{1,3})$/);
+  if (!match || Number(match[2]) > 128) return false;
+  const address = match[1] ?? "";
+  const halves = address.split("::");
+  if (halves.length > 2) return false;
+  const groups = halves.flatMap((half) => (half ? half.split(":") : []));
+  if (!groups.every((group) => /^[0-9a-fA-F]{1,4}$/.test(group))) return false;
+  return halves.length === 2 ? groups.length < 8 : groups.length === 8;
+}
 export function isIpv4(value: string): boolean {
   return octetsOk(value.match(IPV4));
 }
@@ -66,7 +76,7 @@ export function validateClient(client: WireGuardClient): string[] {
   if (!mtuOk(client.mtu)) errors.push("MTU must be between 1280 and 1420");
   if (!isEndpointHost(client.endpointHost)) errors.push("Endpoint must be a hostname or IPv4 address");
   if (!portOk(client.endpointPort)) errors.push("Endpoint port must be 1-65535");
-  if (!client.allowedIps.length || !client.allowedIps.every(isIpv4Cidr)) errors.push("Allowed IPs must be IPv4 CIDR ranges");
+  if (!client.allowedIps.length || !client.allowedIps.every((cidr) => isIpv4Cidr(cidr) || isIpv6Cidr(cidr))) errors.push("Allowed IPs must be CIDR ranges");
   if (!Number.isInteger(client.keepalive) || client.keepalive < 0 || client.keepalive > 65535) errors.push("Keepalive must be 0-65535 seconds");
   return errors;
 }
