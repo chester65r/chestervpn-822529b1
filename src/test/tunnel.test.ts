@@ -5,7 +5,10 @@ import {
   exportProfile,
   importProfile,
   parsePayload,
+  parseSavedProfiles,
+  serializeSavedProfiles,
   validateProfile,
+  type SavedProfile,
 } from "@/lib/tunnel";
 
 describe("route presets", () => {
@@ -65,5 +68,30 @@ describe("TUNNEL:// codes", () => {
   it("rejects malformed codes", () => {
     expect(importProfile("hello")).toBeNull();
     expect(importProfile("TUNNEL://!!!")).toBeNull();
+  });
+});
+
+describe("saved profiles storage", () => {
+  const entry: SavedProfile = {
+    id: "p1",
+    name: "Office relay",
+    presetId: "alpha",
+    profile: { ip: "203.0.113.10", port: "443", sni: "alpha.example.com", payload: "" },
+    savedAt: 1761897600000,
+  };
+
+  it("round-trips a list of saved profiles", () => {
+    expect(parseSavedProfiles(serializeSavedProfiles([entry]))).toEqual([entry]);
+  });
+
+  it("returns an empty list for missing or corrupt storage", () => {
+    expect(parseSavedProfiles(null)).toEqual([]);
+    expect(parseSavedProfiles("not json")).toEqual([]);
+    expect(parseSavedProfiles("{}")).toEqual([]);
+  });
+
+  it("drops malformed entries but keeps valid ones", () => {
+    const raw = JSON.stringify([entry, { id: 42, name: "broken" }, null]);
+    expect(parseSavedProfiles(raw)).toEqual([entry]);
   });
 });
