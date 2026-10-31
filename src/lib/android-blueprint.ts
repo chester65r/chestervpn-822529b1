@@ -464,7 +464,7 @@ const clientTemplate = clientConfig({
 });
 
 const serverSetup = String.raw`#!/usr/bin/env bash
-# server-setup.sh — WireGuard server for the Android client (Debian/Ubuntu, run as root).
+# server-setup.sh - WireGuard server for the Android client (Debian/Ubuntu, run as root).
 # Run only on a server you own, for traffic you are authorized to carry.
 # Replaces the earlier WebSocket relay: both sides now speak the WireGuard protocol.
 set -euo pipefail
