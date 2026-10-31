@@ -2,6 +2,8 @@
 
 - [ ] Compatibility remediation: harden educational snippets and verify locally testable safeguards; keep native, interoperability and deployed-release gates open without evidence.
 - [ ] Native/device and production verification: blocked by missing Android project/toolchain/devices, interoperable packet engine, deployed relay and release evidence.
+- [ ] Requested native builds/API matrix and physical-device results: blocked by absent complete Android project, Android SDK/JDK/emulators and attached devices; do not substitute browser results.
+- [ ] Requested Android-to-relay authentication and interoperable VPN protocol: blocked by absent compatible native packet engine; shared-token relay demonstration is not native identity or end-to-end VPN proof.
 
 - [x] Agent connection guide: runtime URL, copy buttons, ChatGPT / Claude / Claude Code / other client connect and refresh instructions, visible workspace link; browser copy and mobile overflow checks pass. Existing MCP server unchanged; republish to include the page.
 
