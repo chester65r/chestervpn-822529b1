@@ -6,7 +6,7 @@ import { oauthReturnPath } from "@/lib/oauth-return-path";
 
 export const Route = createFileRoute("/login")({
   staticData: { sitemap: false },
-  validateSearch: (s: Record<string, unknown>) => ({ next: oauthReturnPath(s.next) }),
+  validateSearch: (s: Record<string, unknown>) => ({ next: oauthReturnPath(s['next']) }),
   head: () => ({ meta: [
     { title: "Sign in — Tunnel Guardian Compass" },
     { name: "description", content: "Sign in to connect an assistant to your Tunnel Console account." },

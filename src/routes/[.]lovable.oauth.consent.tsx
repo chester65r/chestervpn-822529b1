@@ -7,7 +7,7 @@ import { oauthClient } from "@/lib/oauth-client";
 export const Route = createFileRoute("/.lovable/oauth/consent")({
   staticData: { sitemap: false },
   ssr: false,
-  validateSearch: (s: Record<string, unknown>) => ({ authorization_id: typeof s.authorization_id === "string" ? s.authorization_id : "" }),
+  validateSearch: (s: Record<string, unknown>) => ({ authorization_id: typeof s['authorization_id'] === "string" ? s['authorization_id'] : "" }),
   head: () => ({ meta: [
     { title: "Approve connection — Tunnel Guardian Compass" },
     { name: "description", content: "Review and approve assistant access to your Tunnel Console account." },
@@ -33,7 +33,7 @@ export const Route = createFileRoute("/.lovable/oauth/consent")({
     if (accountError) throw accountError;
     return { details: data, email: account.user?.email };
   },
-  errorComponent: ({ error }) => <main className="mx-auto max-w-md space-y-4 px-6 py-12"><h1 className="text-2xl font-bold">Connection unavailable</h1><p role="alert" className="text-muted-foreground">{error.message}</p><Link to="/">Back to Tunnel Console</Link></main>,
+  errorComponent: ({ error }) => <main className="mx-auto max-w-md space-y-4 px-6 py-12"><h1 className="text-2xl font-bold">Connection unavailable</h1><p role="alert" className="text-muted-foreground">{error instanceof Error ? error.message : "Could not load this connection request. Please try again."}</p><Link to="/">Back to Tunnel Console</Link></main>,
   component: Consent,
 });
 function Consent() {
