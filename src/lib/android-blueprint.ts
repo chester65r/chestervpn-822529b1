@@ -1,4 +1,5 @@
 import { clientConfig, serverConfig } from "./wireguard";
+import { secureStoreSource, deviceEnrollmentSource, peerAdminSource, nativeCredentialTestsSource, enrollmentGuide } from "./native-auth-blueprint";
 
 export type BlueprintFile = { name: string; path: string; lang: string; code: string };
 
@@ -18,7 +19,6 @@ const manifest = String.raw`<?xml version="1.0" encoding="utf-8"?>
     -->
     <application
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
         android:label="Tunnel Console"
         android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
 
@@ -48,6 +48,7 @@ android {
         targetSdk = 34
         versionCode = 2
         versionName = "2.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {
@@ -69,79 +70,12 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }`;
 
-const secureStore = String.raw`package com.example.advancedtunnel
-
-import android.content.Context
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
-import android.util.AtomicFile
-import java.io.File
-import java.security.KeyStore
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
-
-/**
- * Stores the wg-quick configuration (it contains the device private key and preshared key)
- * encrypted with a non-exportable Android Keystore AES-256-GCM key, in no-backup storage.
- * The configuration is never placed in share codes, intents, logs or the clipboard.
- */
-class SecureConfigStore(context: Context) {
-    private val file = AtomicFile(File(context.noBackupFilesDir, "tunnel.conf.enc"))
-
-    private fun key(): SecretKey {
-        val keyStore = KeyStore.getInstance(KEYSTORE).apply { load(null) }
-        (keyStore.getKey(ALIAS, null) as? SecretKey)?.let { return it }
-        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE)
-        generator.init(
-            KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .build()
-        )
-        return generator.generateKey()
-    }
-
-    fun save(configText: String) {
-        val cipher = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, key()) }
-        val sealed = cipher.doFinal(configText.toByteArray(Charsets.UTF_8))
-        val out = file.startWrite()
-        try {
-            out.write(cipher.iv.size)
-            out.write(cipher.iv)
-            out.write(sealed)
-            file.finishWrite(out)
-        } catch (e: Exception) {
-            file.failWrite(out)
-            throw e
-        }
-    }
-
-    /** Returns null when nothing is stored or the ciphertext cannot be authenticated. */
-    fun load(): String? = try {
-        val bytes = file.readFully()
-        val ivLength = bytes[0].toInt()
-        require(ivLength in 12..16 && bytes.size > 1 + ivLength)
-        val cipher = Cipher.getInstance(TRANSFORMATION).apply {
-            init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes, 1, ivLength))
-        }
-        String(cipher.doFinal(bytes, 1 + ivLength, bytes.size - 1 - ivLength), Charsets.UTF_8)
-    } catch (_: Exception) {
-        null
-    }
-
-    fun clear() = file.delete()
-
-    private companion object {
-        const val KEYSTORE = "AndroidKeyStore"
-        const val ALIAS = "tunnel_config_key"
-        const val TRANSFORMATION = "AES/GCM/NoPadding"
-    }
-}`;
+const secureStore = secureStoreSource;
 
 const controller = String.raw`package com.example.advancedtunnel
 
@@ -203,7 +137,7 @@ object TunnelController {
         } catch (e: Exception) {
             serverKey = null
             // Report the category only; exception text may contain configuration details.
-            if (e is IllegalArgumentException) e.message else "Engine could not start the tunnel"
+            if (e is IllegalArgumentException) "Invalid profile" else "Engine could not start the tunnel"
         }
         done(error)
     }
@@ -241,6 +175,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.example.advancedtunnel.databinding.ActivityMainBinding
@@ -249,6 +184,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var store: SecureConfigStore
+    private lateinit var enrollment: DeviceEnrollment
     private val main = Handler(Looper.getMainLooper())
     private var started = false
     private var waitingSince = 0L
@@ -271,20 +207,31 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         store = SecureConfigStore(this)
-        binding.etWgConfig.setText(store.load() ?: "")
+        enrollment = DeviceEnrollment(this)
+        binding.btnIdentity.setOnClickListener {
+            if (started) toast("Stop before enrollment")
+            else try { binding.tvDevicePublicKey.text = enrollment.publicKey() }
+            catch (_: Exception) { toast("Device identity unavailable") }
+        }
 
         binding.btnSave.setOnClickListener { if (validateAndSave() != null) toast("Profile saved securely") }
         binding.btnToggle.setOnClickListener {
             stopReason = null
-            if (started) stopTunnel() else validateAndSave()?.let { requestVpnPermission() }
+            if (started) stopTunnel() else if (store.load() != null) requestVpnPermission()
+            else toast("Enroll this device first")
         }
         binding.btnClear.setOnClickListener {
-            store.clear()
-            binding.etWgConfig.setText("")
-            toast("Stored profile deleted")
+            if (started) toast("Stop before deleting credentials") else {
+                enrollment.clear()
+                binding.etWgConfig.setText("")
+                binding.etServerKey.setText("")
+                binding.tvDevicePublicKey.text = ""
+                toast("Device credentials deleted; revoke its public key on the server")
+            }
         }
     }
 
@@ -301,17 +248,19 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         main.removeCallbacks(poll)
+        binding.etWgConfig.setText("")
         super.onPause()
     }
 
     private fun validateAndSave(): String? {
+        if (started) { toast("Stop before replacing credentials"); return null }
         val text = binding.etWgConfig.text.toString()
         return try {
-            TunnelController.parse(text)
-            store.save(text)
-            text
+            enrollment.enroll(text, binding.etServerKey.text.toString())
+            binding.etWgConfig.setText("")
+            store.load()
         } catch (e: IllegalArgumentException) {
-            binding.etWgConfig.error = e.message ?: "Invalid WireGuard profile"
+            binding.etWgConfig.error = "Enrollment rejected; check confirmed server identity"
             null
         } catch (_: Exception) {
             binding.etWgConfig.error = "Invalid WireGuard profile"
@@ -401,12 +350,25 @@ const layout = String.raw`<?xml version="1.0" encoding="utf-8"?>
         android:orientation="vertical"
         android:padding="20dp">
 
-        <!-- Private key material: no suggestions, no autofill, never copied by the app. -->
+        <Button android:id="@+id/btnIdentity"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Generate device public identity" />
+        <TextView android:id="@+id/tvDevicePublicKey"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textIsSelectable="true" android:saveEnabled="false" />
+        <EditText android:id="@+id/etServerKey"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="Independently confirmed server public key"
+            android:importantForAutofill="no" android:saveEnabled="false"
+            android:inputType="textNoSuggestions" />
+        <!-- Enrollment response contains a secret PSK but NEVER the device private key. -->
         <EditText android:id="@+id/etWgConfig"
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:hint="Paste the WireGuard profile issued by your server"
+            android:hint="Enrollment response from your administrator"
+            android:saveEnabled="false"
             android:importantForAutofill="no"
-            android:inputType="textMultiLine|textNoSuggestions|textVisiblePassword"
+            android:longClickable="false"
+            android:inputType="textMultiLine|textNoSuggestions|textPassword"
             android:fontFamily="monospace" android:minLines="8" />
 
         <LinearLayout
@@ -431,7 +393,7 @@ const layout = String.raw`<?xml version="1.0" encoding="utf-8"?>
 
         <Button android:id="@+id/btnSave"
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="Save profile" />
+            android:text="Save enrollment securely" />
 
         <Button android:id="@+id/btnClear"
             android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -470,26 +432,19 @@ const serverSetup = String.raw`#!/usr/bin/env bash
 set -euo pipefail
 umask 077
 EGRESS_IF="${"$"}{EGRESS_IF:-eth0}"       # interface that reaches the internet
-DEVICE_NAME="${"$"}{DEVICE_NAME:-android-device-1}"
+[[ "$EGRESS_IF" =~ ^[a-zA-Z0-9_-]+$ ]] || exit 1
 
 apt-get update && apt-get install -y wireguard-tools nftables unbound
-mkdir -p /etc/wireguard/clients
-
-# Keys are generated on the server; private keys never leave this machine except the
-# device profile, which must be transferred to the phone over a trusted channel once.
-wg genkey | tee /etc/wireguard/server.key | wg pubkey > /etc/wireguard/server.pub
-wg genkey | tee "/etc/wireguard/clients/$DEVICE_NAME.key" | wg pubkey > "/etc/wireguard/clients/$DEVICE_NAME.pub"
-wg genpsk > "/etc/wireguard/clients/$DEVICE_NAME.psk"
-
-fill() {
-  sed -e "s|<SERVER_PRIVATE_KEY>|$(cat /etc/wireguard/server.key)|" \
-      -e "s|<SERVER_PUBLIC_KEY>|$(cat /etc/wireguard/server.pub)|" \
-      -e "s|<DEVICE_PRIVATE_KEY>|$(cat "/etc/wireguard/clients/$DEVICE_NAME.key")|" \
-      -e "s|<DEVICE_PUBLIC_KEY>|$(cat "/etc/wireguard/clients/$DEVICE_NAME.pub")|" \
-      -e "s|<DEVICE_PRESHARED_KEY>|$(cat "/etc/wireguard/clients/$DEVICE_NAME.psk")|"
-}
-fill < wg0.conf > /etc/wireguard/wg0.conf
-fill < client.conf > "/etc/wireguard/clients/$DEVICE_NAME.conf"
+install -d -m 700 /etc/wireguard
+# Initial setup only: never silently replace an existing server identity.
+[[ ! -e /etc/wireguard/wg0.conf && ! -e /etc/wireguard/server.key ]] || { echo "Server already initialized"; exit 1; }
+wg genkey > /etc/wireguard/server.key
+wg pubkey < /etc/wireguard/server.key > /etc/wireguard/server.pub
+# No device private key is generated here; devices generate their own identities.
+{ printf '[Interface]\nPrivateKey = '; cat /etc/wireguard/server.key;
+  printf 'Address = 10.66.66.1/24\nListenPort = 51820\nMTU = 1280\n';
+} > /etc/wireguard/wg0.conf
+chmod 600 /etc/wireguard/wg0.conf
 
 # Forward only tunnel traffic; block tunnel clients from the server's own private networks.
 echo "net.ipv4.ip_forward=1" > /etc/sysctl.d/99-wireguard.conf && sysctl --system >/dev/null
@@ -518,15 +473,35 @@ UNB
 
 systemctl enable --now wg-quick@wg0
 systemctl restart unbound
-echo "Device profile: /etc/wireguard/clients/$DEVICE_NAME.conf (transfer once, then delete the copy)."
-echo "Revoke a device: remove its [Peer] from wg0.conf and run: wg syncconf wg0 <(wg-quick strip wg0)"
+echo "Server initialized without authorized devices. Use peer-admin.py enroll with the Android public key."
 `;
 
 export const BLUEPRINT_FILES: BlueprintFile[] = [
+  { name: "android-workflow.md", path: "native/android/README.md (full workflow in project source)", lang: "markdown", code: `# Repeatable Android checks — all native results NOT RUN
+Complete instructions: native/android/README.md in the project source.
+Pinned tools: JDK 17, Gradle 8.9, AGP 8.7.3, Kotlin 2.0.21, SDK 34.
+Generate: bun native/android/generate-project.ts /tmp/tunnel-android
+Create pinned wrapper: gradle -p /tmp/tunnel-android wrapper --gradle-version 8.9 --distribution-type bin
+Build: bash native/android/run-checks.sh /tmp/tunnel-android build
+Emulator: bash native/android/run-checks.sh /tmp/tunnel-android emulator emulator-5554
+Physical: bash native/android/run-checks.sh /tmp/tunnel-android physical 'PHONE_SERIAL'
+Run each supported API: 26, 31, 33, 34, and every newer claimed API.
+Automated Android checks: encrypted credential round-trip, tamper/key-loss rejection,
+fresh nonce, deletion, local identity and pinned-server enrollment.
+Manual emulator checks: VPN consent, launch, timeout, start/stop, rotation and owned-server traffic.
+Physical-only evidence: hardware-backed Keystore, Wi-Fi/mobile handoff, OEM/background,
+16 KB device loading, real-network leak/telemetry and signed-release checks.
+Result records separate emulator from physical; never claim network tests from instrumentation.
+No JDK/Android SDK/emulator/phone is available here; native execution remains NOT RUN.
+` },
   { name: "AndroidManifest.xml", path: "app/src/main/AndroidManifest.xml", lang: "xml", code: manifest },
   { name: "TunnelController.kt", path: "app/src/main/java/com/example/advancedtunnel/TunnelController.kt", lang: "kotlin", code: controller },
   { name: "MainActivity.kt", path: "app/src/main/java/com/example/advancedtunnel/MainActivity.kt", lang: "kotlin", code: mainActivity },
   { name: "SecureConfigStore.kt", path: "app/src/main/java/com/example/advancedtunnel/SecureConfigStore.kt", lang: "kotlin", code: secureStore },
+  { name: "DeviceEnrollment.kt", path: "app/src/main/java/com/example/advancedtunnel/DeviceEnrollment.kt", lang: "kotlin", code: deviceEnrollmentSource },
+  { name: "NativeCredentialsTest.kt", path: "app/src/androidTest/java/com/example/advancedtunnel/NativeCredentialsTest.kt", lang: "kotlin", code: nativeCredentialTestsSource },
+  { name: "native-auth.md", path: "docs/native-auth.md", lang: "markdown", code: enrollmentGuide },
+  { name: "peer-admin.py", path: "server/peer-admin.py", lang: "python", code: peerAdminSource },
   { name: "activity_main.xml", path: "app/src/main/res/layout/activity_main.xml", lang: "xml", code: layout },
   { name: "build.gradle.kts", path: "app/build.gradle.kts", lang: "kotlin", code: gradle },
   { name: "wg0.conf", path: "server/wg0.conf", lang: "ini", code: serverTemplate },

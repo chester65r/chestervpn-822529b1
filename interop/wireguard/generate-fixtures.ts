@@ -20,6 +20,7 @@ const server = keyPair();
 const client = keyPair();
 const intruder = keyPair();
 const clientPsk = psk();
+const rotatedPsk = psk();
 
 const serverFile = { privateKey: server.privateKey, address: "10.66.66.1/24", listenPort: 51820, mtu: 1280, peers: [{ name: "android-device-1", publicKey: client.publicKey, presharedKey: clientPsk, address: "10.66.66.2/32" }] };
 const authorized: WireGuardClient = {
@@ -31,12 +32,15 @@ const variants: Record<string, WireGuardClient> = {
   "client.conf": authorized,
   "intruder.conf": { ...authorized, privateKey: intruder.privateKey },
   "wrong-psk.conf": { ...authorized, presharedKey: psk() },
+  "wrong-server.conf": { ...authorized, serverPublicKey: intruder.publicKey },
+  "rotated.conf": { ...authorized, presharedKey: rotatedPsk },
   "spoof.conf": { ...authorized, address: "10.66.66.3/32" },
 };
 
 const serverErrors = validateServer(serverFile);
 if (serverErrors.length) throw new Error(serverErrors.join("; "));
 writeFileSync(join(out, "server.conf"), serverConfig(serverFile), { mode: 0o600 });
+writeFileSync(join(out, "rotated-server.conf"), serverConfig({ ...serverFile, peers: serverFile.peers.map(peer => ({ ...peer, presharedKey: rotatedPsk })) }), { mode: 0o600 });
 for (const [name, config] of Object.entries(variants)) {
   const errors = validateClient(config);
   if (errors.length) throw new Error(`${name}: ${errors.join("; ")}`);
