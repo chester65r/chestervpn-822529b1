@@ -1,6 +1,7 @@
 # Roadmap
 
 - [ ] Native authentication: generate device identity on Android, encrypt credentials with Keystore, provision only public identity to the server, add revoke/rotation tooling and executable engine rejection/revocation tests; record native-only tests as NOT RUN.
+- [ ] Repeatable Android build/device workflow: supply a reproducible project generator and matrix runner, separate emulator automation from physical-device evidence; toolchain/device execution remains unavailable here.
 
 - [x] Protocol mismatch resolved in design: Android blueprint embeds the WireGuard tunnel library; server blueprint is a WireGuard server; both use one shared profile generator. Local Go fixture (`bash interop/wireguard/run.sh`) passes 4 packet-level tests (TCP 1 MiB, UDP, DNS, key/PSK/address rejection). Not Android device evidence.
 - [ ] Android build and on-device WireGuard handshake/traffic: blocked by absent Android SDK/JDK/Gradle, emulator and physical devices.
