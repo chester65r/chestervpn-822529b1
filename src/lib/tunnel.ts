@@ -171,6 +171,11 @@ export function parseSavedProfiles(json: string | null): SavedProfile[] {
   }
 }
 
+/** Converts a bytes/second sample to megabits/second for plain-text status reports. */
+export function bytesPerSecToMbps(bytesPerSec: number): number {
+  return (bytesPerSec * 8) / 1_000_000;
+}
+
 export function formatSpeed(bytesPerSec: number): string {
   if (bytesPerSec >= 1024 * 1024) return `${(bytesPerSec / 1024 / 1024).toFixed(2)} MB/s`;
   return `${(bytesPerSec / 1024).toFixed(2)} KB/s`;

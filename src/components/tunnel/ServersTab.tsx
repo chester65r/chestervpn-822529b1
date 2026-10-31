@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { ArrowRight, Loader2, LogOut, Server as ServerIcon, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -58,14 +58,26 @@ export function ServersTab({ onUseServer }: Props) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  // Each load is tagged with the requesting account and a generation number so a slow
+  // response from a previous account (or an older request) can never replace current data.
+  const loadGeneration = useRef(0);
+  const activeUserId = session?.user.id ?? null;
+  const activeUser = useRef<string | null>(null);
+  activeUser.current = activeUserId;
+
   const loadServers = useCallback(async () => {
+    const userId = activeUser.current;
+    if (!userId) return;
+    const generation = ++loadGeneration.current;
     setLoading(true);
     const { data, error } = await supabase
       .from("relay_servers")
       .select("*")
       .order("created_at", { ascending: false });
+    if (generation !== loadGeneration.current || activeUser.current !== userId) return;
     setLoading(false);
     if (error) {
+      setServers([]);
       toast.error("Couldn't load servers", { description: error.message });
       return;
     }
@@ -73,9 +85,15 @@ export function ServersTab({ onUseServer }: Props) {
   }, []);
 
   useEffect(() => {
-    if (session) void loadServers();
-    else setServers([]);
-  }, [session, loadServers]);
+    // Clear account-owned data immediately on any account change, then load for the new one.
+    loadGeneration.current++;
+    setServers([]);
+    setLoading(false);
+    if (activeUserId) void loadServers();
+    return () => {
+      loadGeneration.current++;
+    };
+  }, [activeUserId, loadServers]);
 
   const submitAuth = async () => {
     setAuthBusy(true);
