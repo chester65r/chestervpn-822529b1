@@ -14,7 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      relay_servers: {
+        Row: {
+          created_at: string
+          host: string
+          id: string
+          name: string
+          notes: string
+          port: number
+          transport: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          host: string
+          id?: string
+          name: string
+          notes?: string
+          port?: number
+          transport?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          host?: string
+          id?: string
+          name?: string
+          notes?: string
+          port?: number
+          transport?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
