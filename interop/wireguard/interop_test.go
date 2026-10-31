@@ -302,8 +302,6 @@ func TestWrongPresharedKeyIsRejected(t *testing.T) {
 
 func TestClientCannotSpoofAnotherTunnelAddress(t *testing.T) {
 	server, _ := pair(t, "client.conf")
-	port := freeUDPPort(t)
-	_ = port
 	// The spoof config uses the authorized key but claims a different source address.
 	spoof := up(t, "spoof.conf", 0, serverEndpoint(t, server))
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
