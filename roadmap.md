@@ -1,5 +1,7 @@
 # Roadmap
 
+- [x] Agent integrations: 2 OAuth-protected remote read tools and 3 browser-local tools; managed OAuth newly activated, existing signing key retained. Manifest generated, 30 tests pass, local real-provider approve/deny and token exchange verified; both remote calls return 200. Local verification supplied the canonical configured Origin because the provider rejects localhost. Native WebMCP runtime is unavailable in test Chromium, so actual browser tool invocation remains unverified. Republish required; hosted consent and email-confirmation round trip remain unverified until then.
+
 - [x] Final review: build health, test suite, click-through of Home / Configure / Share / Android screens
 - [x] Marketing plan: research audience/communities, save research.md + plan.md, present ranked plan
 - [x] Saved tunnel profiles: persist profiles between visits, manage (save/load/delete) and reuse them

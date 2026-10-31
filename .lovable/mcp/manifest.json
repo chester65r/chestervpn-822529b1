@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "sdk_version": "3.4.0",
+  "path": "/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://vuxeryslquczubilasqe.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "tunnel-guardian-compass",
+      "version": "0.1.0",
+      "title": "Tunnel Guardian Compass"
+    },
+    "tools": [
+      {
+        "name": "list_relay_servers",
+        "title": "List my relay servers",
+        "description": "List up to 100 relay servers belonging to the signed-in caller; does not connect to them or access device-local profiles.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_android_compatibility",
+        "title": "Android compatibility requirements",
+        "description": "Read the Android and relay checklist, including known blockers and unverified production requirements; these are not device test results.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}

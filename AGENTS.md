@@ -10,6 +10,8 @@
 <!-- LOVABLE:END -->
 
 ## Project rules
+- Remote MCP tools live in `src/lib/mcp/`, require verified OAuth client tokens, and access account records through caller-scoped RLS; browser tools remain in their owning screens and never expose credentials or commit consequential actions.
+- OAuth login returns use one canonical same-origin path validator; preserve consent parameters through sign-in and email confirmation, and exclude authorization pages from the sitemap.
 - Tunnel logic (payload macros, validation, TUNNEL:// codes) lives in pure functions in `src/lib/tunnel.ts` with tests in `src/test/tunnel.test.ts`; UI components only call them — keeps rules testable.
 - Connection/bandwidth is a client-side visual simulation (`src/lib/use-tunnel-sim.ts`); a browser cannot open a real VPN.
 - Restore browser profiles only after hydration, validate their stored shape, and guard storage writes so blocked or corrupt storage cannot crash the workspace.

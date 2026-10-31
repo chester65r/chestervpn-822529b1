@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { ArrowRight, Loader2, LogOut, Server as ServerIcon, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { useWebMCP } from "use-webmcp-tool";
+import { runWebMCPTool } from "@/lib/webmcp-telemetry";
 
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -126,6 +128,18 @@ export function ServersTab({ onUseServer }: Props) {
     toast(`Deleted "${server.name}"`);
     setServers((list) => list.filter((s) => s.id !== server.id));
   };
+
+  useWebMCP({
+    name: "read_visible_relay_servers",
+    description: "Read relay servers currently shown on the Servers screen; requires a signed-in account.",
+    annotations: { readOnlyHint: true, untrustedContentHint: true },
+    enabled: authReady && Boolean(session),
+    execute: () => runWebMCPTool("read_visible_relay_servers", () => {
+      if (!authReady || !session) throw new Error("Sign in to read your relay servers.");
+      if (loading) return "Relay servers are loading.";
+      return servers.length ? servers.map(s => `${s.id}: ${s.name} — ${s.host}:${s.port} (${s.transport})`).join("\n") : "No servers shown.";
+    }),
+  });
 
   if (!authReady) {
     return (
