@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { Code2, Home, Server, Share2, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useWebMCP } from "use-webmcp-tool";
+import { runWebMCPTool } from "@/lib/webmcp-telemetry";
 
 import { HomeTab } from "@/components/tunnel/HomeTab";
 import { ConfigTab } from "@/components/tunnel/ConfigTab";
@@ -224,6 +226,23 @@ function Index() {
 
   const serverLabel = profile.ip ? `${profile.ip}:${profile.port || "443"}` : "No server configured";
 
+  function openTab(value: Tab) {
+    if (!TABS.some(item => item.id === value)) throw new Error("Unknown screen; expected home, config, servers, share, or android.");
+    setTab(value);
+  }
+  useWebMCP({
+    name: "open_workspace_screen",
+    description: "Open Home, Configure, Servers, Share or Android without starting a VPN or changing saved data.",
+    inputSchema: { type: "object", properties: { screen: { type: "string", enum: ["home", "config", "servers", "share", "android"], description: "The workspace screen to open." } }, required: ["screen"] },
+    execute: ({ screen }: { screen: Tab }) => runWebMCPTool("open_workspace_screen", () => { openTab(screen); return `Opened ${screen}.`; }),
+  });
+  useWebMCP({
+    name: "read_workspace_status",
+    description: "Read the open screen and, on Home only, the simulated tunnel status and current displayed speeds.",
+    annotations: { readOnlyHint: true },
+    execute: () => runWebMCPTool("read_workspace_status", () => tab === "home" ? `Screen: home. Simulated connection: ${sim.status}. Download: ${sim.downSpeed.toFixed(2)} Mbps. Upload: ${sim.upSpeed.toFixed(2)} Mbps. This is not a real VPN.` : `Screen: ${tab}.`),
+  });
+
   return (
     <div className="flex min-h-dvh justify-center bg-background sm:items-center sm:py-6">
       <div className="flex h-dvh w-full max-w-[420px] flex-col overflow-hidden bg-background sm:h-[min(860px,calc(100dvh-3rem))] sm:rounded-[2rem] sm:border sm:border-border sm:shadow-card">
@@ -283,7 +302,7 @@ function Index() {
             <Button variant="ghost"
               key={id}
               type="button"
-              onClick={() => setTab(id)}
+              onClick={() => openTab(id)}
               aria-current={tab === id ? "page" : undefined}
               className={`flex h-auto flex-col items-center gap-1 rounded-none px-0 py-3 text-[11px] font-medium transition-colors ${
                 tab === id ? "text-primary" : "text-muted-foreground"
