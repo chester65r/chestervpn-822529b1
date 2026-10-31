@@ -30,12 +30,12 @@ export const ANDROID_COMPATIBILITY_CHECKS: CompatibilityCheck[] = [
   },
   {
     id: "tls", title: "TLS identity & protected sockets", status: "unverified",
-    finding: "The sample sets SNI and calls protect(), but does not check its result or explicitly enable TLS endpoint hostname verification. SNI alone does not verify identity.",
+    finding: "The sample now requires successful protect(), matches TLS peer identity to SNI and enables HTTPS hostname verification with a handshake timeout. Native certificate rejection and routing-loop tests are still NOT RUN.",
     passCriteria: "Require successful socket protection and verify the expected certificate hostname. Reject expired, untrusted and wrong-host certificates before activating the tunnel; confirm the relay socket cannot route back into the VPN.",
   },
   {
     id: "lifecycle", title: "Lifecycle, cancellation & recovery", status: "unverified",
-    finding: "Thread/socket cleanup and UI state recovery have not been tested on Android; repeated starts and stopping during connection need verification.",
+    finding: "The sample now rejects overlapping starts, closes sockets during cancellation and handles permission revocation. It refuses TUN activation because no compatible packet engine exists. Lifecycle and UI recovery remain device-UNVERIFIED.",
     passCriteria: "Exercise repeated start/stop, stop during connect/handshake, activity rotation/reopen, process termination, permission revocation and peer EOF. Confirm one active tunnel, no leaked threads/sockets and truthful UI state.",
   },
   {
@@ -45,22 +45,22 @@ export const ANDROID_COMPATIBILITY_CHECKS: CompatibilityCheck[] = [
   },
   {
     id: "auth", title: "Relay client authentication", status: "unverified",
-    finding: "The relay sample has no client authentication. Signing into Tunnel Console does not authenticate a native relay connection.",
+    finding: "The loopback-only relay now requires a shared credential supplied outside profile codes. Missing/incorrect credential rejection is locally tested, not production authentication evidence. Per-client identity, expiry, revocation and verified TLS remain unimplemented or unverified; app/MCP sign-in does not authenticate native traffic.",
     passCriteria: "Add a separate authenticated relay handshake over TLS. Reject missing, invalid, expired and revoked credentials; authorize targets per client and keep credentials out of logs and shared profile codes.",
   },
   {
     id: "targets", title: "Relay target restrictions", status: "unverified",
-    finding: "A host allowlist exists, but strict target parsing, integer ports, DNS/IP enforcement and per-client authorization have not been hardened or tested.",
+    finding: "The relay requires exact host:port allowlisting and non-coerced integer ports; fractional and unauthorized ports are locally rejected in tests. Resolved-address policy, DNS rebinding defense and per-client authorization remain unimplemented or unverified. Do not expose the sample publicly.",
     passCriteria: "Reject malformed JSON, non-integer/out-of-range ports and unauthorized host/port pairs. Enforce resolved-address policy, including loopback/private/metadata addresses and DNS changes; allow private destinations only when explicitly authorized.",
   },
   {
     id: "limits", title: "Resource limits & resilience", status: "unverified",
-    finding: "The relay lacks demonstrated authentication deadlines, idle/connect timeouts, backpressure, message limits and concurrency/rate limits.",
+    finding: "The sample adds handshake/connect/idle deadlines, payload and connection limits, bounded buffers with overload disconnects and error cleanup. Slow-peer, sustained-load and rate-limit evidence remains absent; graceful backpressure and per-client rate limiting are not established.",
     passCriteria: "Set and test these limits under slow peers, oversized messages, stalled upstreams, abrupt disconnects and sustained load. Confirm bounded memory, reliable cleanup and recovery after relay restart.",
   },
   {
     id: "telemetry", title: "Real telemetry & privacy", status: "unverified",
-    finding: "The browser graphs are simulated. Android counters have not been validated for concurrent updates or compared with measured traffic.",
+    finding: "The browser graphs remain simulated. Android counters now use atomic increments and resets, and runtime exceptions omit configuration details. No compiled native concurrency, measured-transfer or privacy assessment exists.",
     passCriteria: "Use thread-safe counters and compare native byte/speed totals with measured transfers. Verify zero/reset behavior, disconnect reporting, profile handling and logs that exclude payloads and credentials.",
   },
   {

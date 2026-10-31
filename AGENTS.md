@@ -17,5 +17,6 @@
 - Connection/bandwidth is a client-side visual simulation (`src/lib/use-tunnel-sim.ts`); a browser cannot open a real VPN.
 - Restore browser profiles only after hydration, validate their stored shape, and guard storage writes so blocked or corrupt storage cannot crash the workspace.
 - Android and relay snippets are educational scaffolding, not an interoperable production VPN; retain explicit protocol limitations until device-tested interoperability exists.
+- The Android educational service must refuse TUN activation while its packet engine is absent; the relay remains loopback-only, secret-configured and independently exercised as a standalone Node fixture, never run inside the web server.
 - Android compatibility requirements live in a shared documentation module consumed by the checklist and its copyable test record; never mark requirements verified based on browser tests.
 - Sitemap URLs derive from required route staticData.sitemap decisions via the shared inventory helper; exclude private routes and omit lastmod without an authoritative page-specific timestamp.
