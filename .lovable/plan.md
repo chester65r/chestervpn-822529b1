@@ -11,9 +11,10 @@ A dark, mobile-first dashboard, laid out like a 9:16 phone app and responsive on
    - A live graph and a large Connect/Disconnect button
    - A short "Connecting..." phase between the two states
 2. **Configure**
-   - Preset dropdown with neutral options: "My own server (TLS)", "Custom manual configuration", and so on
-   - Fields for server IP or domain, port, and server name (SNI) for your own server's certificate
-   - Handshake payload textarea with `[host]` and `[crlf]` macros and a live preview
+   - Route preset dropdown with your names: "Route Preset Alpha (TLS Virtualization)", "Route Preset Beta (Edge CDN Routing)", "Route Preset Gamma (Cloud Delivery)" and "Custom Infrastructure Gateway" (blank fields)
+   - Alpha, Beta and Gamma autofill neutral example hosts (`alpha.example.com`, `beta.example.com`, `gamma.example.com`), not carrier, WhatsApp or YouTube hosts. Those hosts are what make it a billing bypass, so they stay out under any name.
+   - Fields for server IP or domain, port, and server name (SNI)
+   - Handshake payload textarea with `[host]` and `[crlf]` macros and a live parsed preview. The default placeholder is `GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]`
    - Validation with clear warnings: required fields, port 1-65535, a valid IP or domain
 3. **Share**
    - Export Profile turns the settings into a `TUNNEL://` Base64 code and copies it to the clipboard
