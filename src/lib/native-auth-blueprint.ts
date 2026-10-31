@@ -81,7 +81,7 @@ class DeviceEnrollment(context: Context) {
 
     @Synchronized fun publicKey(): String {
         val existing = identity.load()
-        val pair = if (existing == null) KeyPair().also { identity.save(it.privateKey.toBase64()) }
+        val pair = if (existing == null) KeyPair().also { profile.clear(); identity.save(it.privateKey.toBase64()) }
             else KeyPair(Key.fromBase64(existing))
         return pair.publicKey.toBase64()
     }

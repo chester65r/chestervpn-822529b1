@@ -19,7 +19,7 @@ describe("server native peer enrollment tool (mocked wg commands, not deployment
       writeFileSync(config, original, { mode: 0o600 });
       writeFileSync(join(dir, "wg"), `#!/usr/bin/env python3\nimport sys,base64,secrets\nfrom pathlib import Path\nargs=sys.argv[1:]\nif args==['genpsk']: print(base64.b64encode(secrets.token_bytes(32)).decode())\nelif args==['show','wg0','public-key']: print(${JSON.stringify(serverKey)})\nelif args[0]=='syncconf':\n Path(${JSON.stringify(log)}).open('a').write('syncconf\\n')\n assert '[Interface]' in Path(args[2]).read_text()\nelif args[0]=='set': Path(${JSON.stringify(log)}).open('a').write('remove\\n')\nelse: sys.exit(1)\n`, { mode: 0o700 });
       writeFileSync(join(dir, "wg-quick"), "#!/usr/bin/env python3\nimport sys\nfrom pathlib import Path\nprint(Path(sys.argv[2]).read_text())\n", { mode: 0o700 });
-      const run = (action: string, extra: string[] = []) => spawnSync("python3", [script, action, "--config", config, "--public-key", publicKey, ...extra], { encoding: "utf8", env: { ...process.env, PATH: `${dir}:${process.env.PATH}` } });
+      const run = (action: string, extra: string[] = []) => spawnSync("python3", [script, action, "--config", config, "--public-key", publicKey, ...extra], { encoding: "utf8", env: { ...process.env, PATH: `${dir}:${process.env['PATH']}` } });
       const response = join(dir, "response.conf");
       const fields = (file: string) => ["--address", "10.66.66.2/32", "--endpoint", "vpn.example.com:51820", "--response", file];
       expect(run("enroll", fields(response)).status).toBe(0);
