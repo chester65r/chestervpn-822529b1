@@ -1,6 +1,6 @@
 # Roadmap
 
-- [ ] Verify latest GitHub documentation/roadmap/backups and review current repository files for accidentally committed credentials or tokens.
+- [x] Verify latest GitHub documentation/roadmap/backups: present on remote inventory; current-source review found no accidental real credentials/tokens. Public environment settings and generated test fixture keys are not private credentials; past Git history is outside this review.
 - [ ] Set up recurring safe selected server-record exports to private GitHub, excluding credentials/tokens; verify scheduler and secure runtime access before enabling.
 - [ ] Sync finished review, recurring-backup implementation and documentation to GitHub now, then verify remote files.
 
