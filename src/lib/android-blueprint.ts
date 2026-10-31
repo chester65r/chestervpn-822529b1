@@ -1,8 +1,5 @@
 import { clientConfig, serverConfig } from "./wireguard";
 import { secureStoreSource, deviceEnrollmentSource, peerAdminSource, nativeCredentialTestsSource, enrollmentGuide } from "./native-auth-blueprint";
-import androidWorkflow from "../../native/android/README.md?raw";
-import androidRunner from "../../native/android/run-checks.sh?raw";
-import androidGenerator from "../../native/android/generate-project.ts?raw";
 
 export type BlueprintFile = { name: string; path: string; lang: string; code: string };
 
@@ -480,9 +477,23 @@ echo "Server initialized without authorized devices. Use peer-admin.py enroll wi
 `;
 
 export const BLUEPRINT_FILES: BlueprintFile[] = [
-  { name: "android-workflow.md", path: "native/android/README.md", lang: "markdown", code: androidWorkflow },
-  { name: "run-checks.sh", path: "native/android/run-checks.sh", lang: "bash", code: androidRunner },
-  { name: "generate-project.ts", path: "native/android/generate-project.ts", lang: "typescript", code: androidGenerator },
+  { name: "android-workflow.md", path: "native/android/README.md (full workflow in project source)", lang: "markdown", code: `# Repeatable Android checks — all native results NOT RUN
+Complete instructions: native/android/README.md in the project source.
+Pinned tools: JDK 17, Gradle 8.9, AGP 8.7.3, Kotlin 2.0.21, SDK 34.
+Generate: bun native/android/generate-project.ts /tmp/tunnel-android
+Create pinned wrapper: gradle -p /tmp/tunnel-android wrapper --gradle-version 8.9 --distribution-type bin
+Build: bash native/android/run-checks.sh /tmp/tunnel-android build
+Emulator: bash native/android/run-checks.sh /tmp/tunnel-android emulator emulator-5554
+Physical: bash native/android/run-checks.sh /tmp/tunnel-android physical 'PHONE_SERIAL'
+Run each supported API: 26, 31, 33, 34, and every newer claimed API.
+Automated Android checks: encrypted credential round-trip, tamper/key-loss rejection,
+fresh nonce, deletion, local identity and pinned-server enrollment.
+Manual emulator checks: VPN consent, launch, timeout, start/stop, rotation and owned-server traffic.
+Physical-only evidence: hardware-backed Keystore, Wi-Fi/mobile handoff, OEM/background,
+16 KB device loading, real-network leak/telemetry and signed-release checks.
+Result records separate emulator from physical; never claim network tests from instrumentation.
+No JDK/Android SDK/emulator/phone is available here; native execution remains NOT RUN.
+` },
   { name: "AndroidManifest.xml", path: "app/src/main/AndroidManifest.xml", lang: "xml", code: manifest },
   { name: "TunnelController.kt", path: "app/src/main/java/com/example/advancedtunnel/TunnelController.kt", lang: "kotlin", code: controller },
   { name: "MainActivity.kt", path: "app/src/main/java/com/example/advancedtunnel/MainActivity.kt", lang: "kotlin", code: mainActivity },
