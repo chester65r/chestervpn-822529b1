@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { Code2, Home, Share2, SlidersHorizontal } from "lucide-react";
+import { Code2, Home, Server, Share2, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
 import { HomeTab } from "@/components/tunnel/HomeTab";
 import { ConfigTab } from "@/components/tunnel/ConfigTab";
 import { ShareTab } from "@/components/tunnel/ShareTab";
+import { ServersTab } from "@/components/tunnel/ServersTab";
 import { BlueprintTab } from "@/components/tunnel/BlueprintTab";
 import { useTunnelSim } from "@/lib/use-tunnel-sim";
 import {
@@ -43,11 +44,12 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-type Tab = "home" | "config" | "share" | "android";
+type Tab = "home" | "config" | "servers" | "share" | "android";
 
 const TABS: { id: Tab; label: string; icon: typeof Home }[] = [
   { id: "home", label: "Home", icon: Home },
   { id: "config", label: "Configure", icon: SlidersHorizontal },
+  { id: "servers", label: "Servers", icon: Server },
   { id: "share", label: "Share", icon: Share2 },
   { id: "android", label: "Android", icon: Code2 },
 ];
@@ -189,6 +191,14 @@ function Index() {
     if (entry) toast(`Deleted "${entry.name}"`);
   };
 
+  const useServer = (host: string, port: number) => {
+    setProfile((p) => ({ ...p, ip: host, port: String(port) }));
+    setPresetId("custom");
+    setErrors({});
+    toast.success("Server applied to Configure");
+    setTab("config");
+  };
+
   const serverLabel = profile.ip ? `${profile.ip}:${profile.port || "443"}` : "No server configured";
 
   return (
@@ -230,6 +240,7 @@ function Index() {
               onChange={change}
             />
           )}
+          {tab === "servers" && <ServersTab onUseServer={useServer} />}
           {tab === "share" && (
             <ShareTab
               exportedCode={exported}
@@ -244,7 +255,7 @@ function Index() {
           {tab === "android" && <BlueprintTab />}
         </main>
 
-        <nav className="grid grid-cols-4 border-t border-border bg-card">
+        <nav className="grid grid-cols-5 border-t border-border bg-card">
           {TABS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
