@@ -140,16 +140,31 @@ def atomic(path, text):
     finally:
         if os.path.exists(tmp): os.unlink(tmp)
 
-def apply(config, interface, text):
+def sync(interface, directory, text):
     # Strip wg-quick fields without handing secrets to command-line arguments.
+    candidate = pathlib.Path(directory) / "candidate.conf"
+    atomic(candidate, text)
+    stripped = run(["wg-quick", "strip", str(candidate)])
+    runtime = pathlib.Path(directory) / "runtime.conf"
+    atomic(runtime, stripped + "\n")
+    run(["wg", "syncconf", interface, str(runtime)])
+
+def apply(config, interface, text, previous, before_sync=None, revoke=False):
+    # Persist first so a restart can never re-authorize a revoked or rotated credential,
+    # then update the live interface. On live failure: revocations stay persisted and are
+    # reported; enroll/rotate restore the previous file and live configuration.
     with tempfile.TemporaryDirectory(dir=config.parent) as directory:
-        candidate = pathlib.Path(directory) / "candidate.conf"
-        atomic(candidate, text)
-        stripped = run(["wg-quick", "strip", str(candidate)])
-        runtime = pathlib.Path(directory) / "runtime.conf"
-        atomic(runtime, stripped + "\n")
-        run(["wg", "syncconf", interface, str(runtime)])
-    atomic(config, text)
+        atomic(config, text)
+        try:
+            if before_sync: before_sync()
+            sync(interface, directory, text)
+        except Exception:
+            if revoke:
+                raise RuntimeError("Revocation saved to disk but live interface not updated; restart wg-quick@" + interface)
+            atomic(config, previous)
+            try: sync(interface, directory, previous)
+            except Exception: raise RuntimeError("Change rolled back on disk; live interface needs restart of wg-quick@" + interface)
+            raise RuntimeError("WireGuard operation failed; previous configuration restored")
 
 def main():
     os.umask(0o077)
@@ -176,7 +191,7 @@ def main():
             if args.action == "revoke":
                 if len(matches) != 1: raise ValueError("Peer not registered")
                 del parts[matches[0]]
-                apply(config, args.interface, "[Peer]\n".join(parts))
+                apply(config, args.interface, "[Peer]\n".join(parts), text, revoke=True)
                 return
             if not args.response or not args.address or not args.endpoint: raise ValueError("Response, address and endpoint required")
             address = ipaddress.IPv4Interface(args.address)
@@ -202,8 +217,9 @@ def main():
             fd = os.open(response, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             try:
                 with os.fdopen(fd, "w") as stream: stream.write(enrollment); stream.flush(); os.fsync(stream.fileno())
-                if args.action == "rotate": run(["wg", "set", args.interface, "peer", public, "remove"])
-                apply(config, args.interface, updated)
+                # Rotation drops live sessions keyed by the old PSK only after the new config is on disk.
+                drop = (lambda: run(["wg", "set", args.interface, "peer", public, "remove"])) if args.action == "rotate" else None
+                apply(config, args.interface, updated, text, before_sync=drop)
             except Exception:
                 response.unlink(missing_ok=True); raise
     except Exception as error:

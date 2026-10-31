@@ -17,6 +17,7 @@ import {
   ROUTE_PRESETS,
   SAVED_PROFILES_KEY,
   exportProfile,
+  bytesPerSecToMbps,
   importProfile,
   parseActiveProfile,
   parseSavedProfiles,
@@ -240,7 +241,7 @@ function Index() {
     name: "read_workspace_status",
     description: "Read the open screen and, on Home only, the simulated tunnel status and current displayed speeds.",
     annotations: { readOnlyHint: true },
-    execute: () => runWebMCPTool("read_workspace_status", () => tab === "home" ? `Screen: home. Simulated connection: ${sim.status}. Download: ${sim.downSpeed.toFixed(2)} Mbps. Upload: ${sim.upSpeed.toFixed(2)} Mbps. This is not a real VPN.` : `Screen: ${tab}.`),
+    execute: () => runWebMCPTool("read_workspace_status", () => tab === "home" ? `Screen: home. Simulated connection: ${sim.status}. Download: ${bytesPerSecToMbps(sim.downSpeed).toFixed(2)} Mbps. Upload: ${bytesPerSecToMbps(sim.upSpeed).toFixed(2)} Mbps. This is not a real VPN.` : `Screen: ${tab}.`),
   });
 
   return (
