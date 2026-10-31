@@ -2,11 +2,13 @@ import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { BLUEPRINT_FILES } from "@/lib/android-blueprint";
+import { Button } from "@/components/ui/button";
 
 export function BlueprintTab() {
   const [active, setActive] = useState(0);
   const [copied, setCopied] = useState(false);
-  const file = BLUEPRINT_FILES[active] ?? BLUEPRINT_FILES[0]!;
+  const file = BLUEPRINT_FILES[active] ?? BLUEPRINT_FILES[0];
+  if (!file) return null;
 
   const copy = async () => {
     try {
@@ -22,38 +24,37 @@ export function BlueprintTab() {
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        Copy these into an Android Studio project with namespace{" "}
-        <code className="font-mono text-primary">com.example.advancedtunnel</code>. The{" "}
-        <code className="font-mono text-primary">relay-server.mjs</code> file runs on a server you own (VPS) and
-        forwards the traffic — the Android app cannot reach the internet without it.
+        Educational Android scaffolding, not a production-ready VPN. The Android TLS stream and the
+        WebSocket relay use different protocols and cannot connect to each other as supplied.
+        A compatible, authenticated packet tunnel and Android device testing are required before use.
       </p>
 
       <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
         {BLUEPRINT_FILES.map((f, i) => (
-          <button
+          <Button variant="ghost"
             key={f.name}
             type="button"
-            onClick={() => setActive(i)}
+            onClick={() => { setActive(i); setCopied(false); }}
             className={`shrink-0 rounded-lg px-3 py-1.5 font-mono text-xs transition-colors ${
               i === active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
             }`}
           >
             {f.name}
-          </button>
+          </Button>
         ))}
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border bg-background">
         <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
           <span className="truncate font-mono text-[11px] text-muted-foreground">{file.path}</span>
-          <button
+          <Button variant="secondary" size="sm"
             type="button"
             onClick={copy}
             className="flex shrink-0 items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground"
           >
             {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
             {copied ? "Copied" : "Copy"}
-          </button>
+          </Button>
         </div>
         <pre className="max-h-[28rem] overflow-auto p-3 font-mono text-[11px] leading-relaxed text-foreground">
           <code>{file.code}</code>

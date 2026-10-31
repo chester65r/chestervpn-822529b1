@@ -126,7 +126,8 @@ export function importProfile(code: string): TunnelProfile | null {
       !Number.isInteger(data?.port)
     )
       return null;
-    return { ip: data.ip, port: String(data.port), sni: data.sni, payload: data.payload };
+    const profile = { ip: data.ip, port: String(data.port), sni: data.sni, payload: data.payload };
+    return Object.keys(validateProfile(profile)).length === 0 ? profile : null;
   } catch {
     return null;
   }

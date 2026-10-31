@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Code2, Home, Server, Share2, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 
 import { HomeTab } from "@/components/tunnel/HomeTab";
 import { ConfigTab } from "@/components/tunnel/ConfigTab";
@@ -223,8 +224,8 @@ function Index() {
   const serverLabel = profile.ip ? `${profile.ip}:${profile.port || "443"}` : "No server configured";
 
   return (
-    <div className="flex min-h-screen justify-center bg-background sm:items-center sm:py-6">
-      <div className="flex h-screen w-full max-w-[420px] flex-col overflow-hidden bg-background sm:h-[min(860px,calc(100vh-3rem))] sm:rounded-[2rem] sm:border sm:border-border sm:shadow-card">
+    <div className="flex min-h-dvh justify-center bg-background sm:items-center sm:py-6">
+      <div className="flex h-dvh w-full max-w-[420px] flex-col overflow-hidden bg-background sm:h-[min(860px,calc(100dvh-3rem))] sm:rounded-[2rem] sm:border sm:border-border sm:shadow-card">
         <header className="flex items-center justify-between px-5 pb-2 pt-5">
           <div>
             <h1 className="text-lg font-bold tracking-tight">Tunnel Console</h1>
@@ -237,7 +238,7 @@ function Index() {
           />
         </header>
 
-        <main className="flex-1 overflow-y-auto px-5 pb-6 pt-2">
+        <main className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-2">
           {tab === "home" && (
             <HomeTab
               status={sim.status}
@@ -276,19 +277,20 @@ function Index() {
           {tab === "android" && <BlueprintTab />}
         </main>
 
-        <nav className="grid grid-cols-5 border-t border-border bg-card">
+        <nav aria-label="Workspace" className="grid shrink-0 grid-cols-5 border-t border-border bg-card">
           {TABS.map(({ id, label, icon: Icon }) => (
-            <button
+            <Button variant="ghost"
               key={id}
               type="button"
               onClick={() => setTab(id)}
-              className={`flex flex-col items-center gap-1 py-3 text-[11px] font-medium transition-colors ${
+              aria-current={tab === id ? "page" : undefined}
+              className={`flex h-auto flex-col items-center gap-1 rounded-none px-0 py-3 text-[11px] font-medium transition-colors ${
                 tab === id ? "text-primary" : "text-muted-foreground"
               }`}
             >
               <Icon className="h-5 w-5" />
               {label}
-            </button>
+            </Button>
           ))}
         </nav>
       </div>

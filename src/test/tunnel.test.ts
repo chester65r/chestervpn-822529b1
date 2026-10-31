@@ -70,6 +70,18 @@ describe("TUNNEL:// codes", () => {
     expect(importProfile("hello")).toBeNull();
     expect(importProfile("TUNNEL://!!!")).toBeNull();
   });
+
+  it("rejects imported ports outside 1-65535", () => {
+    const p = { ip: "vpn.example.com", port: "0", sni: "alpha.example.com", payload: "" };
+    expect(importProfile(exportProfile(p))).toBeNull();
+    expect(importProfile(exportProfile({ ...p, port: "65536" }))).toBeNull();
+  });
+
+  it("rejects imported profiles without valid server and SNI hosts", () => {
+    const p = { ip: "", port: "443", sni: "alpha.example.com", payload: "" };
+    expect(importProfile(exportProfile(p))).toBeNull();
+    expect(importProfile(exportProfile({ ...p, ip: "vpn.example.com", sni: "https://alpha.example.com" }))).toBeNull();
+  });
 });
 
 describe("saved profiles storage", () => {
