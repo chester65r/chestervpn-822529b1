@@ -7,4 +7,11 @@ fixtures="$(mktemp -d)"
 trap 'rm -rf "$fixtures"' EXIT
 bun "$here/generate-fixtures.ts" "$fixtures"
 cd "$here"
-WG_FIXTURES="$fixtures" go test -count=1 -v ./...
+if command -v go >/dev/null 2>&1; then
+  WG_FIXTURES="$fixtures" go test -count=1 -v ./...
+elif command -v nix >/dev/null 2>&1; then
+  WG_FIXTURES="$fixtures" nix shell nixpkgs#go --command go test -count=1 -v ./...
+else
+  echo "Go 1.24+ is required (or Nix to provide it)." >&2
+  exit 127
+fi
