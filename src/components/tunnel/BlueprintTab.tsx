@@ -25,9 +25,9 @@ export function BlueprintTab() {
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        Educational Android scaffolding, not a production-ready VPN. The Android TLS stream and the
-        WebSocket relay use different protocols and cannot connect to each other as supplied.
-        A compatible, authenticated packet tunnel and Android device testing are required before use.
+        The Android app and the server now both use WireGuard, an established VPN protocol, with
+        per-device keys. Their shared profile format passed local packet tests, but the Android app
+        has not been built or run on a phone yet, so it is not production-ready.
       </p>
 
       <AndroidChecklist />
