@@ -17,6 +17,17 @@ column header. Free-text notes are excluded to avoid copying embedded credential
 or tokens. The earlier dated snapshot is retained. This is not a live database
 mirror; later changes need a new export.
 
+## Recurring export
+
+The prepared `/api/public/database-backup` callback requires managed scheduled-job
+authentication and checks GitHub visibility before reading data. Its exports contain
+only record/owner UUIDs, port, a validated transport enum and timestamps. Names,
+hosts and notes are intentionally omitted because free text can contain secrets.
+This safe metadata snapshot is **not** a complete restorable server configuration.
+Daily UTC paths are idempotent; incomplete database reads fail without uploading.
+The route must be published before its daily schedule is enabled. GitHub reads
+are checked after each upload. No credentials are returned in callback responses.
+
 ## Exclusions and restoration
 
 This backup does not contain authentication accounts, passwords, sessions, access
