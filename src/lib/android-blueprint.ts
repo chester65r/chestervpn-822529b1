@@ -85,6 +85,8 @@ import com.wireguard.android.backend.Tunnel
 import com.wireguard.config.Config
 import com.wireguard.crypto.Key
 import java.io.ByteArrayInputStream
+import java.net.Inet4Address
+import java.net.Inet6Address
 import java.util.concurrent.Executors
 
 private class AppTunnel : Tunnel {
@@ -137,8 +139,8 @@ object TunnelController {
         require(iface.addresses.size == 1 && iface.addresses.first().mask == 32) { "Exactly one /32 address is required" }
         require(iface.dnsServers.isNotEmpty()) { "Tunnel DNS is required" }
         require(!iface.mtu.isPresent || iface.mtu.get() in 1280..1420) { "MTU must be 1280-1420" }
-        val routes = peer.allowedIps.map { it.toString() }.toSet()
-        require("0.0.0.0/0" in routes && "::/0" in routes) { "Full-tunnel routes 0.0.0.0/0 and ::/0 are required" }
+        require(peer.allowedIps.any { it.mask == 0 && it.address is Inet4Address } &&
+            peer.allowedIps.any { it.mask == 0 && it.address is Inet6Address }) { "Full-tunnel routes 0.0.0.0/0 and ::/0 are required" }
         return config
     }
 
