@@ -5,9 +5,9 @@ import { routeTree } from "@/routeTree.gen";
 import { sitemapStaticPaths, sitemapXML } from "@/lib/sitemap";
 
 describe("public sitemap", () => {
-  it("includes only the public homepage, excluding the sitemap endpoint", () => {
+  it("includes public content pages, excluding auth and server endpoints", () => {
     const router = createRouter({ routeTree, context: { queryClient: new QueryClient() } });
-    expect(sitemapStaticPaths(router)).toEqual(["/"]);
+    expect(sitemapStaticPaths(router)).toEqual(["/", "/connect"]);
   });
 
   it("uses the published origin without inventing a modification date", () => {
