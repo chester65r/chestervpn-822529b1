@@ -31,7 +31,7 @@ export const ANDROID_COMPATIBILITY_CHECKS: CompatibilityCheck[] = [
   },
   {
     id: "build", title: "Android build & device matrix", status: "unverified",
-    finding: "NOT RUN: a repeatable project generator, pinned JDK17/Gradle8.9/AGP8.7.3/Kotlin2.0.21 build workflow and explicit build/emulator/physical runner are supplied in android-workflow.md. This workspace has no JDK, Android SDK/emulator or attached device. API 26, 31, 33, 34 and newer builds/runs are unverified. Emulators can cover installation/consent and Keystore instrumentation; physical devices are required for hardware-backed key properties, Wi-Fi/mobile handoff, OEM restrictions and real-network behavior. The pinned WireGuard library's native ABIs were confirmed published but not loaded on Android.",
+    finding: "2026-10-31: generated Android project built with JDK 17.0.18, Gradle 8.9, AGP 8.7.3, Kotlin 2.0.21 and SDK 34. Debug, unsigned release, instrumentation APK compilation and debug lint passed (24 warnings, zero errors). API 34 x86_64 emulator setup and ADB detection succeeded without KVM, but full boot/installation did not complete: first install lacked the package service; retry timed out. No instrumentation or VPN runtime result passed. API 26, 31, 33 and newer runs remain NOT RUN. See native/android/verification-2026-10-31.md. Physical devices remain required for hardware-backed keys, Wi-Fi/mobile handoff, OEM restrictions and real-network behavior.",
     passCriteria: "Record clean debug and release builds with exact Gradle/JDK/AGP versions, and install/start/stop results on API 26, 31, 33, 34 and every newer version you support, including 16 KB page-size devices.",
   },
   {
@@ -93,7 +93,7 @@ export function androidChecklistMarkdown(): string {
   return [
     "# Android / server compatibility checklist",
     "",
-    `NOT PRODUCTION READY. ${counts.blocked} known blockers, ${counts.local} items with local engine tests only, ${counts.unverified} unverified. No native build or device run has been verified. Browser and local engine tests are not Android evidence.`,
+    `NOT PRODUCTION READY. ${counts.blocked} known blockers, ${counts.local} items with local engine tests only, ${counts.unverified} unverified. Native debug/unsigned release/test APK builds and lint passed on 2026-10-31; emulator runtime was blocked before instrumentation. No Android device test has passed. Browser and local engine tests are not Android evidence.`,
     `Reproduce local packet evidence: ${INTEROP_COMMAND}`,
     "",
     "## Test record",
