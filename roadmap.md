@@ -1,5 +1,8 @@
 # Roadmap
 
+- [ ] Run the repeatable native Android build and API 34 emulator checks; record actual results separately from physical-device requirements.
+- [ ] Connect/create GitHub repository and sync project source: requires the project owner's Git connection in Lovable Settings; database data and standalone Project Files require separate exports.
+
 - [x] Native authentication implementation: local device identity, Keystore-wrapped credentials, public-only enrollment, pinned server identity and root-only revoke/rotation tool; 7 real local WireGuard packet tests and mocked server administration test pass. Native instrumentation supplied, NOT RUN.
 - [x] Repeatable Android build/device workflow: project generator, pinned toolchain/checksum, explicit build/emulator/physical runner and API matrix/manual evidence record supplied; Android execution remains unavailable here.
 
