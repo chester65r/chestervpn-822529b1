@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"golang.org/x/net/dns/dnsmessage"
-	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun/netstack"
 )
@@ -119,7 +118,7 @@ func up(t *testing.T, name string, listenPort int, endpoint string) peer {
 			fmt.Fprintf(&uapi, "allowed_ip=%s\n", strings.TrimSpace(cidr))
 		}
 	}
-	dev := device.NewDevice(tunDev, conn.NewDefaultBind(), device.NewLogger(device.LogLevelError, name+": "))
+	dev := device.NewDevice(tunDev, &loopbackBind{}, device.NewLogger(device.LogLevelError, name+": "))
 	if err := dev.IpcSet(uapi.String()); err != nil {
 		t.Fatal(err)
 	}
