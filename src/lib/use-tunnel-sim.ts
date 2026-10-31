@@ -38,7 +38,7 @@ export function useTunnelSim() {
         };
       }
       const step = (arr: number[], goal: number) => {
-        const last = arr[arr.length - 1];
+        const last = arr[arr.length - 1] ?? 0;
         const next = Math.max(0, last + (goal - last) * 0.35 + (Math.random() - 0.5) * goal * 0.25);
         return [...arr.slice(1), next];
       };
@@ -46,12 +46,12 @@ export function useTunnelSim() {
       let u = 0;
       setDown((prev) => {
         const n = step(prev, target.current.down);
-        d = n[n.length - 1];
+        d = n[n.length - 1] ?? 0;
         return n;
       });
       setUp((prev) => {
         const n = step(prev, target.current.up);
-        u = n[n.length - 1];
+        u = n[n.length - 1] ?? 0;
         return n;
       });
       setTotals((t) => ({ rx: t.rx + d * 0.5, tx: t.tx + u * 0.5 }));
@@ -73,7 +73,7 @@ export function useTunnelSim() {
     totals,
     connect,
     disconnect,
-    downSpeed: down[down.length - 1],
-    upSpeed: up[up.length - 1],
+    downSpeed: down[down.length - 1] ?? 0,
+    upSpeed: up[up.length - 1] ?? 0,
   };
 }
