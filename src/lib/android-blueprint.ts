@@ -592,11 +592,13 @@ const layout = String.raw`<?xml version="1.0" encoding="utf-8"?>
     </LinearLayout>
 </ScrollView>`;
 
-const relay = String.raw`// relay-server.mjs — WebSocket → TCP relay for Tunnel Console / Advanced Tunnel
+const relay = String.raw`// relay-server.mjs — Educational WebSocket → TCP relay
 //
 // Run this on a server YOU own (e.g. a VPS). It accepts WebSocket connections
-// and forwards the byte stream to the target the client asks for, so the
-// Android blueprint (or any WebSocket client) can reach TCP services through it.
+// and forwards a byte stream for a compatible WebSocket client. This is NOT
+// compatible with the raw TLS Android blueprint and does not forward TUN packets.
+// Do not expose this sample publicly without client authentication, connection
+// limits, timeouts and backpressure handling. It is not a production VPN server.
 //
 // Setup:
 //   1. Install Node.js 18+ on your server

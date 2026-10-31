@@ -12,3 +12,5 @@
 ## Project rules
 - Tunnel logic (payload macros, validation, TUNNEL:// codes) lives in pure functions in `src/lib/tunnel.ts` with tests in `src/test/tunnel.test.ts`; UI components only call them — keeps rules testable.
 - Connection/bandwidth is a client-side visual simulation (`src/lib/use-tunnel-sim.ts`); a browser cannot open a real VPN.
+- Restore browser profiles only after hydration, validate their stored shape, and guard storage writes so blocked or corrupt storage cannot crash the workspace.
+- Android and relay snippets are educational scaffolding, not an interoperable production VPN; retain explicit protocol limitations until device-tested interoperability exists.

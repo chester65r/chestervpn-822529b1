@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Code2, Home, Server, Share2, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 
 import { HomeTab } from "@/components/tunnel/HomeTab";
 import { ConfigTab } from "@/components/tunnel/ConfigTab";
@@ -15,6 +16,7 @@ import {
   SAVED_PROFILES_KEY,
   exportProfile,
   importProfile,
+  parseActiveProfile,
   parseSavedProfiles,
   serializeSavedProfiles,
   validateProfile,
@@ -63,33 +65,50 @@ function Index() {
   const [errors, setErrors] = useState<ProfileErrors>({});
   const [exported, setExported] = useState<string | null>(null);
   const [saved, setSaved] = useState<SavedProfile[]>([]);
-  const loaded = useRef(false);
+  const [loaded, setLoaded] = useState(false);
   const sim = useTunnelSim();
 
   useEffect(() => {
     try {
-      const savedRaw = localStorage.getItem(STORAGE_KEY);
-      if (savedRaw) {
-        const parsed = JSON.parse(savedRaw);
-        setProfile({ ...EMPTY_PROFILE, ...parsed.profile });
-        setPresetId(parsed.presetId ?? "custom");
-      }
+      const restored = parseActiveProfile(localStorage.getItem(STORAGE_KEY));
+      setProfile(restored.profile);
+      setPresetId(restored.presetId);
+    } catch {
+      /* Storage may be blocked; the dashboard still works in memory. */
+    }
+    try {
       setSaved(parseSavedProfiles(localStorage.getItem(SAVED_PROFILES_KEY)));
     } catch {
       /* ignore corrupt storage */
     }
-    loaded.current = true;
+    setLoaded(true);
   }, []);
 
   useEffect(() => {
-    if (!loaded.current) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ profile, presetId }));
-  }, [profile, presetId]);
+    if (!loaded) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ profile, presetId }));
+    } catch {
+      toast.error("Changes can't be stored on this device", { description: "Export your profile to keep a copy." });
+    }
+  }, [loaded, profile, presetId]);
 
   useEffect(() => {
-    if (!loaded.current) return;
-    localStorage.setItem(SAVED_PROFILES_KEY, serializeSavedProfiles(saved));
-  }, [saved]);
+    if (!loaded) return;
+    try {
+      localStorage.setItem(SAVED_PROFILES_KEY, serializeSavedProfiles(saved));
+    } catch {
+      toast.error("Saved profiles can't be stored on this device", { description: "Export your profile to keep a copy." });
+    }
+  }, [loaded, saved]);
+
+  useEffect(() => setExported(null), [profile]);
+
+  const canEdit = () => {
+    if (sim.status === "disconnected") return true;
+    toast.error("Disconnect before changing the configuration");
+    return false;
+  };
 
   const change = (patch: Partial<TunnelProfile>) => {
     setProfile((p) => ({ ...p, ...patch }));
@@ -147,6 +166,7 @@ function Index() {
   };
 
   const doImport = (code: string) => {
+    if (!canEdit()) return false;
     const imported = importProfile(code);
     if (!imported) {
       toast.error("Invalid profile code");
@@ -176,6 +196,7 @@ function Index() {
   };
 
   const loadSaved = (id: string) => {
+    if (!canEdit()) return;
     const entry = saved.find((s) => s.id === id);
     if (!entry) return;
     setProfile(entry.profile);
@@ -192,7 +213,8 @@ function Index() {
   };
 
   const useServer = (host: string, port: number) => {
-    setProfile((p) => ({ ...p, ip: host, port: String(port) }));
+    if (!canEdit()) return;
+    setProfile((p) => ({ ...p, ip: host, port: String(port), sni: host }));
     setPresetId("custom");
     setErrors({});
     toast.success("Server applied to Configure");
@@ -202,8 +224,8 @@ function Index() {
   const serverLabel = profile.ip ? `${profile.ip}:${profile.port || "443"}` : "No server configured";
 
   return (
-    <div className="flex min-h-screen justify-center bg-background sm:items-center sm:py-6">
-      <div className="flex h-screen w-full max-w-[420px] flex-col overflow-hidden bg-background sm:h-[min(860px,calc(100vh-3rem))] sm:rounded-[2rem] sm:border sm:border-border sm:shadow-card">
+    <div className="flex min-h-dvh justify-center bg-background sm:items-center sm:py-6">
+      <div className="flex h-dvh w-full max-w-[420px] flex-col overflow-hidden bg-background sm:h-[min(860px,calc(100dvh-3rem))] sm:rounded-[2rem] sm:border sm:border-border sm:shadow-card">
         <header className="flex items-center justify-between px-5 pb-2 pt-5">
           <div>
             <h1 className="text-lg font-bold tracking-tight">Tunnel Console</h1>
@@ -216,7 +238,7 @@ function Index() {
           />
         </header>
 
-        <main className="flex-1 overflow-y-auto px-5 pb-6 pt-2">
+        <main className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-2">
           {tab === "home" && (
             <HomeTab
               status={sim.status}
@@ -255,19 +277,20 @@ function Index() {
           {tab === "android" && <BlueprintTab />}
         </main>
 
-        <nav className="grid grid-cols-5 border-t border-border bg-card">
+        <nav aria-label="Workspace" className="grid shrink-0 grid-cols-5 border-t border-border bg-card">
           {TABS.map(({ id, label, icon: Icon }) => (
-            <button
+            <Button variant="ghost"
               key={id}
               type="button"
               onClick={() => setTab(id)}
-              className={`flex flex-col items-center gap-1 py-3 text-[11px] font-medium transition-colors ${
+              aria-current={tab === id ? "page" : undefined}
+              className={`flex h-auto flex-col items-center gap-1 rounded-none px-0 py-3 text-[11px] font-medium transition-colors ${
                 tab === id ? "text-primary" : "text-muted-foreground"
               }`}
             >
               <Icon className="h-5 w-5" />
               {label}
-            </button>
+            </Button>
           ))}
         </nav>
       </div>

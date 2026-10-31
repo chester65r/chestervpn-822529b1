@@ -23,6 +23,27 @@ export const DEFAULT_PAYLOAD_TEMPLATE =
 
 export const EMPTY_PROFILE: TunnelProfile = { ip: "", port: "443", sni: "", payload: "" };
 
+function isTunnelProfile(value: unknown): value is TunnelProfile {
+  if (typeof value !== "object" || value === null) return false;
+  const p = value as Partial<TunnelProfile>;
+  return typeof p.ip === "string" && typeof p.port === "string" &&
+    typeof p.sni === "string" && typeof p.payload === "string";
+}
+
+/** Restore only typed fields; a corrupted draft must never crash the dashboard. */
+export function parseActiveProfile(json: string | null): { profile: TunnelProfile; presetId: string } {
+  const fallback = { profile: EMPTY_PROFILE, presetId: "custom" };
+  if (!json) return fallback;
+  try {
+    const data = JSON.parse(json);
+    if (!isTunnelProfile(data?.profile)) return fallback;
+    const preset = ROUTE_PRESETS.find((p) => p.id === data.presetId && p.sni === data.profile.sni);
+    return { profile: data.profile, presetId: preset?.id ?? "custom" };
+  } catch {
+    return fallback;
+  }
+}
+
 export const PROFILE_PREFIX = "TUNNEL://";
 
 /** Expands [host] / [crlf] macros into the raw handshake text sent after the TLS handshake. */
@@ -105,7 +126,8 @@ export function importProfile(code: string): TunnelProfile | null {
       !Number.isInteger(data?.port)
     )
       return null;
-    return { ip: data.ip, port: String(data.port), sni: data.sni, payload: data.payload };
+    const profile = { ip: data.ip, port: String(data.port), sni: data.sni, payload: data.payload };
+    return Object.keys(validateProfile(profile)).length === 0 ? profile : null;
   } catch {
     return null;
   }
