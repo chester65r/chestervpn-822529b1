@@ -300,27 +300,12 @@ func TestWrongPresharedKeyIsRejected(t *testing.T) {
 }
 
 func TestClientCannotSpoofAnotherTunnelAddress(t *testing.T) {
-	server, _ := pair(t, "client.conf")
-	// The spoof config uses the authorized key but claims a different source address.
-	spoof := up(t, "spoof.conf", 0, serverEndpoint(t, server))
+	// Authorized key, but a source address outside that peer's server-side AllowedIPs.
+	server, spoof := pair(t, "spoof.conf")
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	if c, err := spoof.net.DialContextTCPAddrPort(ctx, netip.AddrPortFrom(server.addr, 7000)); err == nil {
 		c.Close()
 		t.Fatal("server accepted packets from an address outside the peer's AllowedIPs")
 	}
-}
-
-func serverEndpoint(t *testing.T, server peer) string {
-	state, err := server.dev.IpcGet()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, line := range strings.Split(state, "\n") {
-		if v, ok := strings.CutPrefix(line, "listen_port="); ok {
-			return "127.0.0.1:" + v
-		}
-	}
-	t.Fatal("server listen port unavailable")
-	return ""
 }
