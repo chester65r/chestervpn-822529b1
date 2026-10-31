@@ -26,6 +26,7 @@ import {
 } from "@/lib/tunnel";
 
 export const Route = createFileRoute("/")({
+  staticData: { sitemap: true },
   head: () => ({
     meta: [
       { title: "Tunnel Console — VPN dashboard & Android blueprint" },

@@ -1,0 +1,23 @@
+import { QueryClient } from "@tanstack/react-query";
+import { createRouter } from "@tanstack/react-router";
+import { describe, expect, it } from "vitest";
+import { routeTree } from "@/routeTree.gen";
+import { sitemapStaticPaths, sitemapXML } from "@/lib/sitemap";
+
+describe("public sitemap", () => {
+  it("includes only the public homepage, excluding the sitemap endpoint", () => {
+    const router = createRouter({ routeTree, context: { queryClient: new QueryClient() } });
+    expect(sitemapStaticPaths(router)).toEqual(["/"]);
+  });
+
+  it("uses the published origin without inventing a modification date", () => {
+    const xml = sitemapXML("https://tunnel-guardian-compass.lovable.app", [{ path: "/" }]);
+    expect(xml).toContain("<loc>https://tunnel-guardian-compass.lovable.app/</loc>");
+    expect(xml).not.toContain("<lastmod>");
+  });
+
+  it("rejects offsite and traversal paths", () => {
+    expect(() => sitemapXML("https://tunnel-guardian-compass.lovable.app", [{ path: "//example.com" }])).toThrow();
+    expect(() => sitemapXML("https://tunnel-guardian-compass.lovable.app", [{ path: "/../private" }])).toThrow();
+  });
+});
