@@ -111,6 +111,44 @@ export function importProfile(code: string): TunnelProfile | null {
   }
 }
 
+export type SavedProfile = {
+  id: string;
+  name: string;
+  presetId: string;
+  profile: TunnelProfile;
+  savedAt: number;
+};
+
+export const SAVED_PROFILES_KEY = "tunnel-console-saved-profiles";
+
+export function serializeSavedProfiles(list: SavedProfile[]): string {
+  return JSON.stringify(list);
+}
+
+/** Parses the stored saved-profiles list, dropping anything malformed. */
+export function parseSavedProfiles(json: string | null): SavedProfile[] {
+  if (!json) return [];
+  try {
+    const data: unknown = JSON.parse(json);
+    if (!Array.isArray(data)) return [];
+    return data.filter(
+      (item): item is SavedProfile =>
+        typeof item?.id === "string" &&
+        typeof item?.name === "string" &&
+        typeof item?.presetId === "string" &&
+        typeof item?.savedAt === "number" &&
+        typeof item?.profile === "object" &&
+        item.profile !== null &&
+        typeof (item.profile as TunnelProfile).ip === "string" &&
+        typeof (item.profile as TunnelProfile).port === "string" &&
+        typeof (item.profile as TunnelProfile).sni === "string" &&
+        typeof (item.profile as TunnelProfile).payload === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
 export function formatSpeed(bytesPerSec: number): string {
   if (bytesPerSec >= 1024 * 1024) return `${(bytesPerSec / 1024 / 1024).toFixed(2)} MB/s`;
   return `${(bytesPerSec / 1024).toFixed(2)} KB/s`;
