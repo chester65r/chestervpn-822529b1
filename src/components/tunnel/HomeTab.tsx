@@ -1,4 +1,8 @@
-import { ArrowDown, ArrowUp, Clock, Power, ShieldCheck } from "lucide-react";
+import { useState } from "react";
+import { ArrowDown, ArrowUp, Clock, Power, ShieldCheck, Sparkles } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { Button } from "@/components/ui/button";
+import { explainConnection, type ConnectionDiagnostics } from "@/lib/connection-help.functions";
 import { SpeedGraph } from "./SpeedGraph";
 import { formatBytes, formatDuration, formatSpeed } from "@/lib/tunnel";
 import type { TunnelStatus } from "@/lib/use-tunnel-sim";
@@ -13,6 +17,7 @@ type Props = {
   totals: { rx: number; tx: number };
   serverLabel: string;
   onToggle: () => void;
+  getDiagnostics: () => ConnectionDiagnostics;
 };
 
 const STATUS_COPY: Record<TunnelStatus, string> = {
@@ -31,7 +36,22 @@ export function HomeTab({
   totals,
   serverLabel,
   onToggle,
+  getDiagnostics,
 }: Props) {
+  const explain = useServerFn(explainConnection);
+  const [help, setHelp] = useState<{ text?: string; error?: string } | null>(null);
+  const [asking, setAsking] = useState(false);
+  const ask = async () => {
+    setAsking(true);
+    setHelp(null);
+    try {
+      setHelp(await explain({ data: getDiagnostics() }));
+    } catch {
+      setHelp({ error: "The AI helper couldn't answer right now." });
+    } finally {
+      setAsking(false);
+    }
+  };
   const on = status === "connected";
   const busy = status === "connecting";
 
@@ -106,6 +126,22 @@ export function HomeTab({
         <Power className="h-5 w-5" />
         {busy ? "CONNECTING…" : on ? "DISCONNECT" : "CONNECT"}
       </button>
+
+      <section className="rounded-2xl border border-border bg-card p-4" aria-live="polite">
+        <div className="flex items-center justify-between gap-3">
+          <p className="flex items-center gap-1.5 text-xs font-medium tracking-wider text-muted-foreground">
+            <Sparkles className="h-3.5 w-3.5 text-primary" /> AI CONNECTION HELPER
+          </p>
+          <Button size="sm" variant="secondary" onClick={ask} disabled={asking}>
+            {asking ? "Checking…" : "Explain my connection"}
+          </Button>
+        </div>
+        {help?.text && <p className="mt-3 whitespace-pre-line text-sm text-foreground">{help.text}</p>}
+        {help?.error && <p className="mt-3 text-sm text-destructive">{help.error}</p>}
+        {!help && !asking && (
+          <p className="mt-2 text-xs text-muted-foreground">Reads this screen's status and your settings to explain any problem.</p>
+        )}
+      </section>
     </div>
   );
 }

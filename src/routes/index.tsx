@@ -146,14 +146,34 @@ function Index() {
     return true;
   };
 
+  const [lastEvent, setLastEvent] = useState("No connection attempt yet");
   const toggle = () => {
     if (sim.status === "connected") {
       sim.disconnect();
+      setLastEvent("User disconnected the tunnel");
       toast("Tunnel disconnected");
     } else if (checkProfile()) {
+      setLastEvent("Connect started");
       sim.connect();
+    } else {
+      setLastEvent("Connect blocked: profile failed validation");
     }
   };
+  const getDiagnostics = () => ({
+    status: sim.status,
+    serverConfigured: !!profile.ip.trim(),
+    port: profile.port.slice(0, 10),
+    sniSet: !!profile.sni.trim(),
+    payloadSet: !!profile.payload.trim(),
+    profileErrors: Object.fromEntries(
+      Object.entries(validateProfile(profile)).map(([k, v]) => [k, String(v).slice(0, 200)]),
+    ),
+    browserOnline: typeof navigator === "undefined" ? true : navigator.onLine,
+    sessionSeconds: sim.seconds,
+    downloadMbps: bytesPerSecToMbps(sim.downSpeed),
+    uploadMbps: bytesPerSecToMbps(sim.upSpeed),
+    lastEvent,
+  });
 
   const doExport = async () => {
     if (!checkProfile()) return;
@@ -272,6 +292,7 @@ function Index() {
               totals={sim.totals}
               serverLabel={serverLabel}
               onToggle={toggle}
+              getDiagnostics={getDiagnostics}
             />
           )}
           {tab === "config" && (
