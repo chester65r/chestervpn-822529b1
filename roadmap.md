@@ -38,4 +38,4 @@
 
 - [x] Deep review fixes: fail-closed Android tunnel state, credential locks, full-tunnel profile checks, transactional server peer changes, server-local firewall isolation persisted on boot, account-scoped server list loading, correct Mbps units, Go launcher fallback; 49 app tests + 7 packet tests pass. Android device/deployed-server verification still blocked (no toolchain/devices).
 
-- [ ] AI helper explaining connection errors (Gemini via AI Gateway)
+- [x] AI helper explaining connection errors (Gemini via AI Gateway)
