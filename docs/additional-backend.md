@@ -33,6 +33,15 @@ Selected project: **bolt-native-database-72536136**.
 
 ## Not enabled
 
-Private reads/writes, schema creation, account linkage and real monitoring are not implemented. The MCP connection grants development inspection only, not runtime access to private app records. A Cloud token must not be treated as an external-project token, nor may email alone link account ownership.
+Private reads/writes, schema creation, account linkage and real monitoring remain disabled. The MCP connection grants development access only, not runtime access to private app records. A Cloud token must not be treated as an external-project token, nor may email alone link account ownership.
+
+## Ownership and permission preparation — 2026-11-01
+
+- Live inventory: zero external users, confirmed users, tables, policies or buckets. Security advisor returned no findings; an empty schema is not evidence of owner isolation.
+- Servers now includes a separate additional-account email/code verification form. It uses an in-memory auth-only client, requests verification directly from external Auth and validates the confirmed, non-anonymous identity with a live `getUser()` call. No Cloud session is reused, no account is linked by email, and successful authentication does not unlock private features.
+- Owner-only DDL is prepared in `docs/additional-backend-permissions.sql`; files policies are prepared in `docs/additional-backend-storage.sql`. All new tables have grants and RLS, require external `auth.uid()` ownership plus confirmed identity, and exclude hosts, payloads, free-text secrets and credentials. Monitoring is browser read/delete only; collector writes require a separately verified server.
+- **Not applied:** required managed migration and Storage tools cannot target the external project. Calling them would change Cloud, contrary to the request. No SQL bucket writes or alternate migration path were used.
+- **Still unverified:** external signup/mail delivery configuration, real owner email confirmation, two-account own/cross-account/anonymous access tests, private file upload/download/deletion and collector authorization. Do not describe these as passing or enable features until tested against live externally targeted permissions.
+- Tests cover auth-only request isolation, write blocking, unconfirmed/anonymous identity rejection and live identity lookup. Owner must complete email confirmation in the Servers screen; never paste passwords or tokens into chat.
 
 The built-in external-database attachment cannot be added to this Cloud-connected project. A separately configured integration can coexist with Cloud; it does not replace Cloud or host a WireGuard packet engine.
