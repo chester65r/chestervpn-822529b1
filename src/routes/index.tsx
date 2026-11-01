@@ -10,6 +10,7 @@ import { HomeTab } from "@/components/tunnel/HomeTab";
 import { ConfigTab } from "@/components/tunnel/ConfigTab";
 import { ShareTab } from "@/components/tunnel/ShareTab";
 import { ServersTab } from "@/components/tunnel/ServersTab";
+import { AdditionalAccount } from "@/components/tunnel/AdditionalAccount";
 import { useTunnelSim } from "@/lib/use-tunnel-sim";
 import {
   EMPTY_PROFILE,
@@ -305,7 +306,7 @@ function Index() {
               onChange={change}
             />
           )}
-          {tab === "servers" && <ServersTab onUseServer={useServer} />}
+          {tab === "servers" && <><AdditionalAccount /><ServersTab onUseServer={useServer} /></>}
           {tab === "share" && (
             <ShareTab
               exportedCode={exported}
