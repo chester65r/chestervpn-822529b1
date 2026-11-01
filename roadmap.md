@@ -1,6 +1,6 @@
 # Roadmap
 
-- [ ] Complete real Android emulator WireGuard connection (2026-11-01): fresh checksum-verified API 26 tools/image installed, software emulator started and ADB detected. No KVM/VMX/SVM; full boot not confirmed. Real owned reachable WireGuard server and native handshake/TCP/UDP/DNS evidence still required. Browser cannot become a native VPN. Runner now requires full boot and bounds install/instrumentation; mock regression tests are not native evidence.
+- [ ] Complete real Android emulator WireGuard connection (2026-11-01): fresh native build/lint PASS; checksum-verified API 26 software emulator FULL BOOT PASS. Debug APK installation exceeded 180 seconds without success; instrumentation/real handshake/TCP/UDP/DNS NOT RUN. Blockers: no KVM/VMX/SVM and no owned reachable deployed WireGuard server. Runner full-boot/install/instrumentation guards tested (3 mocked tests); report native/android/verification-2026-11-01.md. Browser remains simulated; emulator stopped.
 
 - [x] Combine both services in the app presentation after user chose Keep both services (2026-11-01): Servers shows service allocation and Cloud relay account controls separately from additional verification, with an external settings recheck. No accounts/data merged or backend changes. External features remain blocked by confirmation, owner permissions and real collector prerequisites listed below.
 
