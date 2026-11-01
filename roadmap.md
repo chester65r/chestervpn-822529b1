@@ -1,5 +1,7 @@
 # Roadmap
 
+- [x] Combine both services in the app presentation after user chose Keep both services (2026-11-01): Servers shows service allocation and Cloud relay account controls separately from additional verification, with an external settings recheck. No accounts/data merged or backend changes. External features remain blocked by confirmation, owner permissions and real collector prerequisites listed below.
+
 - [ ] Complete external email verification/account ownership (2026-11-01): live auth settings show auto-confirm enabled and zero accounts. Verification now fails closed until external manual confirmation is enabled; OTP + matching live identity and duplicate-submission guards added. Blocked by external auth configuration/template access and owner mailbox confirmation; Cloud untouched. Mock tests do not count as live email proof.
 
 - [ ] Enable secure external profile save/retrieve and apply owner-only permissions (2026-11-01): blocked by the required migration tool having no external-project target. Do not apply external schema to Cloud or enable writes without live owner/cross-account/anonymous tests. External MCP write access does not remove this tool-targeting restriction.

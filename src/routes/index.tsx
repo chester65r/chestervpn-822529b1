@@ -11,6 +11,7 @@ import { ConfigTab } from "@/components/tunnel/ConfigTab";
 import { ShareTab } from "@/components/tunnel/ShareTab";
 import { ServersTab } from "@/components/tunnel/ServersTab";
 import { AdditionalAccount } from "@/components/tunnel/AdditionalAccount";
+import { ServiceOverview } from "@/components/tunnel/ServiceOverview";
 import { useTunnelSim } from "@/lib/use-tunnel-sim";
 import {
   EMPTY_PROFILE,
@@ -306,7 +307,7 @@ function Index() {
               onChange={change}
             />
           )}
-          {tab === "servers" && <><AdditionalAccount /><ServersTab onUseServer={useServer} /></>}
+          {tab === "servers" && <><ServiceOverview /><AdditionalAccount /><h2 className="mb-3 text-sm font-semibold">Cloud relay servers</h2><ServersTab onUseServer={useServer} /></>}
           {tab === "share" && (
             <ShareTab
               exportedCode={exported}
