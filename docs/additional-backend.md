@@ -8,6 +8,7 @@ Selected project: **bolt-native-database-72536136**.
 - The selected project is active and healthy. Its public schema currently has no tables or policies.
 - A separate app reader is configured with its public URL and publishable key. It does not persist sessions, process login callbacks, forward Cloud bearer tokens, or permit writes.
 - Isolation tests pass; the Data API schema endpoint rejects anonymous schema inspection (401, secret key required). This is not permission to add a secret key or enable private features; a table read is checked separately.
+- A live read using the public key reaches PostgREST and returns PGRST205/404 for the absent `tunnel_connection_status` table. Connectivity is confirmed, not successful data retrieval.
 - The managed Cloud client, accounts, relay server records, AI helper and backups remain unchanged.
 
 ## Feature suitability
