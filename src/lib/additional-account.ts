@@ -1,6 +1,29 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { additionalBackend } from './additional-backend';
 
+/** Fail closed: an automatically confirmed signup is not mailbox ownership proof. */
+export async function checkAdditionalEmailVerification() {
+  const response = await fetch(`${additionalBackend.url}/auth/v1/settings`, {
+    headers: { apikey: additionalBackend.publishableKey },
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error('Additional email settings could not be checked.');
+  const settings = await response.json();
+  if (settings.external?.email !== true || settings.mailer_autoconfirm !== false || settings.disable_signup !== false) {
+    throw new Error('Additional email confirmation must be enabled before verification can continue.');
+  }
+}
+
+/** Only a successful mailbox challenge followed by a matching live identity is proof. */
+export async function confirmAdditionalEmailCode(client: SupabaseClient, email: string, code: string) {
+  await checkAdditionalEmailVerification();
+  const { data, error } = await client.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'email' });
+  if (error || !data.user || !data.session) throw new Error('Email confirmation failed.');
+  const account = await verifyAdditionalAccount(client);
+  if (account.id !== data.user.id) throw new Error('Account identity changed during verification.');
+  return account;
+}
+
 /** Authentication only: never grants feature access or accepts a Cloud session. */
 export function createAdditionalAccountClient() {
   return createClient(additionalBackend.url, additionalBackend.publishableKey, {

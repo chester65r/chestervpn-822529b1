@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { KeyRound, Loader2, LogOut, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { createAdditionalAccountClient, verifyAdditionalAccount } from '@/lib/additional-account';
+import { checkAdditionalEmailVerification, confirmAdditionalEmailCode, createAdditionalAccountClient } from '@/lib/additional-account';
 
 export function AdditionalAccount() {
   const client = useRef<ReturnType<typeof createAdditionalAccountClient> | null>(null);
@@ -11,30 +11,44 @@ export function AdditionalAccount() {
   const [busy, setBusy] = useState(false);
   const [verified, setVerified] = useState(false);
   const [message, setMessage] = useState('');
+  const [ready, setReady] = useState(false);
+  const inFlight = useRef(false);
   const generation = useRef(0);
   useEffect(() => {
     client.current = createAdditionalAccountClient();
-    return () => { generation.current++; client.current = null; };
+    let active = true;
+    checkAdditionalEmailVerification().then(() => {
+      if (active) setReady(true);
+    }).catch(() => {
+      if (active) setMessage('Additional email confirmation is not safely configured. Verification is paused.');
+    });
+    return () => {
+      active = false; generation.current++;
+      const previous = client.current;
+      client.current = null;
+      void previous?.auth.signOut({ scope: 'local' }).catch(() => {});
+    };
   }, []);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const accountClient = client.current;
-    if (!accountClient) return;
+    if (!accountClient || !ready || inFlight.current) return;
+    inFlight.current = true;
     const current = ++generation.current;
     setBusy(true);
     setMessage('');
     try {
       if (!sent) {
+        await checkAdditionalEmailVerification();
+        if (current !== generation.current) return;
         const { error } = await accountClient.auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: true } });
         if (error) throw error;
         if (current !== generation.current) return;
         setSent(true);
         setMessage('Check your email for the confirmation code.');
       } else {
-        const { error } = await accountClient.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'email' });
-        if (error) throw error;
-        const account = await verifyAdditionalAccount(accountClient);
+        const account = await confirmAdditionalEmailCode(accountClient, email, code);
         if (current !== generation.current) return;
         setEmail(account.email);
         setCode('');
@@ -44,16 +58,17 @@ export function AdditionalAccount() {
     } catch {
       if (current === generation.current) setMessage('Verification could not complete. Check your email and code, or request a new code.');
     } finally {
-      if (current === generation.current) setBusy(false);
+      if (current === generation.current) { setBusy(false); inFlight.current = false; }
     }
   }
 
   async function reset() {
+    if (inFlight.current) return;
     generation.current++;
     const accountClient = client.current;
     client.current = createAdditionalAccountClient();
     setVerified(false); setSent(false); setCode(''); setMessage(''); setBusy(false);
-    await accountClient?.auth.signOut({ scope: 'local' });
+    await accountClient?.auth.signOut({ scope: 'local' }).catch(() => {});
   }
 
   return <section className="mb-6 space-y-3 border-b border-border pb-5" aria-label="Additional account">
@@ -63,7 +78,7 @@ export function AdditionalAccount() {
       <form onSubmit={submit} className="space-y-3">
         <label className="block text-xs text-muted-foreground">Additional account email<input required type="email" autoComplete="email" value={email} disabled={sent || busy} onChange={event => setEmail(event.target.value)} className="mt-1 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm text-foreground" /></label>
         {sent && <label className="block text-xs text-muted-foreground">Email confirmation code<input required autoComplete="one-time-code" value={code} disabled={busy} onChange={event => setCode(event.target.value)} className="mt-1 w-full rounded-md border border-input bg-muted px-3 py-2 font-mono text-sm text-foreground" /></label>}
-        <div className="flex flex-wrap gap-2"><Button type="submit" size="sm" disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <KeyRound />}{sent ? 'Verify account' : 'Send confirmation'}</Button>{sent && <Button variant="ghost" size="sm" type="button" disabled={busy} onClick={reset}>Start again</Button>}</div>
+        <div className="flex flex-wrap gap-2"><Button type="submit" size="sm" disabled={busy || !ready}>{busy ? <Loader2 className="animate-spin" /> : <KeyRound />}{sent ? 'Verify account' : 'Send confirmation'}</Button>{sent && <Button variant="ghost" size="sm" type="button" disabled={busy} onClick={reset}>Start again</Button>}</div>
       </form>}
     {message && <p role="status" className="text-xs text-muted-foreground">{message}</p>}
     <ul className="grid grid-cols-2 gap-2 text-xs text-muted-foreground"><li>Profile sync · Locked</li><li>Monitoring · Locked</li><li>History · Locked</li><li>Files · Locked</li></ul>

@@ -11,7 +11,7 @@
 
 ## Project rules
 - Keep the optional additional backend isolated and read-only until separately verified account ownership and private storage policies exist; never reuse Cloud sessions or alter the managed client to connect it.
-- Additional account verification uses a separate in-memory auth-only client and a live confirmed-user lookup; it never links by email or unlocks data access without independent permission tests.
+- Additional account verification uses a separate in-memory auth-only client, fails closed on automatic/unreadable email confirmation settings, and requires successful email OTP plus matching live identity; it never links by email or unlocks data access without independent permission tests.
 - Connection instructions use the hydrated deployment origin for MCP URLs and a shared tested helper for safe Claude Code command quoting and server names; keep the guide separate from MCP server implementation.
 - Remote MCP tools live in `src/lib/mcp/`, require verified OAuth client tokens, and access account records through caller-scoped RLS; browser tools remain in their owning screens and never expose credentials or commit consequential actions.
 - OAuth login returns use one canonical same-origin path validator; preserve consent parameters through sign-in and email confirmation, and exclude authorization pages from the sitemap.
