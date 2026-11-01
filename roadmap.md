@@ -1,5 +1,7 @@
 # Roadmap
 
+- [ ] Configure an owned reachable WireGuard server and define safe real-test connection details (2026-11-01): awaiting server OS/provider, public endpoint and administrative access availability; never collect private keys/passwords/enrollment files in chat. Cloud and additional backend remain unchanged.
+
 - [ ] Complete real Android emulator WireGuard connection (2026-11-01): fresh native build/lint PASS; checksum-verified API 26 software emulator FULL BOOT PASS. Debug APK installation exceeded 180 seconds without success; instrumentation/real handshake/TCP/UDP/DNS NOT RUN. Blockers: no KVM/VMX/SVM and no owned reachable deployed WireGuard server. Runner full-boot/install/instrumentation guards tested (3 mocked tests); report native/android/verification-2026-11-01.md. Browser remains simulated; emulator stopped.
 
 - [x] Combine both services in the app presentation after user chose Keep both services (2026-11-01): Servers shows service allocation and Cloud relay account controls separately from additional verification, with an external settings recheck. No accounts/data merged or backend changes. External features remain blocked by confirmation, owner permissions and real collector prerequisites listed below.
