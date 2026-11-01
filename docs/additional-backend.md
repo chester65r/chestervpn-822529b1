@@ -4,7 +4,7 @@ Selected project: **bolt-native-database-72536136**.
 
 ## Confirmed
 
-- External account access is authorized through a private, read-only MCP connection.
+- External account access was reauthorized through a separate private, write-enabled MCP connection on 2026-11-01. The selected project reports `transaction_read_only=off` and permission to create public-schema objects. No external data or schema was changed during this check.
 - The selected project is active and healthy. Its public schema currently has no tables or policies.
 - A separate app reader is configured with its public URL and publishable key. It does not persist sessions, process login callbacks, forward Cloud bearer tokens, or permit writes.
 - Isolation tests pass; the Data API schema endpoint rejects anonymous schema inspection (401, secret key required). This is not permission to add a secret key or enable private features; a table read is checked separately.
@@ -26,9 +26,10 @@ Selected project: **bolt-native-database-72536136**.
 - Managed Cloud: private bucket `user-files` exists (10 MB per-file limit) with owner-scoped
   select/insert/update/delete policies on `storage.objects`; each user is confined to a folder
   named with their own user id. Enabled and verified.
-- External project: still blocked — management access remains read-only (write attempts return
-  `25006 cannot execute INSERT in a read-only transaction`). The ready-to-run SQL lives in
-  `docs/additional-backend-storage.sql`.
+- External project: write-enabled management access is now confirmed. The permission inventory
+  is empty: no public tables, public/storage policies or storage buckets exist. The ready-to-run
+  SQL lives in `docs/additional-backend-storage.sql`; it has not been applied. Private account
+  ownership must be verified separately before runtime features are enabled.
 
 ## Not enabled
 
