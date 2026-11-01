@@ -1,6 +1,7 @@
 # Roadmap
 
-- [ ] Add external-project profile sync, server monitoring, connection history and file storage without replacing Lovable Cloud. Private read-only external-project MCP access authorized; tools become available next turn for project discovery. Runtime connection and features are not implemented. Built-in external database attachment is unavailable on a Cloud-connected project; additional integration needs separate configuration after inspection. Do not request credentials in chat.
+- [x] Discover and assess the selected additional project, bolt-native-database-72536136: active/healthy, no public tables or policies. Configure an isolated public read-only app reader without changing Cloud; record feature suitability in docs/additional-backend.md.
+- [ ] Enable additional-project profile sync, monitoring, connection history and file storage: blocked by absent private schema/buckets, verified external account linkage and runtime authorization. Current external access is read-only. Real monitoring also needs an owned server collector; do not substitute simulation telemetry.
 
 - [ ] Help connect both Google Ads and Facebook/Instagram: neither service connected; user declined both connection steps. Resume only on renewed request.
 
