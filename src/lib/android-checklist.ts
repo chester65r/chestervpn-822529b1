@@ -31,7 +31,7 @@ export const ANDROID_COMPATIBILITY_CHECKS: CompatibilityCheck[] = [
   },
   {
     id: "build", title: "Android build & device matrix", status: "unverified",
-    finding: "2026-10-31: generated Android project built with JDK 17.0.18, Gradle 8.9, AGP 8.7.3, Kotlin 2.0.21 and SDK 34. Debug, unsigned release, instrumentation APK compilation and debug lint passed (24 warnings, zero errors). API 34 x86_64 emulator setup and ADB detection succeeded without KVM, but full boot/installation did not complete: first install lacked the package service; retry timed out. No instrumentation or VPN runtime result passed. API 26, 31, 33 and newer runs remain NOT RUN. See native/android/verification-2026-10-31.md. Physical devices remain required for hardware-backed keys, Wi-Fi/mobile handoff, OEM restrictions and real-network behavior.",
+    finding: "2026-11-01: fresh debug, unsigned release, instrumentation APK compilation and lint passed with JDK 17, Gradle 8.9 and SDK 34. API 26 x86_64 software emulator completed full boot and exposed the package service, but debug APK installation exceeded the 180-second bound. No instrumentation, library loading or real WireGuard handshake/traffic result passed. Hardware acceleration is unavailable. Earlier API 34 runtime and API 31/33/newer coverage remain unverified. See native/android/verification-2026-11-01.md. Physical devices and an owned reachable WireGuard server remain required.",
     passCriteria: "Record clean debug and release builds with exact Gradle/JDK/AGP versions, and install/start/stop results on API 26, 31, 33, 34 and every newer version you support, including 16 KB page-size devices.",
   },
   {

@@ -7,6 +7,11 @@ boot/installation did not complete, so instrumentation and VPN checks remain unr
 See `verification-2026-10-31.md` for exact results and warnings. Local WireGuard Go
 tests are not substitutes for Android runtime results.
 
+Latest attempt: `verification-2026-11-01.md`. Fresh build passed and API 26 software
+emulator fully booted; APK installation exceeded 180 seconds. Instrumentation and
+real WireGuard network checks remain NOT RUN. Runner requires full boot and bounded
+install/instrumentation commands (`timeout`, available on the test host).
+
 ## Generate and pin the tools
 
 Requires Bun for generation; JDK **17**, Android Gradle Plugin **8.7.3**, Kotlin **2.0.21**,
