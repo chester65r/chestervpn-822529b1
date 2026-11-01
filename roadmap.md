@@ -1,8 +1,10 @@
 # Roadmap
 
-- [ ] Configure an owned reachable WireGuard server and define safe real-test connection details (2026-11-01): awaiting server OS/provider, public endpoint and administrative access availability; never collect private keys/passwords/enrollment files in chat. Cloud and additional backend remain unchanged.
+- [ ] Configure an owned reachable WireGuard server (2026-11-01): user selected Ubuntu/Debian VPS; no provider, endpoint or remote administrative connection supplied, and no server-management connection is available. Safe setup/connection/test guide completed in docs/wireguard-owned-server-testing.md. Awaiting non-secret server identification and authorized access; never collect private keys/passwords/enrollment files in chat. Cloud and additional backend remain unchanged.
 
-- [ ] Complete real Android emulator WireGuard connection (2026-11-01): fresh native build/lint PASS; checksum-verified API 26 software emulator FULL BOOT PASS. Debug APK installation exceeded 180 seconds without success; instrumentation/real handshake/TCP/UDP/DNS NOT RUN. Blockers: no KVM/VMX/SVM and no owned reachable deployed WireGuard server. Runner full-boot/install/instrumentation guards tested (3 mocked tests); report native/android/verification-2026-11-01.md. Browser remains simulated; emulator stopped.
+- [x] Fix Android emulator APK installation timeout and rerun install/boot checks (2026-11-01 14:35 UTC): complete runner PASS with non-streamed bounded installation, full boot/package readiness, both package read-backs and six real Android credential tests. Seven workflow regression tests PASS. Evidence: native/android/verification-2026-11-01.md.
+
+- [ ] Complete real Android emulator WireGuard connection (2026-11-01): native build/lint, API 26 software-emulator boot, both APK installations and six native credential tests PASS. Real handshake/TCP/UDP/DNS/VPN consent NOT RUN; blocked by no owned reachable deployed WireGuard endpoint or administrative connection. Other APIs/physical-device evidence remains unavailable. Browser remains simulated.
 
 - [x] Combine both services in the app presentation after user chose Keep both services (2026-11-01): Servers shows service allocation and Cloud relay account controls separately from additional verification, with an external settings recheck. No accounts/data merged or backend changes. External features remain blocked by confirmation, owner permissions and real collector prerequisites listed below.
 
@@ -34,7 +36,7 @@
 - [x] Repeatable Android build/device workflow: project generator, pinned toolchain/checksum, explicit build/emulator/physical runner and API matrix/manual evidence record supplied; Android execution remains unavailable here.
 
 - [x] Protocol mismatch resolved in design: Android blueprint embeds the WireGuard tunnel library; server blueprint is a WireGuard server; both use one shared profile generator. Local Go fixture (`bash interop/wireguard/run.sh`) passes 4 packet-level tests (TCP 1 MiB, UDP, DNS, key/PSK/address rejection). Not Android device evidence.
-- [ ] On-device WireGuard handshake/traffic: native build now passes; blocked by incomplete software-emulator boot, absent physical phones and an owned deployed test server.
+- [ ] On-device WireGuard handshake/traffic: API 26 boot/install/credential tests now pass; blocked by absent owned deployed test server and physical phones for physical-device evidence.
 - [x] Locally testable remediation: checked socket protection and TLS peer hostname enforcement added to Android sample; atomic counters, startup/cancellation guards and fail-closed TUN gate added. Loopback relay now requires external credential, exact target/port allowlisting and bounded resources. Three executable fixture tests verify missing/wrong credential rejection, fractional/unauthorized ports and authenticated WebSocket-to-TCP echo. These are not native TLS or VPN interoperability tests.
 - [ ] Native/device and production verification: toolchain installed and build passed; blocked by emulator runtime, absent physical phones, deployed WireGuard server and release evidence.
 - [ ] Requested runtime API matrix and physical-device results: API 34 setup attempted, installation blocked without KVM; accelerated emulator host and physical phones required. Do not substitute build/browser results.
