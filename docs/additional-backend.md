@@ -37,6 +37,10 @@ Private reads/writes, schema creation, account linkage and real monitoring remai
 
 ## Ownership and permission preparation — 2026-11-01
 
+- **Live email settings check (2026-11-01 13:59 UTC):** email auth and signup enabled, anonymous auth disabled, but `mailer_autoconfirm=true`. No external accounts exist. This does not prove mailbox ownership. The app now pauses verification unless a fresh settings read confirms manual email confirmation. Cloud auth settings were not changed.
+- The email OTP helper requires a successful challenge, a session and a matching live confirmed non-anonymous identity; duplicate submits are guarded. Tests are mocked security regression checks, not delivered-email evidence.
+- **Email verification blocker:** available auth configuration tools target managed Cloud, not the external project. External confirmation/template configuration must be changed with an externally targeted auth-settings tool before the form is usable. The email template must contain an OTP (`{{ .Token }}`); template and mail delivery have not been inspected. Real email/code completion requires the owner's mailbox; no credentials or OTPs should be pasted into chat.
+
 - Live inventory: zero external users, confirmed users, tables, policies or buckets. Security advisor returned no findings; an empty schema is not evidence of owner isolation.
 - Servers now includes a separate additional-account email/code verification form. It uses an in-memory auth-only client, requests verification directly from external Auth and validates the confirmed, non-anonymous identity with a live `getUser()` call. No Cloud session is reused, no account is linked by email, and successful authentication does not unlock private features.
 - Owner-only DDL is prepared in `docs/additional-backend-permissions.sql`; files policies are prepared in `docs/additional-backend-storage.sql`. All new tables have grants and RLS, require external `auth.uid()` ownership plus confirmed identity, and exclude hosts, payloads, free-text secrets and credentials. Monitoring is browser read/delete only; collector writes require a separately verified server.

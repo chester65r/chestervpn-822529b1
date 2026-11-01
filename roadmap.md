@@ -1,5 +1,7 @@
 # Roadmap
 
+- [ ] Complete external email verification/account ownership (2026-11-01): live auth settings show auto-confirm enabled and zero accounts. Verification now fails closed until external manual confirmation is enabled; OTP + matching live identity and duplicate-submission guards added. Blocked by external auth configuration/template access and owner mailbox confirmation; Cloud untouched. Mock tests do not count as live email proof.
+
 - [ ] Enable secure external profile save/retrieve and apply owner-only permissions (2026-11-01): blocked by the required migration tool having no external-project target. Do not apply external schema to Cloud or enable writes without live owner/cross-account/anonymous tests. External MCP write access does not remove this tool-targeting restriction.
 
 - [ ] Set up and verify external private permissions/account ownership (2026-11-01): separate email verification UI added, confirmed identity requires live external auth lookup; no Cloud changes. External project has zero users/tables/buckets; owner-policy setup is prepared but blocked because the required migration/storage tools target Cloud only. Needs externally targeted schema/storage tools, owner email confirmation and two-account live permission tests.
