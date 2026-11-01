@@ -1,5 +1,7 @@
 # Roadmap
 
+- [ ] Connect the user's external project as an additional service without replacing Lovable Cloud; waiting for its project URL and the requested additional features. Do not request credentials in chat.
+
 - [ ] Help connect both Google Ads and Facebook/Instagram: neither service connected; user declined both connection steps. Resume only on renewed request.
 
 - [x] Address database connection request: project already uses Lovable Cloud for the database and accounts; no separate connection needed.
