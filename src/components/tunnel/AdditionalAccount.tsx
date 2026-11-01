@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { KeyRound, Loader2, LogOut, ShieldCheck } from 'lucide-react';
+import { KeyRound, Loader2, LogOut, RefreshCw, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { checkAdditionalEmailVerification, confirmAdditionalEmailCode, createAdditionalAccountClient } from '@/lib/additional-account';
 
@@ -14,6 +14,24 @@ export function AdditionalAccount() {
   const [ready, setReady] = useState(false);
   const inFlight = useRef(false);
   const generation = useRef(0);
+  const [checking, setChecking] = useState(false);
+
+  async function recheck() {
+    if (inFlight.current || checking) return;
+    const current = generation.current;
+    setChecking(true);
+    setReady(false);
+    try {
+      await checkAdditionalEmailVerification();
+      if (current !== generation.current) return;
+      setReady(true);
+      setMessage('Email confirmation is enabled. Account ownership is not verified yet.');
+    } catch {
+      if (current === generation.current) setMessage('Additional email confirmation is not safely configured. Verification is paused.');
+    } finally {
+      if (current === generation.current) setChecking(false);
+    }
+  }
   useEffect(() => {
     client.current = createAdditionalAccountClient();
     let active = true;
@@ -72,7 +90,7 @@ export function AdditionalAccount() {
   }
 
   return <section className="mb-6 space-y-3 border-b border-border pb-5" aria-label="Additional account">
-    <h2 className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="h-4 w-4 text-primary" />Additional account</h2>
+    <div className="flex items-center justify-between gap-2"><h2 className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="h-4 w-4 text-primary" />Additional account</h2><Button variant="ghost" size="icon" onClick={recheck} disabled={busy || checking} aria-label="Recheck additional connection" title="Recheck additional connection"><RefreshCw className={checking ? 'animate-spin' : ''} /></Button></div>
     <p className="text-xs text-muted-foreground">Separate email confirmation · Cloud account unchanged</p>
     {verified ? <div className="flex items-center justify-between gap-2"><span className="min-w-0 break-all text-xs text-primary">{email}</span><Button variant="ghost" size="icon" onClick={reset} aria-label="Disconnect additional account" title="Disconnect additional account"><LogOut /></Button></div> :
       <form onSubmit={submit} className="space-y-3">
