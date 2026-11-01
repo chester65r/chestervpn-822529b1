@@ -1,5 +1,6 @@
 # Roadmap
 
+- [ ] Reconnect the external project with write-enabled access and recheck owner permissions before enabling features; the previous refresh was cancelled, and the external MCP is no longer listed as connected. Show the safe next connection step; keep Cloud unchanged.
 - [x] Discover and assess the selected additional project, bolt-native-database-72536136: active/healthy, no public tables or policies. Configure an isolated public read-only app reader without changing Cloud; record feature suitability in docs/additional-backend.md.
 - [ ] Enable all four additional-project features (requested 2026-11-01): profile sync, monitoring, connection history and file storage. Cloud-side storage is ready: private `user-files` bucket with owner-scoped policies (2026-11-01). External side still blocked by read-only management access — ready SQL saved in docs/additional-backend-storage.sql; also needs verified external account linkage. Real monitoring also needs an owned server collector; do not substitute simulation telemetry. Keep Cloud unchanged.
 
