@@ -1,6 +1,6 @@
 # Roadmap
 
-- [ ] Connect the user's external project as an additional service without replacing Lovable Cloud; waiting for its project URL and the requested additional features. Do not request credentials in chat.
+- [ ] Add external-project profile sync, server monitoring, connection history and file storage without replacing Lovable Cloud. Private read-only external-project MCP access authorized; tools become available next turn for project discovery. Runtime connection and features are not implemented. Built-in external database attachment is unavailable on a Cloud-connected project; additional integration needs separate configuration after inspection. Do not request credentials in chat.
 
 - [ ] Help connect both Google Ads and Facebook/Instagram: neither service connected; user declined both connection steps. Resume only on renewed request.
 
