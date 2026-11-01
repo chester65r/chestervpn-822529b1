@@ -1,6 +1,6 @@
 # Roadmap
 
-- [ ] Help connect both Google Ads and Facebook/Instagram: neither service was connected on inspection; Google connection declined, Facebook/Instagram connection pending.
+- [ ] Help connect both Google Ads and Facebook/Instagram: neither service connected; user declined both connection steps. Resume only on renewed request.
 
 - [x] Address database connection request: project already uses Lovable Cloud for the database and accounts; no separate connection needed.
 
