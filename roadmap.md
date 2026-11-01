@@ -1,5 +1,7 @@
 # Roadmap
 
+- [ ] Enable secure external profile save/retrieve and apply owner-only permissions (2026-11-01): blocked by the required migration tool having no external-project target. Do not apply external schema to Cloud or enable writes without live owner/cross-account/anonymous tests. External MCP write access does not remove this tool-targeting restriction.
+
 - [ ] Set up and verify external private permissions/account ownership (2026-11-01): separate email verification UI added, confirmed identity requires live external auth lookup; no Cloud changes. External project has zero users/tables/buckets; owner-policy setup is prepared but blocked because the required migration/storage tools target Cloud only. Needs externally targeted schema/storage tools, owner email confirmation and two-account live permission tests.
 
 - [x] Reconnect the external project with write-enabled access and show the safe next step (2026-11-01): separate private connection authorized; selected project reports transaction_read_only=off and public-schema CREATE permission. No public tables, policies or storage buckets exist. Cloud unchanged; next step is private schema/storage protections and independently verified external account ownership.
