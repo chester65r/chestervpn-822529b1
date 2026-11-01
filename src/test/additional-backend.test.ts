@@ -12,7 +12,9 @@ describe('isolated additional backend', () => {
     const client = createAdditionalBackendReader();
     await client.from('public_status').select('status');
     expect(request).toHaveBeenCalledOnce();
-    const [url, init] = request.mock.calls[0];
+    const call = request.mock.calls[0];
+    if (!call) throw new Error('Expected an external read request');
+    const [url, init] = call;
     expect(String(url)).toBe(`${additionalBackend.url}/rest/v1/public_status?select=status`);
     expect(new Headers(init.headers).has('Authorization')).toBe(false);
     expect(new Headers(init.headers).get('apikey')).toBe(additionalBackend.publishableKey);

@@ -7,7 +7,7 @@ Selected project: **bolt-native-database-72536136**.
 - External account access is authorized through a private, read-only MCP connection.
 - The selected project is active and healthy. Its public schema currently has no tables or policies.
 - A separate app reader is configured with its public URL and publishable key. It does not persist sessions, process login callbacks, forward Cloud bearer tokens, or permit writes.
-- The external Data API connection is tested separately; no user-facing feature is enabled merely because this reader exists.
+- Isolation tests pass; the Data API schema endpoint rejects anonymous schema inspection (401, secret key required). This is not permission to add a secret key or enable private features; a table read is checked separately.
 - The managed Cloud client, accounts, relay server records, AI helper and backups remain unchanged.
 
 ## Feature suitability
