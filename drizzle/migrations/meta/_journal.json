@@ -15,6 +15,13 @@
       "when": 1793540925529,
       "tag": "0001_user_files_bucket_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793659161458,
+      "tag": "0002_owner_roles",
+      "breakpoints": true
     }
   ]
 }
