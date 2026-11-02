@@ -48,6 +48,7 @@
 
 - [x] Final review: build health, test suite, click-through of Home / Configure / Share / Android screens
 - [x] Marketing plan: research audience/communities, save research.md + plan.md, present ranked plan
+- [x] App name consistency: connection page, sign-in, consent screen and MCP title now show "Tunnel Console"; Claude Code install slug stays `tunnel-guardian-compass` so existing connections keep working (2026-11-02). Republish required to reach the live site.
 - [x] Saved tunnel profiles: persist profiles between visits, manage (save/load/delete) and reuse them
 - [x] Real relay server backend: Lovable Cloud accounts, synced relay_servers table, Servers tab, relay-server.mjs blueprint
 - [x] Full review: refresh recovery and storage guards, accurate simulation totals, import validation and edit locks; 25 tests passed, signed-in server CRUD and repeated reloads verified; security scans found no issues. Android/relay interoperability remains a prerequisite for real VPN use, not a delivered feature.
