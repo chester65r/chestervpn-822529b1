@@ -30,3 +30,4 @@
 - Sitemap URLs derive from required route staticData.sitemap decisions via the shared inventory helper; exclude private routes and omit lastmod without an authoritative page-specific timestamp.
 - Database record backups are dated, explicit snapshots separate from schema migrations and exclude credentials and managed auth data; this prevents accidental restores and avoids treating Git as a live database mirror.
 - AI features call Lovable AI Gateway only from server functions in `src/lib/*.functions.ts`, sending sanitized diagnostics (no hosts/payloads); keeps keys server-side and user data minimal.
+- AWS server panel (view-only, owner role) lives in src/lib/aws-status*.ts; only EC2 Describe* calls, gated by has_role admin — prevents any user or code path from changing the AWS account.

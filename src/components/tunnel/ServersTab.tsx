@@ -6,6 +6,7 @@ import { useWebMCP } from "use-webmcp-tool";
 import { runWebMCPTool } from "@/lib/webmcp-telemetry";
 
 import { supabase } from "@/integrations/supabase/client";
+import { AwsPanel } from "./AwsPanel";
 import {
   TRANSPORTS,
   rowToServer,
@@ -324,6 +325,7 @@ export function ServersTab({ onUseServer }: Props) {
           Add server
         </button>
       </div>
+      <AwsPanel />
     </div>
   );
 }
