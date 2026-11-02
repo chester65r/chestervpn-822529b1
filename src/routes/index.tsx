@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Home, Server, Share2, SlidersHorizontal, Plug } from "lucide-react";
+import { Home, Server, Share2, SlidersHorizontal, Plug, Code2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useWebMCP } from "use-webmcp-tool";
@@ -9,6 +9,7 @@ import { runWebMCPTool } from "@/lib/webmcp-telemetry";
 import { HomeTab } from "@/components/tunnel/HomeTab";
 import { ConfigTab } from "@/components/tunnel/ConfigTab";
 import { ShareTab } from "@/components/tunnel/ShareTab";
+import { BlueprintTab } from "@/components/tunnel/BlueprintTab";
 import { ServersTab } from "@/components/tunnel/ServersTab";
 import { AdditionalAccount } from "@/components/tunnel/AdditionalAccount";
 import { ServiceOverview } from "@/components/tunnel/ServiceOverview";
@@ -51,13 +52,14 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-type Tab = "home" | "config" | "servers" | "share";
+type Tab = "home" | "config" | "servers" | "share" | "android";
 
 const TABS: { id: Tab; label: string; icon: typeof Home }[] = [
   { id: "home", label: "Home", icon: Home },
   { id: "config", label: "Configure", icon: SlidersHorizontal },
   { id: "servers", label: "Servers", icon: Server },
   { id: "share", label: "Share", icon: Share2 },
+  { id: "android", label: "Android", icon: Code2 },
 ];
 
 const STORAGE_KEY = "tunnel-console-profile";
@@ -248,13 +250,13 @@ function Index() {
   const serverLabel = profile.ip ? `${profile.ip}:${profile.port || "443"}` : "No server configured";
 
   function openTab(value: Tab) {
-    if (!TABS.some(item => item.id === value)) throw new Error("Unknown screen; expected home, config, servers, or share.");
+    if (!TABS.some(item => item.id === value)) throw new Error("Unknown screen; expected home, config, servers, share, or android.");
     setTab(value);
   }
   useWebMCP({
     name: "open_workspace_screen",
-    description: "Open Home, Configure, Servers or Share without starting a VPN or changing saved data.",
-    inputSchema: { type: "object", properties: { screen: { type: "string", enum: ["home", "config", "servers", "share"], description: "The workspace screen to open." } }, required: ["screen"] },
+    description: "Open Home, Configure, Servers, Share or Android without starting a VPN or changing saved data.",
+    inputSchema: { type: "object", properties: { screen: { type: "string", enum: ["home", "config", "servers", "share", "android"], description: "The workspace screen to open." } }, required: ["screen"] },
     execute: ({ screen }: { screen: Tab }) => runWebMCPTool("open_workspace_screen", () => { openTab(screen); return `Opened ${screen}.`; }),
   });
   useWebMCP({
@@ -319,9 +321,10 @@ function Index() {
               onDelete={deleteSaved}
             />
           )}
+          {tab === "android" && <BlueprintTab />}
         </main>
 
-        <nav aria-label="Workspace" className="grid shrink-0 grid-cols-4 border-t border-border bg-card">
+        <nav aria-label="Workspace" className="grid shrink-0 grid-cols-5 border-t border-border bg-card">
           {TABS.map(({ id, label, icon: Icon }) => (
             <Button variant="ghost"
               key={id}
