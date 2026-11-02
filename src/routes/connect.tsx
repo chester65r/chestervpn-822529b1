@@ -3,14 +3,14 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, Check, Copy, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CONNECTION_APP_NAME, claudeInstallCommand, connectionSlug } from "@/lib/agent-connection";
+import { CONNECTION_APP_NAME, CONNECTION_SLUG, claudeInstallCommand } from "@/lib/agent-connection";
 
 export const Route = createFileRoute("/connect")({
   staticData: { sitemap: true },
   head: () => ({ meta: [
-    { title: "Connect your assistant — Tunnel Guardian Compass" },
-    { name: "description", content: "Connect ChatGPT, Claude, Claude Code or another AI assistant to Tunnel Guardian Compass and refresh its connection." },
-    { property: "og:title", content: "Connect your assistant — Tunnel Guardian Compass" },
+    { title: "Connect your assistant — Tunnel Console" },
+    { name: "description", content: "Connect ChatGPT, Claude, Claude Code or another AI assistant to Tunnel Console and refresh its connection." },
+    { property: "og:title", content: "Connect your assistant — Tunnel Console" },
     { property: "og:description", content: "Copy your MCP server URL and follow assistant-specific connection and refresh steps." },
     { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" },
   ] }),
@@ -40,7 +40,7 @@ function ConnectionGuide() {
   const [client, setClient] = useState<Client>("chatgpt");
   useEffect(() => { setUrl(new URL("/mcp", window.location.origin).toString()); }, []);
   const claudeLink = `https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=${encodeURIComponent(CONNECTION_APP_NAME)}&connectorUrl=${encodeURIComponent(url)}`;
-  const slug = connectionSlug(CONNECTION_APP_NAME);
+  const slug = CONNECTION_SLUG;
   return <main className="mx-auto min-h-dvh max-w-2xl px-5 py-6 sm:px-8 sm:py-10">
     <Link to="/" className="mb-6 inline-flex items-center gap-2 text-sm text-muted-foreground"><ArrowLeft className="h-4 w-4" />Tunnel Console</Link>
     <h1 className="text-2xl font-bold">Connect your assistant</h1>
