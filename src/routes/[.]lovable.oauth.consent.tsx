@@ -9,9 +9,9 @@ export const Route = createFileRoute("/.lovable/oauth/consent")({
   ssr: false,
   validateSearch: (s: Record<string, unknown>) => ({ authorization_id: typeof s['authorization_id'] === "string" ? s['authorization_id'] : "" }),
   head: () => ({ meta: [
-    { title: "Approve connection — Tunnel Guardian Compass" },
+    { title: "Approve connection — Tunnel Console" },
     { name: "description", content: "Review and approve assistant access to your Tunnel Console account." },
-    { property: "og:title", content: "Approve connection — Tunnel Guardian Compass" },
+    { property: "og:title", content: "Approve connection — Tunnel Console" },
     { property: "og:description", content: "Control assistant access to your saved relay servers." },
     { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }, { name: "robots", content: "noindex" },
   ] }),
@@ -54,7 +54,7 @@ function Consent() {
     } catch { setError("Your choice could not be saved. Please try again or restart the connection."); setBusy(false); }
   }
   return <main className="mx-auto max-w-md space-y-5 px-6 py-12">
-    <h1 className="break-words text-2xl font-bold">Connect {client} to Tunnel Guardian Compass</h1>
+    <h1 className="break-words text-2xl font-bold">Connect {client} to Tunnel Console</h1>
     <div className="space-y-2 text-sm text-muted-foreground"><p className="break-all">Signed in as {email}</p><Button variant="ghost" disabled={busy} onClick={async () => { const result = await supabase.auth.signOut(); if (result.error) { setError("Could not switch accounts. Please try again."); return; } window.location.reload(); }}>Switch account</Button>
       {details.redirect_uri && <p className="break-all">Return address: {details.redirect_uri}</p>}
     </div>

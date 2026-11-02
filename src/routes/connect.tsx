@@ -61,25 +61,25 @@ function ConnectionGuide() {
           <li>Open <External href="https://chatgpt.com/plugins#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins">New plugin</External>.</li>
           <li>Enter <strong>{CONNECTION_APP_NAME}</strong> as the name and paste the MCP server URL above.</li>
           <li>Review the details, choose OAuth if asked, check “I understand and want to continue”, then click “Create”. ChatGPT shows this warning for every custom MCP server. Finish sign-in and approve the connection.</li>
-          <li>Enable the app from the chat composer, then ask ChatGPT to use Tunnel Guardian Compass.</li>
+          <li>Enable the app from the chat composer, then ask ChatGPT to use Tunnel Console.</li>
         </>}
         {client === "claude" && <>
           <li>{url ? <External href={claudeLink}>Add to Claude</External> : "Loading Claude connection link…"} to open the connector dialog with the app name and URL filled in.</li>
           <li>Review the details and click “Add”. Sign in and approve the connection when prompted.</li>
           <li>If the form does not open, go to <External href="https://claude.ai/customize/connectors">Claude Connectors</External>, choose “Add custom connector”, enter <strong>{CONNECTION_APP_NAME}</strong> and paste the MCP server URL above.</li>
-          <li>Enable the connector from the chat composer, then ask Claude to use Tunnel Guardian Compass.</li>
+          <li>Enable the connector from the chat composer, then ask Claude to use Tunnel Console.</li>
         </>}
         {client === "code" && <>
-          <li>Copy this command and run it in a terminal:<div className="mt-3"><CopyBlock text={url ? claudeInstallCommand(CONNECTION_APP_NAME, url) : ""} label="Copy Claude Code install command" /></div></li>
+          <li>Copy this command and run it in a terminal:<div className="mt-3"><CopyBlock text={url ? claudeInstallCommand(slug, url) : ""} label="Copy Claude Code install command" /></div></li>
           <li>Start Claude Code and run <code>/mcp</code> to confirm the app is connected. Select the app to sign in and approve access when prompted.</li>
-          <li>Ask Claude Code to use Tunnel Guardian Compass.</li>
+          <li>Ask Claude Code to use Tunnel Console.</li>
         </>}
         {client === "other" && <>
           <li>Open your assistant’s MCP server or custom connector settings.</li>
           <li>Create a remote MCP server connection.</li>
           <li>Name it <strong>{CONNECTION_APP_NAME}</strong> and paste the MCP server URL above.</li>
           <li>Finish the sign-in and authorization prompts.</li>
-          <li>Enable the connection, then ask the assistant to use Tunnel Guardian Compass.</li>
+          <li>Enable the connection, then ask the assistant to use Tunnel Console.</li>
         </>}
       </ol>
     </section>
