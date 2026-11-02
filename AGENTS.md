@@ -14,6 +14,7 @@
 - Service overview is presentation-only; additional connection rechecks read external auth settings without copying identities, records or Cloud credentials between services.
 - Additional account verification uses a separate in-memory auth-only client, fails closed on automatic/unreadable email confirmation settings, and requires successful email OTP plus matching live identity; it never links by email or unlocks data access without independent permission tests.
 - Connection instructions use the hydrated deployment origin for MCP URLs and a shared tested helper for safe Claude Code command quoting and server names; keep the guide separate from MCP server implementation.
+- The public-facing app name is "Tunnel Console" (`CONNECTION_APP_NAME` in `src/lib/agent-connection.ts`); the assistant connection slug stays the fixed `CONNECTION_SLUG` value so existing assistant connections keep matching — never derive it from the display name.
 - Remote MCP tools live in `src/lib/mcp/`, require verified OAuth client tokens, and access account records through caller-scoped RLS; browser tools remain in their owning screens and never expose credentials or commit consequential actions.
 - OAuth login returns use one canonical same-origin path validator; preserve consent parameters through sign-in and email confirmation, and exclude authorization pages from the sitemap.
 - Tunnel logic (payload macros, validation, TUNNEL:// codes) lives in pure functions in `src/lib/tunnel.ts` with tests in `src/test/tunnel.test.ts`; UI components only call them — keeps rules testable.

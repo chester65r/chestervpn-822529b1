@@ -13,7 +13,7 @@
     "server": {
       "name": "tunnel-guardian-compass",
       "version": "0.1.0",
-      "title": "Tunnel Guardian Compass"
+      "title": "Tunnel Console"
     },
     "tools": [
       {

@@ -8,9 +8,9 @@ export const Route = createFileRoute("/login")({
   staticData: { sitemap: false },
   validateSearch: (s: Record<string, unknown>) => ({ next: oauthReturnPath(s['next']) }),
   head: () => ({ meta: [
-    { title: "Sign in — Tunnel Guardian Compass" },
+    { title: "Sign in — Tunnel Console" },
     { name: "description", content: "Sign in to connect an assistant to your Tunnel Console account." },
-    { property: "og:title", content: "Sign in — Tunnel Guardian Compass" },
+    { property: "og:title", content: "Sign in — Tunnel Console" },
     { property: "og:description", content: "Secure account sign-in for Tunnel Console integrations." },
     { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" },
     { name: "robots", content: "noindex" },
@@ -49,7 +49,7 @@ function Login() {
   }
   return <main className="mx-auto max-w-md space-y-5 px-6 py-12">
     <h1 className="text-2xl font-bold">{signup ? "Create account" : "Sign in"}</h1>
-    <p className="text-muted-foreground">Tunnel Guardian Compass</p>
+    <p className="text-muted-foreground">Tunnel Console</p>
     <form className="space-y-4" onSubmit={event => { event.preventDefault(); void submit(); }}>
       <label className="block space-y-2"><span>Email</span><input className="w-full rounded-md border border-input bg-muted p-3" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></label>
       <label className="block space-y-2"><span>Password</span><input className="w-full rounded-md border border-input bg-muted p-3" type="password" autoComplete={signup ? "new-password" : "current-password"} required value={password} onChange={e => setPassword(e.target.value)} /></label>
