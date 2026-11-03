@@ -39,7 +39,9 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Verify local-only companion scope
-        run: python3 android-companion/scripts/verify_scope.py
+        run: |
+          python3 android-companion/scripts/verify_scope.py
+          python3 -m unittest discover -s android-companion/scripts -p "test_*.py"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
