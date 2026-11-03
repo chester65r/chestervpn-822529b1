@@ -38,7 +38,7 @@ class SupportReportTest {
             events = emptyList(),
         )
 
-        assertTrue(report.contains("No events recorded"))
+        assertTrue(report.contains("No activity events recorded"))
         assertTrue(report.contains("Metered connection: Unknown"))
     }
 
