@@ -19,6 +19,8 @@ A standalone native Android companion module. It lives in `android-companion/` a
 
 The manifest requests only `android.permission.ACCESS_NETWORK_STATE`.
 
+`androidx.core:core-ktx:1.17.0` is an explicit dependency because the app calls `WindowCompat` directly; do not rely on it arriving only as a transitive dependency.
+
 It does **not** request Internet, VPN, location, phone, contacts, or storage permissions. This companion does not create tunnels, proxy traffic, intercept packets, change routes, or inspect destinations. It does not collect carrier names, SIM details, phone numbers, advertising identifiers, credentials, or network traffic. The network panel reads only Android's local connectivity state.
 
 Support reports are generated only after a user action. Review the report before copying or sharing it. Activity history and theme preference remain in private app storage. Android backup is disabled for this module.
@@ -34,6 +36,7 @@ Support reports are generated only after a user action. Review the report before
 - Kotlin: 2.3.21
 - Compose BOM: 2026.06.01
 - Activity Compose: 1.13.0
+- AndroidX Core: 1.17.0
 
 Target SDK 36 is selected to meet the Google Play requirement for new mobile apps and updates from August 31, 2026. Targeting API 36 also requires testing Android 16 edge-to-edge behavior; the activity enables edge-to-edge and uses Material 3 Scaffold/TopAppBar/NavigationBar insets.
 
