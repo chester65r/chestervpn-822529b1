@@ -14,13 +14,13 @@ fun buildSupportReport(
     appendLine("App version: ${device.appVersion}")
     appendLine()
     appendLine("Connectivity summary")
-    network.asLines().forEach(::appendLine)
+    network.asLines().forEach { appendLine(it) }
     appendLine()
     appendLine("Recent app activity")
     if (events.isEmpty()) {
         appendLine("No activity events recorded")
     } else {
-        events.take(50).forEach(::appendLine)
+        events.take(50).forEach { appendLine(it) }
     }
     appendLine()
     appendLine("Privacy")
