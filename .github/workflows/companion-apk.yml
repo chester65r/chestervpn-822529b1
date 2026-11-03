@@ -37,13 +37,19 @@ jobs:
           gradle-version: "8.13"
           cache-provider: basic
 
-      - name: Build and test companion APK
-        run: gradle --no-daemon -p android-companion testDebugUnitTest assembleDebug
+      - name: Run tests, lint, and assemble debug APK
+        run: gradle --no-daemon -p android-companion testDebugUnitTest lintDebug assembleDebug
 
-      - name: Upload debug APK
+      - name: Generate APK checksum
+        working-directory: android-companion/app/build/outputs/apk/debug
+        run: sha256sum app-debug.apk | tee app-debug.apk.sha256
+
+      - name: Upload debug APK and checksum
         uses: actions/upload-artifact@v4
         with:
           name: chester-vpn-companion-debug
-          path: android-companion/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            android-companion/app/build/outputs/apk/debug/app-debug.apk
+            android-companion/app/build/outputs/apk/debug/app-debug.apk.sha256
           if-no-files-found: error
           retention-days: 14
