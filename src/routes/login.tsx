@@ -2,7 +2,10 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable";
 import { oauthReturnPath } from "@/lib/oauth-return-path";
+
+const RETURN_KEY = "tunnel-console:oauth-return";
 
 export const Route = createFileRoute("/login")({
   staticData: { sitemap: false },
@@ -26,7 +29,12 @@ function Login() {
   const [message, setMessage] = useState("");
   useEffect(() => {
     let active = true;
-    const complete = (hasSession: boolean) => { if (active && hasSession) window.location.assign(next); };
+    const complete = (hasSession: boolean) => {
+      if (!active || !hasSession) return;
+      const pending = typeof window !== "undefined" ? window.sessionStorage.getItem(RETURN_KEY) : null;
+      if (pending) window.sessionStorage.removeItem(RETURN_KEY);
+      window.location.assign(pending ?? next);
+    };
     void supabase.auth.getSession().then(({ data }) => complete(Boolean(data.session))).catch(() => setMessage("Could not check your account. Please try signing in."));
     const { data } = supabase.auth.onAuthStateChange((_event, session) => complete(Boolean(session)));
     return () => { active = false; data.subscription.unsubscribe(); };
