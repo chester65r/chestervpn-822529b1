@@ -1,7 +1,7 @@
 package com.chester65r.chestervpncompanion
 
 import android.content.Context
-import java.time.LocalTime
+import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 /**
@@ -33,7 +33,7 @@ object LocalAppStore {
             .toList()
 
     fun addEvent(context: Context, event: String): List<String> {
-        val timestamp = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))
+        val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
         val safeEvent = event.replace('\n', ' ').replace('\r', ' ').take(120)
         val updated = (listOf("$timestamp  $safeEvent") + loadEvents(context)).take(MAX_EVENTS)
         preferences(context).edit()
