@@ -48,7 +48,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        LocalAppStore.addEvent(this, "App opened")
+        if (savedInstanceState == null) {
+            LocalAppStore.addEvent(this, "App opened")
+        }
         setContent {
             CompanionApp()
         }
@@ -77,7 +79,6 @@ private fun CompanionApp() {
             onDarkThemeChange = { enabled ->
                 darkTheme = enabled
                 LocalAppStore.setDarkTheme(context, enabled)
-                LocalAppStore.addEvent(context, if (enabled) "Dark theme enabled" else "Light theme enabled")
             },
         )
     }
@@ -368,7 +369,10 @@ private fun CompanionHome(
                                     }
                                     Switch(
                                         checked = darkTheme,
-                                        onCheckedChange = onDarkThemeChange,
+                                        onCheckedChange = { enabled ->
+                                            onDarkThemeChange(enabled)
+                                            record(if (enabled) "Dark theme enabled" else "Light theme enabled")
+                                        },
                                     )
                                 }
                             }
