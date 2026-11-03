@@ -1,51 +1,56 @@
 # ChesterVPN Companion (Android)
 
-A separate native Android companion module. It lives in `android-companion/` and is not wired into the existing web app. All additions are made on the `safe-app-shell` branch; the existing `main` branch and its files are left unchanged.
+A standalone native Android companion module. It lives in `android-companion/` and is intentionally separate from the existing web app. All additions remain on the `safe-app-shell` branch; the original `main` branch is not modified.
 
-## Current features
+## Features in this companion build
 
 - Native Jetpack Compose interface with Home, Activity, Settings, and About screens
 - Local Android release, API-level, and app-version diagnostics
 - Read-only Android network readiness summary via `ACCESS_NETWORK_STATE`
 - Wi-Fi / cellular / Ethernet / Bluetooth transport classification
-- Android metered-network flag
-- Local activity history (up to 50 events), search, and clear action
+- Android's metered-network flag
+- Local activity history (up to 50 events), filter, and clear action
 - Persistent light/dark theme preference
 - User-initiated support report generation, copy, and Android share sheet
-- Unit tests for support-report contents and empty-log handling
-- GitHub Actions debug APK build and test workflow
+- Unit tests for diagnostics and support-report formatting
+- GitHub Actions workflow for unit tests, lint, debug APK, SHA-256 checksum, and artifact upload
 
 ## Privacy and permissions
 
 The manifest requests only `android.permission.ACCESS_NETWORK_STATE`.
 
-It does **not** request Internet, VPN, location, phone, contacts, or storage permissions. The companion does not create tunnels, proxy traffic, intercept packets, change routes, or inspect destinations. It does not collect carrier names, SIM details, phone numbers, advertising identifiers, credentials, or network traffic. The network screen reads only Android's local connectivity state.
+It does **not** request Internet, VPN, location, phone, contacts, or storage permissions. This companion does not create tunnels, proxy traffic, intercept packets, change routes, or inspect destinations. It does not collect carrier names, SIM details, phone numbers, advertising identifiers, credentials, or network traffic. The network panel reads only Android's local connectivity state.
 
-Support reports are generated only after a user action. Review the report before copying or sharing it. The app's activity history and theme preference remain in private app storage; clearing activity history removes those local events.
+Support reports are generated only after a user action. Review the report before copying or sharing it. Activity history and theme preference remain in private app storage. Android backup is disabled for this module.
 
 ## Build configuration
 
 - Minimum SDK: 26 (Android 8.0)
 - Compile SDK: 36
-- Target SDK: 35
+- Target SDK: 36 (Android 16)
 - JDK: 17
 - Android Gradle Plugin: 8.13.2
 - Gradle: 8.13
 - Kotlin: 2.3.21
 - Compose BOM: 2026.09.00
+- Activity Compose: 1.13.0
 
-The selected Kotlin Gradle plugin range supports Gradle 8.13 and AGP 8.13.2; AGP 8.13 requires Gradle 8.13 and JDK 17. See the official [Kotlin Gradle compatibility table](https://kotlinlang.org/docs/gradle-configure-project.html), [AGP 8.13 release notes](https://developer.android.com/build/releases/agp-8-13-0-release-notes), and [Gradle Java compatibility](https://docs.gradle.org/current/userguide/compatibility.html).
+Target SDK 36 is selected to meet the Google Play requirement for new mobile apps and updates from August 31, 2026. Targeting API 36 also requires testing Android 16 edge-to-edge behavior; the activity enables edge-to-edge and uses Material 3 Scaffold/TopAppBar/NavigationBar insets.
+
+The Kotlin Gradle plugin 2.3.21 compatibility range includes AGP 8.13.2 and Gradle 8.13. AGP 8.13 requires Gradle 8.13. See the official [Kotlin Gradle compatibility table](https://kotlinlang.org/docs/gradle-configure-project.html), [Android Gradle Plugin compatibility table](https://developer.android.com/build/releases/about-agp), [Google Play target API requirement](https://developer.android.com/google/play/requirements/target-sdk), and [Compose BOM guide](https://developer.android.com/develop/ui/compose/bom).
 
 ## Build locally
 
-Open the `android-companion` directory in Android Studio with JDK 17 and Android SDK 36 installed, then build the `app` debug variant.
+Open the `android-companion` directory in Android Studio with JDK 17 and Android SDK 36 / Build Tools 36.0.0 installed. Build the `app` debug variant.
+
+The current project does not yet check in the Gradle Wrapper scripts/JAR. Until those are added, use a local Gradle 8.13 installation or Android Studio's configured Gradle distribution. Adding a checked-in Gradle Wrapper is a recommended next maintenance task.
 
 ## GitHub Actions
 
-The workflow at `.github/workflows/companion-apk.yml` runs on pushes to `safe-app-shell` affecting the companion module and can also be started manually from the Actions tab. It runs unit tests, assembles a debug APK, calculates a SHA-256 checksum, and uploads the artifact for 14 days.
+The workflow at `.github/workflows/companion-apk.yml` runs on relevant source/configuration pushes to `safe-app-shell`, pull requests targeting `main`, and manual dispatch. It uses the hosted runner's preinstalled Android SDK, installs API 36 / Build Tools 36.0.0, runs unit tests and lint, assembles the debug APK, generates a SHA-256 checksum, and uploads the artifact for 14 days.
 
 The debug APK is for testing. It is not a production release and is not signed with a private release key. No signing credentials are stored in the repository.
 
 ## Scope
 
-This is a companion utility, not a VPN client. Any future connection feature must use an explicitly authorized VPN service and must not circumvent carrier billing, package, or access controls. This repository addition does not implement or configure that functionality.
+This is a companion utility, not a VPN client. Any future connection feature must use an explicitly authorized service and must not circumvent carrier billing, package, or access controls. This module does not implement or configure tunneling functionality.
