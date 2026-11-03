@@ -55,6 +55,19 @@ function Login() {
     } catch (error) { setMessage(error instanceof Error ? error.message : "Sign-in failed. Please try again."); }
     finally { setBusy(false); }
   }
+  async function googleSignIn() {
+    setBusy(true); setMessage("");
+    try {
+      if (next) window.sessionStorage.setItem(RETURN_KEY, next);
+      const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: `${window.location.origin}/login` });
+      if (result.error) throw result.error;
+      if (result.redirected) return; // browser goes to Google and back to /login
+      window.location.assign(next); // session already set without redirect
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Google sign-in failed. Please try again.");
+      setBusy(false);
+    }
+  }
   return <main className="mx-auto max-w-md space-y-5 px-6 py-12">
     <h1 className="text-2xl font-bold">{signup ? "Create account" : "Sign in"}</h1>
     <p className="text-muted-foreground">Tunnel Console</p>
