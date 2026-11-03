@@ -13,7 +13,7 @@ A standalone native Android companion module. It lives in `android-companion/` a
 - Persistent light/dark theme preference
 - User-initiated support report generation, copy, and Android share sheet
 - Unit tests for diagnostics and support-report formatting
-- GitHub Actions workflow for unit tests, lint, debug APK, SHA-256 checksum, and artifact upload
+- GitHub Actions workflow for local-only scope verification, unit tests, lint, debug APK, SHA-256 checksum, and artifact upload
 
 ## Privacy and permissions
 
@@ -44,13 +44,13 @@ Compose 1.12 targets API 37 and requires AGP 9.1.1; this project stays on API 36
 
 ## Build locally
 
-Open the `android-companion` directory in Android Studio with JDK 17 and Android SDK 36 / Build Tools 36.0.0 installed. Build the `app` debug variant.
+Open the `android-companion` directory in Android Studio with JDK 17 and Android SDK 36 / Build Tools 36.0.0 installed. Before building, run `python3 scripts/verify_scope.py` from this directory. Then build the `app` debug variant.
 
 The current project does not yet check in the Gradle Wrapper scripts/JAR. Until those are added, use a local Gradle 8.13 installation or Android Studio's configured Gradle distribution. Adding a checked-in Gradle Wrapper is a recommended next maintenance task.
 
 ## GitHub Actions
 
-The workflow at `.github/workflows/companion-apk.yml` runs on relevant source/configuration pushes to `safe-app-shell`, pull requests targeting `main`, and manual dispatch. It uses the hosted runner's preinstalled Android SDK, installs API 36 / Build Tools 36.0.0, runs unit tests and lint, assembles the debug APK, generates a SHA-256 checksum, and uploads the artifact for 14 days.
+The workflow at `.github/workflows/companion-apk.yml` runs on relevant source/configuration pushes to `safe-app-shell`, pull requests targeting `main`, and manual dispatch. It first runs `scripts/verify_scope.py` to assert that the manifest still requests only `ACCESS_NETWORK_STATE`, disables cleartext and backup, and declares no Android VPN service. It then uses the hosted runner's preinstalled Android SDK, installs API 36 / Build Tools 36.0.0, runs unit tests and lint, assembles the debug APK, generates a SHA-256 checksum, and uploads the artifact for 14 days.
 
 The debug APK is for testing. It is not a production release and is not signed with a private release key. No signing credentials are stored in the repository.
 
