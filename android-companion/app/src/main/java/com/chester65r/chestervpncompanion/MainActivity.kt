@@ -119,10 +119,15 @@ private fun CompanionHome(
 
     fun generateSupportReport() {
         runCatching {
+            val latestNetwork = inspectNetworkReadiness(context)
+            val latestEvents = LocalAppStore.loadEvents(context)
+            val latestDevice = collectDeviceDiagnostics(context)
+            network = latestNetwork
+            events = latestEvents
             buildSupportReport(
-                device = collectDeviceDiagnostics(context),
-                network = network,
-                events = events,
+                device = latestDevice,
+                network = latestNetwork,
+                events = latestEvents,
             )
         }.onSuccess {
             report = it
@@ -136,10 +141,15 @@ private fun CompanionHome(
 
     fun copyReport() {
         val content = report ?: return
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("Local support report", content))
-        message = "Support report copied to clipboard."
-        record("Support report copied")
+        runCatching {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Local support report", content))
+        }.onSuccess {
+            message = "Support report copied to clipboard."
+            record("Support report copied")
+        }.onFailure {
+            message = "The report could not be copied. You can still review and share it."
+        }
     }
 
     fun shareReport() {
