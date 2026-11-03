@@ -84,7 +84,9 @@ Actual historical GitHub Actions logs showed:
 5. CI now targets API 36 / Build Tools 36.0.0, runs unit tests and lint before APK assembly, generates a SHA-256 checksum, uploads APK and checksum as a 14-day artifact, and cancels superseded runs.
 6. Workflow path filters skip README-only changes.
 
-**Do not assume CI is green.** The corrected Compose BOM and latest UI/test edits still require a completed run. Verify the newest Actions run after the current branch head before claiming any successful build or APK artifact. One earlier build passed SDK setup but failed AAR metadata due to Compose 1.12 targeting API 37; the dependency pin is intended to resolve that mismatch.
+**Verified successful CI run (November 3, 2026):** GitHub Actions run [#41602747276](https://github.com/chester65r/chestervpn-822529b1/actions/runs/41602747276) built source commit `7726d76b195da6ee81749a6f62e6f559d761eb58`. Its `build` job completed successfully, including SDK setup, license acceptance, API 36 installation, unit tests, lint, debug APK assembly, SHA-256 generation, and artifact upload. The uploaded artifact is `chester-vpn-companion-debug` (artifact ID `13214973128`, 11,107,920 bytes), available until November 17, 2026. SHA-256: `3571801f1d30dac465e29946785c5de54d477b517588606f8d350e63c3daea6a`.
+
+The branch head is later at `e28f92ec859cdea00bf7662c892bd2e7bc60b23f`; subsequent changes after the successful source build were documentation-only. The successful run therefore verifies the current app source, but not a physical-device installation. The artifact is a debug APK and is not release-signed. Re-run CI after any subsequent source or build-configuration change.
 
 Latest workflow page:
 https://github.com/chester65r/chestervpn-822529b1/actions/workflows/companion-apk.yml
@@ -108,7 +110,7 @@ The workflow also creates `app-debug.apk.sha256` and uploads both files. The deb
 
 ## Recommended next steps (priority order)
 
-1. Get a green CI run. Fix issues from actual test/build/lint logs before adding more features.
+1. Keep CI green. The November 3, 2026 run passed tests, lint, APK assembly and artifact upload; inspect and fix actual logs if any later source/build change fails.
 2. Add the Gradle Wrapper and update CI to use it.
 3. Test installs and UI on Android 15 and Android 16: edge-to-edge insets, bottom navigation, scroll, font scaling, RTL, clipboard, share sheet, lifecycle and process recreation.
 4. Add Compose UI/instrumentation tests for navigation, theme persistence, event filtering/clearing, report preview/copy/share and permission expectations.
