@@ -18,7 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -144,7 +144,7 @@ private fun CompanionHome() {
                         }
                         if (report != null) {
                             Spacer(Modifier.height(10.dp))
-                            Text(report!!, style = MaterialTheme.typography.bodySmall)
+                            Text(report.orEmpty(), style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -180,7 +180,7 @@ private fun CompanionHome() {
 
             items(events) { event ->
                 Text(event, style = MaterialTheme.typography.bodySmall)
-                Divider()
+                HorizontalDivider()
             }
 
             item {
