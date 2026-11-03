@@ -32,12 +32,12 @@ Support reports are generated only after a user action. Review the report before
 - Android Gradle Plugin: 8.13.2
 - Gradle: 8.13
 - Kotlin: 2.3.21
-- Compose BOM: 2026.09.00
+- Compose BOM: 2026.06.01
 - Activity Compose: 1.13.0
 
 Target SDK 36 is selected to meet the Google Play requirement for new mobile apps and updates from August 31, 2026. Targeting API 36 also requires testing Android 16 edge-to-edge behavior; the activity enables edge-to-edge and uses Material 3 Scaffold/TopAppBar/NavigationBar insets.
 
-The Kotlin Gradle plugin 2.3.21 compatibility range includes AGP 8.13.2 and Gradle 8.13. AGP 8.13 requires Gradle 8.13. See the official [Kotlin Gradle compatibility table](https://kotlinlang.org/docs/gradle-configure-project.html), [Android Gradle Plugin compatibility table](https://developer.android.com/build/releases/about-agp), [Google Play target API requirement](https://developer.android.com/google/play/requirements/target-sdk), and [Compose BOM guide](https://developer.android.com/develop/ui/compose/bom).
+Compose 1.12 targets API 37 and requires AGP 9.1.1; this project stays on API 36 / AGP 8.13.2, so it pins Compose BOM 2026.06.01 (Compose 1.11.x). Do not upgrade the BOM to 2026.08.00 or newer without also deliberately upgrading compileSdk and AGP. The Kotlin Gradle plugin 2.3.21 compatibility range includes AGP 8.13.2 and Gradle 8.13. AGP 8.13 requires Gradle 8.13. See the official [Kotlin Gradle compatibility table](https://kotlinlang.org/docs/gradle-configure-project.html), [Android Gradle Plugin compatibility table](https://developer.android.com/build/releases/about-agp), [Google Play target API requirement](https://developer.android.com/google/play/requirements/target-sdk), and [Compose BOM guide](https://developer.android.com/develop/ui/compose/bom).
 
 ## Build locally
 
