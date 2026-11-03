@@ -1,6 +1,7 @@
 package com.chester65r.chestervpncompanion
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 
 data class DeviceDiagnostics(
@@ -9,8 +10,17 @@ data class DeviceDiagnostics(
     val appVersion: String,
 )
 
+@Suppress("DEPRECATION")
 fun collectDeviceDiagnostics(context: Context): DeviceDiagnostics {
-    val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+    val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        context.packageManager.getPackageInfo(
+            context.packageName,
+            PackageManager.PackageInfoFlags.of(0L),
+        )
+    } else {
+        context.packageManager.getPackageInfo(context.packageName, 0)
+    }
+
     return DeviceDiagnostics(
         androidRelease = Build.VERSION.RELEASE ?: "Unknown",
         apiLevel = Build.VERSION.SDK_INT,
