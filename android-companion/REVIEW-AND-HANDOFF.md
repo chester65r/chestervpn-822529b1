@@ -84,7 +84,7 @@ Actual historical GitHub Actions logs showed:
 5. CI now targets API 36 / Build Tools 36.0.0, runs unit tests and lint before APK assembly, generates a SHA-256 checksum, uploads APK and checksum as a 14-day artifact, and cancels superseded runs.
 6. Workflow path filters skip README-only changes.
 
-**Do not assume CI is green.** The new license command and recent source/test edits still require a completed run. Verify the newest Actions run after the current branch head before claiming any successful build or APK artifact.
+**Do not assume CI is green.** The corrected Compose BOM and latest UI/test edits still require a completed run. Verify the newest Actions run after the current branch head before claiming any successful build or APK artifact. One earlier build passed SDK setup but failed AAR metadata due to Compose 1.12 targeting API 37; the dependency pin is intended to resolve that mismatch.
 
 Latest workflow page:
 https://github.com/chester65r/chestervpn-822529b1/actions/workflows/companion-apk.yml
@@ -125,7 +125,7 @@ The workflow also creates `app-debug.apk.sha256` and uploads both files. The deb
 - APK installs and launches on Android 15 and 16.
 - All four screens, theme switching, diagnostics, network refresh, event filter/clear, report preview/copy/share are tested.
 - Manifest permissions remain minimal.
-- The original `main` branch and its pre-existing application files remain unchanged.
+- The original `main` branch has no remaining companion source files or handoff document. An accidentally misplaced handoff file was briefly added to `main` and then deleted; the add/delete pair remains in commit history, so the branch graph is ahead/behind rather than a clean ancestor relationship. No pre-existing application source file was changed.
 - No feature is described as real VPN functionality unless it has actually been implemented, authorized and verified.
 
 ## Instructions to the next developer / AI
