@@ -25,7 +25,7 @@ Implemented:
 - Persistent light/dark theme preference.
 - User-initiated support report generation, preview, copy and Android share sheet.
 - Unit tests for diagnostics/report contents, empty history and 50-event limit.
-- GitHub Actions workflow for tests, lint, debug APK assembly, SHA-256 checksum and artifact upload.
+- GitHub Actions workflow for manifest scope verification, tests, lint, debug APK assembly, SHA-256 checksum and artifact upload.
 
 Privacy / permissions:
 - Manifest requests only `android.permission.ACCESS_NETWORK_STATE`.
@@ -72,6 +72,7 @@ The Kotlin Gradle plugin 2.3.21 compatibility range includes AGP 8.13.2 and Grad
 - `app/src/test/.../DeviceDiagnosticsTest.kt` — diagnostics privacy-field test.
 - `app/src/test/.../SupportReportTest.kt` — report fields, empty event history and 50-event cap.
 - `app/build.gradle.kts` — Android/Kotlin/Compose dependencies.
+- `scripts/verify_scope.py` — static manifest guard for this local-only companion.
 - `.github/workflows/companion-apk.yml` — CI workflow.
 
 ## CI investigation and fixes already made
@@ -83,10 +84,11 @@ Actual historical GitHub Actions logs showed:
 4. A diagnostics test incorrectly asserted that the text `SIM` must not appear even though the privacy notice intentionally mentions that SIM data is not collected. The assertion now checks explicit sensitive-field labels instead.
 5. CI now targets API 36 / Build Tools 36.0.0, runs unit tests and lint before APK assembly, generates a SHA-256 checksum, uploads APK and checksum as a 14-day artifact, and cancels superseded runs.
 6. Workflow path filters skip README-only changes.
+7. Added `scripts/verify_scope.py` and wired it into CI before the Android build. It requires `ACCESS_NETWORK_STATE` as the only declared permission, keeps cleartext and Android backup disabled, and rejects a declared system VPN service. This is a regression guard for the companion's local-only scope.
 
-**Verified successful CI run (November 3, 2026):** GitHub Actions run [#41602747276](https://github.com/chester65r/chestervpn-822529b1/actions/runs/41602747276) built source commit `7726d76b195da6ee81749a6f62e6f559d761eb58`. Its `build` job completed successfully, including SDK setup, license acceptance, API 36 installation, unit tests, lint, debug APK assembly, SHA-256 generation, and artifact upload. The uploaded artifact is `chester-vpn-companion-debug` (artifact ID `13214973128`, 11,107,920 bytes), available until November 17, 2026. SHA-256: `3571801f1d30dac465e29946785c5de54d477b517588606f8d350e63c3daea6a`.
+**Last verified successful Android source build (November 3, 2026):** GitHub Actions run [#41602747276](https://github.com/chester65r/chestervpn-822529b1/actions/runs/41602747276) built source commit `7726d76b195da6ee81749a6f62e6f559d761eb58`. Its `build` job completed successfully, including SDK setup, license acceptance, API 36 installation, unit tests, lint, debug APK assembly, SHA-256 generation, and artifact upload. The uploaded artifact is `chester-vpn-companion-debug` (artifact ID `13214973128`, 11,107,920 bytes), available until November 17, 2026. SHA-256: `3571801f1d30dac465e29946785c5de54d477b517588606f8d350e63c3daea6a`.
 
-The branch head is later at `e28f92ec859cdea00bf7662c892bd2e7bc60b23f`; subsequent changes after the successful source build were documentation-only. The successful run therefore verifies the current app source, but not a physical-device installation. The artifact is a debug APK and is not release-signed. Re-run CI after any subsequent source or build-configuration change.
+After that successful build, a static manifest scope guard and its workflow step were added in commit `92324fa2375f3b24ae0e12f55ace7b82d62050f6`; README and handoff documentation were also updated. The earlier run verifies the app source but does not verify the newly added scope-guard step. The new CI run must pass before treating the updated workflow as verified. No physical-device installation has been performed. The artifact is a debug APK and is not release-signed.
 
 Latest workflow page:
 https://github.com/chester65r/chestervpn-822529b1/actions/workflows/companion-apk.yml
@@ -104,13 +106,13 @@ Expected debug APK:
 android-companion/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-The workflow also creates `app-debug.apk.sha256` and uploads both files. The debug APK is for testing only; it is not a release-signed APK.
+The workflow also creates `app-debug.apk.sha256` and uploads both files. It now runs `python3 android-companion/scripts/verify_scope.py` before Gradle. The debug APK is for testing only; it is not a release-signed APK.
 
 **Known tooling gap:** Gradle Wrapper scripts/JAR are not checked in yet. Add `gradlew`, `gradlew.bat`, `gradle/wrapper/gradle-wrapper.jar` and `gradle-wrapper.properties` pinned to Gradle 8.13, then switch CI to `./gradlew`.
 
 ## Recommended next steps (priority order)
 
-1. Keep CI green. The November 3, 2026 run passed tests, lint, APK assembly and artifact upload; inspect and fix actual logs if any later source/build change fails.
+1. Verify the new CI run that includes `verify_scope.py`; the earlier November 3, 2026 run passed tests, lint, APK assembly and artifact upload before the scope guard was added. Inspect and fix actual logs if the updated workflow fails.
 2. Add the Gradle Wrapper and update CI to use it.
 3. Test installs and UI on Android 15 and Android 16: edge-to-edge insets, bottom navigation, scroll, font scaling, RTL, clipboard, share sheet, lifecycle and process recreation.
 4. Add Compose UI/instrumentation tests for navigation, theme persistence, event filtering/clearing, report preview/copy/share and permission expectations.
@@ -122,7 +124,7 @@ The workflow also creates `app-debug.apk.sha256` and uploads both files. The deb
 
 ## Definition of done
 
-- Latest Actions run passes unit tests, lint and `assembleDebug`.
+- Latest Actions run passes the local-only scope guard, unit tests, lint and `assembleDebug`.
 - APK and SHA-256 artifact are downloadable from that successful run.
 - APK installs and launches on Android 15 and 16.
 - All four screens, theme switching, diagnostics, network refresh, event filter/clear, report preview/copy/share are tested.
