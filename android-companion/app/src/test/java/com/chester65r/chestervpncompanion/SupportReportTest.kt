@@ -5,15 +5,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SupportReportTest {
+    private fun sampleNetwork() = NetworkReadiness(
+        status = "Internet connectivity validated by Android",
+        transport = "Wi-Fi",
+        metered = false,
+    )
+
     @Test
     fun reportContainsOnlyTheIntendedLocalDiagnostics() {
         val report = buildSupportReport(
             device = DeviceDiagnostics("15", 35, "1.0.0"),
-            network = NetworkReadiness(
-                status = "Internet connectivity validated by Android",
-                transport = "Wi-Fi",
-                metered = false,
-            ),
+            network = sampleNetwork(),
             events = listOf("08:00:00  App opened"),
         )
 
@@ -23,8 +25,8 @@ class SupportReportTest {
         assertTrue(report.contains("Connection type: Wi-Fi"))
         assertTrue(report.contains("App opened"))
         assertTrue(report.contains("Generated locally"))
-        assertFalse(report.contains("IMEI"))
-        assertFalse(report.contains("SIM details:"))
+        assertTrue(report.contains("SIM details"))
+        assertFalse(report.contains("IMEI:"))
         assertFalse(report.contains("password="))
     }
 
@@ -36,7 +38,22 @@ class SupportReportTest {
             events = emptyList(),
         )
 
-        assertTrue(report.contains("No activity events recorded"))
+        assertTrue(report.contains("No events recorded"))
         assertTrue(report.contains("Metered connection: Unknown"))
+    }
+
+    @Test
+    fun reportIncludesAtMostFiftyRecentEvents() {
+        val events = (1..60).map { "event-$it" }
+        val report = buildSupportReport(
+            device = DeviceDiagnostics("16", 36, "1.0.0"),
+            network = sampleNetwork(),
+            events = events,
+        )
+
+        assertTrue(report.contains("event-1"))
+        assertTrue(report.contains("event-50"))
+        assertFalse(report.contains("event-51"))
+        assertFalse(report.contains("event-60"))
     }
 }
