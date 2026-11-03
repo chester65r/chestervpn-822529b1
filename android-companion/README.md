@@ -1,6 +1,6 @@
 # ChesterVPN Companion (Android)
 
-A standalone native Android companion module. It lives in `android-companion/` and is intentionally separate from the existing web app. All additions remain on the `safe-app-shell` branch; the original `main` branch is not modified.
+A standalone native Android companion module. It lives in `android-companion/` and is intentionally separate from the existing web app. All lasting app source additions are on the `safe-app-shell` branch; the current `main` tree contains no companion module or handoff document.
 
 ## Features in this companion build
 
