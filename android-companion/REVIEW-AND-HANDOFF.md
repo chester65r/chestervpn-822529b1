@@ -49,7 +49,7 @@ Do not add features intended to evade carrier billing, package limits, free-data
 | Android Gradle Plugin | 8.13.2 |
 | Gradle in CI | 8.13 |
 | Kotlin Gradle plugin | 2.3.21 |
-| Compose BOM | 2026.09.00 |
+| Compose BOM | 2026.06.01 |
 | Activity Compose | 1.13.0 |
 
 Target API 36 is deliberate: starting August 31, 2026, Google Play requires new apps and updates for mobile apps to target Android 16 / API 36 or higher. Android 16 edge-to-edge is enabled in `MainActivity`; verify layout insets on Android 15 and 16 devices.
