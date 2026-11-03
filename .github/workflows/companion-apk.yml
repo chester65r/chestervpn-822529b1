@@ -7,6 +7,7 @@ on:
       - safe-app-shell
     paths:
       - "android-companion/app/src/**"
+      - "android-companion/scripts/**"
       - "android-companion/app/build.gradle.kts"
       - "android-companion/build.gradle.kts"
       - "android-companion/settings.gradle.kts"
@@ -36,6 +37,9 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v6
+
+      - name: Verify local-only companion scope
+        run: python3 android-companion/scripts/verify_scope.py
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
