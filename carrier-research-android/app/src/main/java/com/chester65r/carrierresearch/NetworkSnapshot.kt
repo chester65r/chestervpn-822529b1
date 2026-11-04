@@ -2,6 +2,7 @@ package com.chester65r.carrierresearch
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 
 data class NetworkSnapshot(
@@ -51,4 +52,20 @@ fun readNetworkSnapshot(context: Context): NetworkSnapshot {
         metered = runCatching { manager?.isActiveNetworkMetered }.getOrNull(),
         capturedAt = java.time.Instant.now().toString(),
     )
+}
+
+/**
+ * Returns Android's current default network only when it is cellular.
+ * Turning Wi-Fi off on the test device makes the cellular SIM the default network.
+ */
+fun activeCellularNetwork(context: Context): Network? {
+    val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        ?: return null
+    val network = manager.activeNetwork ?: return null
+    val capabilities = manager.getNetworkCapabilities(network) ?: return null
+
+    if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) return null
+    if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return null
+
+    return network
 }
