@@ -1,6 +1,6 @@
 package com.chester65r.carrierresearch
 
-import java.net.InetAddress
+import android.net.Network
 import java.net.URI
 import java.net.URL
 import javax.net.ssl.HttpsURLConnection
@@ -40,22 +40,23 @@ internal fun validateHealthEndpoint(raw: String): URI {
 }
 
 /**
- * Performs one read-only HTTPS GET against a user-owned /healthz endpoint.
- * It never follows redirects, sends credentials, or inspects response bodies.
+ * Performs one read-only HTTPS GET over the exact Android cellular Network supplied
+ * by the caller. DNS and the HTTPS socket are both bound to that Network. It never
+ * follows redirects, sends credentials, or inspects response bodies.
  */
-fun probeAuthorizedHealthEndpoint(raw: String): EndpointProbeResult {
+fun probeAuthorizedHealthEndpoint(raw: String, cellularNetwork: Network): EndpointProbeResult {
     val uri = validateHealthEndpoint(raw)
     val started = System.nanoTime()
 
-    val addresses = InetAddress.getAllByName(uri.host)
+    val addresses = cellularNetwork.getAllByName(uri.host)
     require(addresses.isNotEmpty() && addresses.size <= 8) {
-        "DNS returned an unsupported number of records."
+        "Cellular DNS returned an unsupported number of records."
     }
     require(addresses.all { isPublicAddress(it) }) {
         "The endpoint must resolve only to public addresses."
     }
 
-    val connection = URL(uri.toString()).openConnection() as HttpsURLConnection
+    val connection = cellularNetwork.openConnection(URL(uri.toString())) as HttpsURLConnection
     connection.connectTimeout = 5000
     connection.readTimeout = 5000
     connection.requestMethod = "GET"
@@ -75,9 +76,9 @@ fun probeAuthorizedHealthEndpoint(raw: String): EndpointProbeResult {
             httpStatus = status,
             elapsedMillis = elapsed,
             detail = if (successful) {
-                "TLS connection and HTTPS health check succeeded."
+                "Cellular-bound TLS and HTTPS health check succeeded."
             } else {
-                "TLS completed, but the endpoint returned a non-success status."
+                "Cellular-bound TLS completed, but the endpoint returned a non-success status."
             },
         )
     } finally {
@@ -85,7 +86,7 @@ fun probeAuthorizedHealthEndpoint(raw: String): EndpointProbeResult {
     }
 }
 
-private fun isPublicAddress(address: InetAddress): Boolean =
+private fun isPublicAddress(address: java.net.InetAddress): Boolean =
     !address.isAnyLocalAddress &&
         !address.isLoopbackAddress &&
         !address.isLinkLocalAddress &&
