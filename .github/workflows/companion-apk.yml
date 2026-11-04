@@ -12,12 +12,14 @@ on:
       - "android-companion/build.gradle.kts"
       - "android-companion/settings.gradle.kts"
       - "android-companion/gradle.properties"
+      - "carrier-research-android/**"
       - ".github/workflows/companion-apk.yml"
   pull_request:
     branches:
       - main
     paths:
       - "android-companion/**"
+      - "carrier-research-android/**"
       - ".github/workflows/companion-apk.yml"
 
 concurrency:
@@ -76,19 +78,36 @@ jobs:
           gradle-version: "8.13"
           cache-provider: basic
 
-      - name: Run tests, lint, and assemble debug APK
+      - name: Run companion tests, lint, and assemble debug APK
         run: gradle --no-daemon -p android-companion testDebugUnitTest lintDebug assembleDebug
 
-      - name: Generate APK checksum
+      - name: Run carrier research tests, lint, and assemble debug APK
+        run: gradle --no-daemon -p carrier-research-android testDebugUnitTest lintDebug assembleDebug
+
+      - name: Generate companion APK checksum
         working-directory: android-companion/app/build/outputs/apk/debug
         run: sha256sum app-debug.apk | tee app-debug.apk.sha256
 
-      - name: Upload debug APK and checksum
+      - name: Generate carrier research APK checksum
+        working-directory: carrier-research-android/app/build/outputs/apk/debug
+        run: sha256sum app-debug.apk | tee app-debug.apk.sha256
+
+      - name: Upload companion debug APK and checksum
         uses: actions/upload-artifact@v4
         with:
           name: chester-vpn-companion-debug
           path: |
             android-companion/app/build/outputs/apk/debug/app-debug.apk
             android-companion/app/build/outputs/apk/debug/app-debug.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload carrier research debug APK and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: chester-vpn-carrier-research-debug
+          path: |
+            carrier-research-android/app/build/outputs/apk/debug/app-debug.apk
+            carrier-research-android/app/build/outputs/apk/debug/app-debug.apk.sha256
           if-no-files-found: error
           retention-days: 14
