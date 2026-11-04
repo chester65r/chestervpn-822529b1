@@ -8,7 +8,7 @@ class PolicyEngineTest {
     @Test
     fun defensiveSuitePassesAllExpectedCases() {
         val results = PolicyEngine.runDefensiveSuite()
-        assertEquals(7, results.size)
+        assertEquals(9, results.size)
         assertTrue(results.all { it.passed })
     }
 
@@ -39,7 +39,17 @@ class PolicyEngineTest {
     }
 
     @Test
-    fun sessionBindingAndIpv6PolicyFailClosed() {
+    fun unauthenticatedAndUnboundSessionsFailClosed() {
+        assertEquals(
+            PolicyVerdict.DENY_UNBOUND_SESSION,
+            PolicyEngine.evaluate(
+                FlowRequest(
+                    DataPlan.GENERAL_DATA,
+                    TrafficClass.GENERAL_WEB,
+                    authenticatedSubscriber = false,
+                )
+            ),
+        )
         assertEquals(
             PolicyVerdict.DENY_UNBOUND_SESSION,
             PolicyEngine.evaluate(
@@ -50,6 +60,20 @@ class PolicyEngineTest {
                 )
             ),
         )
+    }
+
+    @Test
+    fun unknownTrafficFailsClosed() {
+        assertEquals(
+            PolicyVerdict.DENY_UNCLASSIFIED,
+            PolicyEngine.evaluate(
+                FlowRequest(DataPlan.GENERAL_DATA, TrafficClass.UNKNOWN)
+            ),
+        )
+    }
+
+    @Test
+    fun ipv6PolicyGapFailsClosed() {
         assertEquals(
             PolicyVerdict.DENY_POLICY_GAP,
             PolicyEngine.evaluate(
