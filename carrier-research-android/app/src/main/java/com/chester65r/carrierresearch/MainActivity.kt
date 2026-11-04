@@ -67,7 +67,7 @@ private fun CarrierResearchApp(activity: ComponentActivity) {
                     Column(modifier = Modifier.padding(top = 18.dp)) {
                         Text("ChesterVPN Carrier Research", style = MaterialTheme.typography.headlineSmall)
                         Text(
-                            "Real Android network observations + a defensive carrier-policy lab",
+                            "Cellular-bound measurements + a defensive carrier-policy lab",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Spacer(Modifier.height(8.dp))
@@ -131,7 +131,7 @@ private fun CarrierResearchApp(activity: ComponentActivity) {
                                 Text("Refresh live network state")
                             }
                             Text(
-                                "For a mobile-data measurement, temporarily turn Wi-Fi off yourself and refresh. The app does not change network settings.",
+                                "Turn Wi-Fi off before measurement. The app verifies Android's active transport is cellular and binds the HTTPS request and DNS lookup to that same network.",
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -165,22 +165,30 @@ private fun CarrierResearchApp(activity: ComponentActivity) {
                             Button(
                                 enabled = authorizationConfirmed && !probing,
                                 onClick = {
-                                    probing = true
-                                    probeError = null
                                     probeResult = null
-                                    Thread {
-                                        val outcome = runCatching {
-                                            probeAuthorizedHealthEndpoint(endpointUrl)
-                                        }
-                                        activity.runOnUiThread {
-                                            outcome.onSuccess { probeResult = it }
-                                                .onFailure { probeError = it.message ?: "Endpoint check failed." }
-                                            probing = false
-                                        }
-                                    }.start()
+                                    probeError = null
+                                    network = readNetworkSnapshot(context)
+                                    val cellular = activeCellularNetwork(context)
+                                    if (cellular == null) {
+                                        probeError = "No active cellular Internet network. Turn Wi-Fi off, confirm mobile data is enabled, and refresh."
+                                    } else {
+                                        probing = true
+                                        val endpoint = endpointUrl
+                                        Thread {
+                                            val outcome = runCatching {
+                                                probeAuthorizedHealthEndpoint(endpoint, cellular)
+                                            }
+                                            activity.runOnUiThread {
+                                                outcome.onSuccess { probeResult = it }
+                                                    .onFailure { probeError = it.message ?: "Endpoint check failed." }
+                                                probing = false
+                                                network = readNetworkSnapshot(context)
+                                            }
+                                        }.start()
+                                    }
                                 },
                             ) {
-                                Text(if (probing) "Testing…" else "Run one HTTPS health check")
+                                Text(if (probing) "Testing…" else "Run one cellular HTTPS check")
                             }
                             probeResult?.let {
                                 Spacer(Modifier.height(8.dp))
@@ -189,7 +197,7 @@ private fun CarrierResearchApp(activity: ComponentActivity) {
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                                 Text(
-                                    "Host: " + it.host + " • DNS records: " + it.dnsRecordCount +
+                                    "Host: " + it.host + " • Cellular DNS records: " + it.dnsRecordCount +
                                         " • HTTP: " + (it.httpStatus ?: "N/A") +
                                         " • " + it.elapsedMillis + " ms",
                                     style = MaterialTheme.typography.bodySmall,
