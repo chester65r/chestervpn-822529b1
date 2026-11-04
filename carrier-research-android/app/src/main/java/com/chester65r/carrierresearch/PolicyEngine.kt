@@ -104,6 +104,15 @@ object PolicyEngine {
                 PolicyVerdict.DENY_OUT_OF_BUNDLE,
             ),
             Triple(
+                "Unauthenticated subscriber is denied",
+                FlowRequest(
+                    DataPlan.GENERAL_DATA,
+                    TrafficClass.GENERAL_WEB,
+                    authenticatedSubscriber = false,
+                ),
+                PolicyVerdict.DENY_UNBOUND_SESSION,
+            ),
+            Triple(
                 "Unbound subscriber session is denied",
                 FlowRequest(
                     DataPlan.SOCIAL_ONLY,
@@ -111,6 +120,11 @@ object PolicyEngine {
                     boundToSubscriberSession = false,
                 ),
                 PolicyVerdict.DENY_UNBOUND_SESSION,
+            ),
+            Triple(
+                "Unclassified traffic is denied",
+                FlowRequest(DataPlan.GENERAL_DATA, TrafficClass.UNKNOWN),
+                PolicyVerdict.DENY_UNCLASSIFIED,
             ),
             Triple(
                 "Missing IPv6 policy is fail-closed",
