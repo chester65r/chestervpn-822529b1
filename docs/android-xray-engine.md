@@ -28,12 +28,12 @@ The fetch script downloads only the pinned release, verifies its SHA-256, extrac
 
 ## Safety and known limits
 
-- The Xray engine uses Android VPN permission and a full-device TUN. It is not a browser-only proxy or a successful-connectivity guarantee.
+- The Xray engine uses Android VPN permission and routes device IPv4/IPv6 traffic into a TUN. Xray's TUN stack proxies TCP and UDP and supports ICMP Echo only; other ICMP types are ignored. It is not a general-purpose layer-3 VPN for every IP protocol, a browser-only proxy, or a successful-connectivity guarantee.
 - The service has a foreground notification and an explicit Stop action. If the core refuses to stop, the service keeps the TUN descriptor open and reports a stop failure rather than closing the interface underneath a live core.
 - Android process death, forced stop, VPN revocation, Always-on VPN policy and OEM background restrictions still require emulator and physical-device verification. Enable Android's system **Block connections without VPN** option separately when a device-wide lockdown is required; the app does not silently claim a kill switch.
 - Only one Android VPN is active at a time. The app prevents its Mobily auto-WireGuard rule from starting while the Xray service is active and asks the user to stop WireGuard before starting Xray.
 - This supports authorized endpoints and normal TLS validation. It does not implement SNI/Host impersonation, domain fronting, carrier whitelist exploitation, zero-rating or billing bypass, or carrier-control evasion.
-- A successful core start only proves that the local profile was accepted and the core started. Real server handshake, DNS, IPv4/IPv6, TCP/UDP, reconnect, leak and SIM behavior require testing on an owned server and a physical Android device.
+- A successful core start only proves that the local profile was accepted and the core started; it does not confirm an authenticated remote handshake. Xray's TUN is a proxy-based TCP/IP stack, so some network-level behaviors differ from WireGuard, and a connect may appear locally accepted even when a remote host is unreachable. Real server handshake, DNS, IPv4/IPv6, TCP/UDP, reconnect, leak and SIM behavior require testing on an owned server and a physical Android device.
 
 ## Verification
 
