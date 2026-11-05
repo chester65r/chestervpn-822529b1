@@ -28,7 +28,7 @@ Keep it under 120 words. No markdown headings. Never suggest bypassing carrier b
 
 export const explainConnection = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => DiagnosticsSchema.parse(d))
+  .validator((d: unknown) => DiagnosticsSchema.parse(d))
   .handler(async ({ data }): Promise<{ text: string } | { error: string }> => {
     const key = process.env["LOVABLE_API_KEY"];
     if (!key) return { error: "The AI helper isn't configured yet." };
