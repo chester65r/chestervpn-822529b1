@@ -828,7 +828,7 @@ class XrayVpnService : VpnService() {
     @Volatile private var running = false
 
     private val socketController = object : DialerController {
-        override fun protectFd(fd: Int): Boolean = protect(fd)
+        override fun protectFd(fd: Long): Boolean = protect(fd.toInt())
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
