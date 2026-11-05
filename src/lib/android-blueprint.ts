@@ -1797,7 +1797,7 @@ const layout = String.raw`<?xml version="1.0" encoding="utf-8"?>
 
         <TextView
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="Full-device Xray tunnel · URI or JSON"
+            android:text="Device-wide Xray TUN · TCP/UDP, ICMP Echo only"
             android:textStyle="bold" android:paddingTop="20dp" />
 
         <EditText android:id="@+id/etXrayProfile"
