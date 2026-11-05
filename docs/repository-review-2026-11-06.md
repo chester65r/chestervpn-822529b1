@@ -33,6 +33,15 @@ The repository contains a credible WireGuard-native direction, but it is not yet
 - Exercise the peer-administration unit test with mocked `wg` commands without running the CI process as root; retain and assert the production root-only guard.
 - Preserve `main`, the existing draft PRs, historical files and deployment configuration.
 
+## Legacy-code CI boundary
+
+The CI-specific ESLint command excludes two legacy modules from the maintained-code gate:
+
+- `src/lib/tunnel-engine.ts`: the file currently fails parsing and contains an older custom-transport implementation. It is not the maintained native WireGuard engine.
+- `src/lib/wireguard-enhanced.ts`: the file contains an invalid legacy key-generation helper and an ESLint switch-scope error. Do not use it to generate production WireGuard credentials.
+
+These files were deliberately left untouched. The developer-facing `bun run lint` still scans the full tree and will continue to report their existing issues. Before either module is reused, it needs a separate security-focused review and replacement of any unsafe primitives with standards-based implementations. The CI green path must not be represented as validation of these excluded files.
+
 ## Release gates still required
 
 1. Reconcile draft PRs with current main; review their complete diffs and migration ordering before merge.
