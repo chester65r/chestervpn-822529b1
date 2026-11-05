@@ -3,6 +3,8 @@ import {
   canMarkCarrierTested,
   createCarrierProfile,
   detectCarrierFromOperatorName,
+  detectCarrierFromSimIdentity,
+  shouldAutoConnectForMobilySim,
   withOperatorDetection,
 } from "@/lib/carrier-profiles";
 
@@ -59,4 +61,25 @@ describe("Saudi carrier profile metadata", () => {
       }),
     ).toBe(false);
   });
+  it("detects Mobily using the SIM identity, including Arabic carrier labels", () => {
+    expect(detectCarrierFromSimIdentity("Mobily", "Unknown")).toBe("mobily");
+    expect(detectCarrierFromSimIdentity("Etihad Etisalat", "")).toBe("mobily");
+    expect(detectCarrierFromSimIdentity("موبايلي", "")).toBe("mobily");
+    expect(detectCarrierFromSimIdentity("", "Mobily")).toBe("mobily");
+  });
+
+  it("does not infer the SIM carrier from a roaming network label", () => {
+    expect(detectCarrierFromSimIdentity("Unknown SIM", "")).toBe("manual");
+    expect(detectCarrierFromSimIdentity("", "Unknown roaming partner")).toBe("manual");
+  });
+
+  it("auto-connects regardless of balance because balance is not an input", () => {
+    const base = { simOperatorName: "Mobily", carrierName: "" };
+    expect(shouldAutoConnectForMobilySim({ ...base, enabled: true })).toBe(true);
+    expect(shouldAutoConnectForMobilySim({ ...base, enabled: false })).toBe(false);
+    expect(shouldAutoConnectForMobilySim({
+      enabled: true, simOperatorName: "STC", carrierName: "STC Saudi Arabia",
+    })).toBe(false);
+  });
+
 });
