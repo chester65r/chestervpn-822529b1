@@ -900,8 +900,11 @@ class XrayVpnService : VpnService() {
         for (index in 0 until outbounds.length()) {
             val outbound = outbounds.optJSONObject(index)
                 ?: throw IllegalArgumentException("Invalid outbound configuration")
-            val tlsSettings = outbound.optJSONObject("streamSettings")
-                ?.optJSONObject("tlsSettings")
+            val streamSettings = outbound.optJSONObject("streamSettings")
+            require(!streamSettings?.optString("security").equals("reality", ignoreCase = true)) {
+                "REALITY camouflage is disabled; use TLS with the authorized endpoint certificate"
+            }
+            val tlsSettings = streamSettings?.optJSONObject("tlsSettings")
             require(tlsSettings?.optBoolean("allowInsecure", false) != true) {
                 "TLS certificate verification must remain enabled"
             }
