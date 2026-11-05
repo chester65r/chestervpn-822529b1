@@ -78,6 +78,7 @@ describe("native Xray full-device VPN engine", () => {
     expect(manifest).toContain('android:process=":xray"');
     expect(manifest).toContain('android.permission.BIND_VPN_SERVICE');
     expect(service).toContain('put("xray.tun.fd", fd.toString())');
+    expect(service).toContain("override fun protectFd(fd: Long): Boolean = protect(fd.toInt())");
     expect(service).toContain("LibXray.registerDialerController(socketController)");
     expect(service).toContain("LibXray.setDNS(socketController");
     expect(service).toContain('.addRoute("0.0.0.0", 0)');
