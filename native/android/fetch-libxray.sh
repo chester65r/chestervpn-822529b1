@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fetches the pinned Android libXray AAR and includes upstream license texts.
 set -euo pipefail
-destination="${1:?Usage: fetch-libxray.sh <generated-project>/app/libs>"
+destination="${1:?Usage: fetch-libxray.sh <generated-project>/app/libs>}"
 mkdir -p "$destination"
 app_dir="$(cd "$destination/.." && pwd)"
 tmp="$(mktemp -d)"
