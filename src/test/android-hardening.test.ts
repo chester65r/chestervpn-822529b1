@@ -91,6 +91,8 @@ describe("native Xray full-device VPN engine", () => {
     expect(service).toContain('convertShareLinksToXrayJson');
     expect(service).toContain('put("protocol", "tun")');
     expect(service).toContain('put("tag", "tun-in")');
+    expect(service).toContain('tlsSettings?.optBoolean("allowInsecure", false) != true');
+    expect(service).toContain("TLS certificate verification must remain enabled");
     expect(service).toContain('root.put("inbounds", JSONArray().put(tunInbound))');
     expect(service).toContain('put("inboundTag", JSONArray().put("tun-in"))');
     expect(service).toContain("Profile size must be 1 MiB or less");
