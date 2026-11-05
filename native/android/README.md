@@ -145,3 +145,8 @@ After reboot, the receiver can start only if the app was opted in, a saved profi
 and Android VPN consent is already granted; otherwise open the app to complete consent.
 SIM/operator values remain best-effort and must be checked on the physical handset,
 especially for dual-SIM, MVNO, roaming and OEM-specific behavior.
+
+Automatic start is limited to a cellular route. A validated Wi-Fi route pauses the Mobily
+rule, and network capability callbacks trigger reevaluation when available networks change.
+On devices with multiple simultaneously connected networks, Android/OEM routing can differ;
+the active SIM and transport decision must therefore be confirmed on the physical phone.
