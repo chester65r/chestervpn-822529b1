@@ -7,7 +7,7 @@ export type BlueprintFile = { name: string; path: string; lang: string; code: st
 export const WIREGUARD_ANDROID_TUNNEL = "com.wireguard.android:tunnel:1.0.20260102";
 
 const manifest = String.raw`<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -24,12 +24,17 @@ const manifest = String.raw`<?xml version="1.0" encoding="utf-8"?>
         android:label="Tunnel Console"
         android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
 
+        <!-- This is a real VpnService. It starts only after VpnService.prepare() grants
+             user consent. Android documents active, user-configured VPN apps as eligible
+             for systemExempted. Lint cannot infer that runtime eligibility from XML alone;
+             suppress only this static check and retain the required FGS permission. -->
         <service
             android:name=".XrayVpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:exported="false"
             android:process=":xray"
-            android:foregroundServiceType="systemExempted">
+            android:foregroundServiceType="systemExempted"
+            tools:ignore="ForegroundServicePermission">
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>
