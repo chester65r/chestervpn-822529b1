@@ -23,10 +23,14 @@ AGP 8.7 may select build-tools 34.0.0; retain downloaded SDK/tool versions in th
 
 ```sh
 bun native/android/generate-project.ts /tmp/tunnel-android
+# Fetch the pinned Xray engine and copy MIT/MPL-2.0 notices into APK assets:
+bash native/android/fetch-libxray.sh /tmp/tunnel-android/app/libs
 sdkmanager 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' 'emulator'
 sdkmanager --licenses
 # Use an independently verified Gradle 8.9 installation just to create the wrapper:
 gradle -p /tmp/tunnel-android wrapper --gradle-version 8.9 --distribution-type bin
+# The native source includes WireGuard and Xray. Xray runs in the separate :xray process;
+# do not move LibXray calls into MainActivity or combine both Go runtimes in one process.
 # The generated wrapper task pins the official Gradle 8.9 binary checksum:
 # d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab
 # Verify it matches distributionSha256Sum in gradle/wrapper/gradle-wrapper.properties.
@@ -179,3 +183,12 @@ the handshake result and do not carry Android application traffic or establish a
 SOCKS5/HTTP CONNECT/WebSocket/TLS must not be described as full-device VPN transports.
 WireGuard remains the only full-device VPN in this generated app. Real endpoint checks
 must be performed on a physical device and do not establish Mobily/STC carrier compatibility.
+
+
+## Native Xray full-device VPN
+
+The Android companion now includes a real Xray TUN engine in addition to WireGuard. See `docs/android-xray-engine.md` and `THIRD_PARTY_NOTICES.md` for supported profile types, security boundaries and upstream licensing. It accepts Xray JSON or supported VLESS/VMess/Trojan/Shadowsocks/SOCKS/Hysteria2 share links. TLS, WebSocket, gRPC, XHTTP and REALITY are configured as Xray transport/security settings where supported by the selected outbound; they are not all standalone share-link formats.
+
+The build pins `XTLS/libXray v26.10.31` and verifies the Android release archive SHA-256 before extracting `libXray.aar`. The exact upstream MIT and MPL-2.0 texts are copied into the APK assets. Keep the Xray service in the dedicated `:xray` process: WireGuard and Xray each embed a Go runtime and must not load into the same Android process.
+
+The native CI compile/lint lane must pass with this AAR before considering the app buildable. A passing compile does not yet prove remote-server interoperability, leak-free IPv4/IPv6/DNS or physical SIM behavior; those require Android device tests against an authorized server. Android's **Block connections without VPN** lockdown remains a separate system setting.
