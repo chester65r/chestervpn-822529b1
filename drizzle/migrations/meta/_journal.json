@@ -22,6 +22,13 @@
       "when": 1793659161458,
       "tag": "0002_owner_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793836800000,
+      "tag": "0003_restrict_has_role",
+      "breakpoints": true
     }
   ]
 }
