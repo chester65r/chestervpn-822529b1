@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { AwsPanel } from "./AwsPanel";
 import {
   TRANSPORTS,
+  SAMPLE_VPS_SERVERS,
   rowToServer,
   validateServerInput,
   type RelayServer,
@@ -228,6 +229,36 @@ export function ServersTab({ onUseServer }: Props) {
       <p className="text-xs text-muted-foreground">
         Your relay servers, stored in your account. Use the arrow to send one to the Configure screen.
       </p>
+
+      {/* Quick Start - Sample VPS Servers */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium tracking-wider text-muted-foreground">QUICK START SAMPLES</p>
+        {SAMPLE_VPS_SERVERS.map((sample) => (
+          <div key={sample.id} className="flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/50 px-3 py-2.5">
+            <ServerIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{sample.name}</p>
+              <p className="truncate font-mono text-[11px] text-muted-foreground">
+                {sample.host}:{sample.port} - {sample.transport}
+              </p>
+            </div>
+            <button
+              type="button"
+              title="Use this sample"
+              onClick={() => {
+                setName(sample.name);
+                setHost(sample.host);
+                setPort(sample.port.toString());
+                setTransport(sample.transport);
+                setNotes(sample.notes);
+              }}
+              className="rounded-lg bg-secondary p-2 text-secondary-foreground transition-colors hover:text-primary"
+            >
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+      </div>
 
       {loading ? (
         <div className="flex justify-center py-8">
