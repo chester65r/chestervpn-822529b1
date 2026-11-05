@@ -12,6 +12,7 @@ const manifest = String.raw`<?xml version="1.0" encoding="utf-8"?>
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -797,6 +798,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -1041,6 +1043,9 @@ class XrayVpnService : VpnService() {
     }
 
     private fun updateNotification(message: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
         getSystemService(NotificationManager::class.java)
             .notify(NOTIFICATION_ID, notification(message))
     }
@@ -1183,6 +1188,19 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val profile = pendingXrayProfile
+            if (granted && !profile.isNullOrBlank()) {
+                continueXrayStart(profile)
+            } else {
+                pendingXrayProfile = null
+                pendingXrayStart = false
+                showXrayState("Notification permission is required for a visible VPN service", false)
+                renderControls()
+            }
+        }
+
     private val phoneStatePermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
@@ -1320,12 +1338,14 @@ class MainActivity : AppCompatActivity() {
                     toast("Save an Xray URI or JSON profile first")
                 } else {
                     pendingXrayStart = true
-                    val permission = VpnService.prepare(this)
-                    if (permission != null) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+                            PackageManager.PERMISSION_GRANTED
+                    ) {
                         pendingXrayProfile = saved
-                        xrayVpnPermission.launch(permission)
+                        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                     } else {
-                        startXrayEngine(saved)
+                        continueXrayStart(saved)
                     }
                 }
             }
@@ -1638,6 +1658,17 @@ class MainActivity : AppCompatActivity() {
         binding.btnIdentity.isEnabled = idle
         binding.btnSave.isEnabled = idle
         binding.btnClear.isEnabled = idle
+    }
+
+    private fun continueXrayStart(profile: String) {
+        pendingXrayProfile = profile
+        val permission = VpnService.prepare(this)
+        if (permission != null) {
+            xrayVpnPermission.launch(permission)
+        } else {
+            pendingXrayProfile = null
+            startXrayEngine(profile)
+        }
     }
 
     private fun startXrayEngine(profile: String) {
