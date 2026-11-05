@@ -14,7 +14,10 @@ project="$(realpath "$project")"
 evidence="$project/test-evidence/$(date -u +%Y%m%dT%H%M%SZ)-$mode"
 mkdir -p "$evidence"
 printf 'UTC: %s\nMode: %s\nJDK: %s\nNative VPN network tests: NOT RUN\n' "$(date -u +%FT%TZ)" "$mode" "$java_version" > "$evidence/result.txt"
-"$project/gradlew" -p "$project" --no-daemon assembleDebug assembleRelease assembleDebugAndroidTest lintDebug > "$evidence/build.log" 2>&1 || { echo "Build failed; see local build.log"; exit 1; }
+if ! "$project/gradlew" -p "$project" --no-daemon --console=plain assembleDebug assembleRelease assembleDebugAndroidTest lintDebug 2>&1 | tee "$evidence/build.log"; then
+  echo "Android build failed; full compiler/Gradle output is shown above and saved in $evidence/build.log"
+  exit 1
+fi
 printf 'Build: PASS (release is unsigned, NOT distribution approved)\n' >> "$evidence/result.txt"
 if [[ "$mode" != build ]]; then
   [[ -n "$serial" ]] || { echo "Specify a device serial explicitly; never choose a device automatically"; exit 1; }
