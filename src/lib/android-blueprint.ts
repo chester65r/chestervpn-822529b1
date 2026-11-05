@@ -790,7 +790,7 @@ object TunnelController {
     }
 }`;
 
-const xrayVpnService = String.raw\`package com.example.advancedtunnel
+const xrayVpnService = String.raw`package com.example.advancedtunnel
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -1066,7 +1066,7 @@ class XrayVpnService : VpnService() {
         worker.shutdown()
         super.onDestroy()
     }
-}\`;
+}`;
 
 const mainActivity = String.raw`package com.example.advancedtunnel
 
@@ -1920,7 +1920,7 @@ No JDK/Android SDK/emulator/phone is available here; native execution remains NO
 ` },
   { name: "AndroidManifest.xml", path: "app/src/main/AndroidManifest.xml", lang: "xml", code: manifest },
   { name: "AuthorizedTransportProbe.kt", path: "app/src/main/java/com/example/advancedtunnel/AuthorizedTransportProbe.kt", lang: "kotlin", code: transportProbe },
-  { name: "XrayVpnService.kt", path: "app/src/main/java/com/example/advancedtunnel/XrayVpnService.kt", lang: "kotlin", code: xrayVpnService },
+
   { name: "AuthorizedTlsProbe.kt", path: "app/src/main/java/com/example/advancedtunnel/AuthorizedTlsProbe.kt", lang: "kotlin", code: tlsProbe },
   { name: "TunnelController.kt", path: "app/src/main/java/com/example/advancedtunnel/TunnelController.kt", lang: "kotlin", code: controller },
   { name: "MainActivity.kt", path: "app/src/main/java/com/example/advancedtunnel/MainActivity.kt", lang: "kotlin", code: mainActivity },
