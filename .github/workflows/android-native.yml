@@ -52,7 +52,8 @@ jobs:
           unzip -q "$RUNNER_TEMP/gradle-8.9-bin.zip" -d "$RUNNER_TEMP"
 
       - name: Create pinned Gradle wrapper
-        run: "$RUNNER_TEMP/gradle-8.9/bin/gradle" -p "$RUNNER_TEMP/tunnel-android" wrapper --gradle-version 8.9 --distribution-type bin
+        run: |
+          "$RUNNER_TEMP/gradle-8.9/bin/gradle" -p "$RUNNER_TEMP/tunnel-android" wrapper --gradle-version 8.9 --distribution-type bin
 
       - name: Build Android debug/release/test APKs and run lint
         run: bash native/android/run-checks.sh "$RUNNER_TEMP/tunnel-android" build
