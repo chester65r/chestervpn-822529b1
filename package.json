@@ -12,7 +12,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:interop": "bash interop/wireguard/run.sh",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "lint:ci": "eslint . --rule 'prettier/prettier: off'"
   },
   "overrides": {
     "rolldown": "1.2.1"
