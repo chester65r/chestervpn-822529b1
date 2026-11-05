@@ -77,6 +77,9 @@ describe("native Xray full-device VPN engine", () => {
     const gradle = file("build.gradle.kts");
     expect(manifest).toContain('android:process=":xray"');
     expect(manifest).toContain('android.permission.BIND_VPN_SERVICE');
+    expect(manifest).toContain('android:foregroundServiceType="systemExempted"');
+    expect(manifest).toContain('android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED');
+    expect(manifest).toContain('tools:ignore="ForegroundServicePermission"');
     expect(service).toContain('put("xray.tun.fd", fd.toString())');
     expect(service).toContain("override fun protectFd(fd: Long): Boolean = protect(fd.toInt())");
     expect(service).toContain("LibXray.registerDialerController(socketController)");
