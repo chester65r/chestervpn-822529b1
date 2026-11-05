@@ -9,7 +9,7 @@ describe("Android workflow evidence gates (mock tools, not Android evidence)", (
   const check = (mode: string, qemu: string, result: string, boot = "1", installOk = true, packageReady = true, packageInstalled = true) => {
     const dir = mkdtempSync(join(tmpdir(), "android-workflow-"));
     try {
-      mkdirSync(join(dir, "app")); mkdirSync(join(dir, "jdk/bin"), { recursive: true }); mkdirSync(join(dir, "sdk/platform-tools"), { recursive: true });
+      mkdirSync(join(dir, "app/libs"), { recursive: true }); writeFileSync(join(dir, "app/libs/libXray.aar"), "mock AAR"); mkdirSync(join(dir, "jdk/bin"), { recursive: true }); mkdirSync(join(dir, "sdk/platform-tools"), { recursive: true });
       writeFileSync(join(dir, "app/build.gradle.kts"), "");
       writeFileSync(join(dir, "gradlew"), "#!/bin/sh\nexit 0\n", { mode: 0o700 });
       writeFileSync(join(dir, "jdk/bin/java"), '#!/bin/sh\necho \'openjdk version "17.0.1"\'\n', { mode: 0o700 });
