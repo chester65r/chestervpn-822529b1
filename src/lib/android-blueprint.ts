@@ -273,7 +273,9 @@ object CarrierAutoConnect {
                     finished()
                 }
             }
-            CarrierSimState.OTHER, CarrierSimState.NO_ACTIVE_DATA_SIM -> {
+            CarrierSimState.OTHER,
+            CarrierSimState.NO_ACTIVE_DATA_SIM,
+            CarrierSimState.NON_CELLULAR_NETWORK -> {
                 if (!isAutoStarted(app)) {
                     finished()
                 } else if (TunnelController.isIdle()) {
@@ -286,9 +288,7 @@ object CarrierAutoConnect {
                     }
                 }
             }
-            CarrierSimState.NON_CELLULAR_NETWORK,
-            CarrierSimState.UNKNOWN,
-            CarrierSimState.PERMISSION_REQUIRED -> finished()
+            CarrierSimState.UNKNOWN, CarrierSimState.PERMISSION_REQUIRED -> finished()
         }
     }
 }
