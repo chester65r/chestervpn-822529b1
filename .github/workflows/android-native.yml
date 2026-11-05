@@ -39,7 +39,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Run project tests
-        run: bun test
+        run: bun run test
 
       - name: Generate native Android project
         run: bun native/android/generate-project.ts "$RUNNER_TEMP/tunnel-android"
