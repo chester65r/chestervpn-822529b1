@@ -212,7 +212,7 @@ def main():
             server = key(run(["wg", "show", args.interface, "public-key"]))
             section = "\nPublicKey = " + public + "\nPresharedKey = " + psk + "\nAllowedIPs = " + str(address) + "\n"
             updated = "[Peer]\n".join(parts).rstrip() + "\n\n[Peer]" + section
-            enrollment = "[Interface]\nAddress = " + str(address) + "\nDNS = 10.66.66.1\nMTU = 1280\n\n[Peer]\nPublicKey = " + server + "\nPresharedKey = " + psk + "\nEndpoint = " + args.endpoint + "\nAllowedIPs = 0.0.0.0/0, ::/0\nPersistentKeepalive = 25\n"
+            enrollment = "[Interface]\nAddress = " + str(address) + "\nDNS = 1.1.1.1\nMTU = 1280\n\n[Peer]\nPublicKey = " + server + "\nPresharedKey = " + psk + "\nEndpoint = " + args.endpoint + "\nAllowedIPs = 0.0.0.0/0, ::/0\nPersistentKeepalive = 25\n"
             # Reserve the output before modifying authorization; remove it on failure.
             fd = os.open(response, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             try:
