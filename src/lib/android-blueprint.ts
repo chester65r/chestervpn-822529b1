@@ -512,10 +512,17 @@ class MainActivity : AppCompatActivity() {
 
     private val vpnPermission =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == RESULT_OK) startTunnel(pendingAutoManaged)
-            else {
+            val managedByAutoRule = pendingAutoManaged
+            pendingAutoManaged = false
+            val stillEligible = !managedByAutoRule ||
+                (CarrierAutoConnect.isEnabled(this) &&
+                    CarrierAutoConnect.detect(this).state == CarrierSimState.MOBILY)
+            if (result.resultCode == RESULT_OK && stillEligible) {
+                startTunnel(managedByAutoRule)
+            } else {
                 autoStartInFlight = false
-                showState("VPN permission denied")
+                if (managedByAutoRule) CarrierAutoConnect.setConsentRequired(this, true)
+                showState("VPN permission denied or Mobily is no longer the active data SIM")
             }
         }
 
@@ -744,6 +751,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startTunnel(managedByAutoRule: Boolean = false) {
+        if (managedByAutoRule &&
+            (!CarrierAutoConnect.isEnabled(this) ||
+                CarrierAutoConnect.detect(this).state != CarrierSimState.MOBILY)
+        ) {
+            autoStartInFlight = false
+            return showState("Mobily auto-connect was cancelled because the SIM selection changed")
+        }
         val text = store.load() ?: run {
             autoStartInFlight = false
             return showState("No stored profile")
@@ -757,6 +771,20 @@ class MainActivity : AppCompatActivity() {
                 if (error != null) {
                     if (managedByAutoRule) CarrierAutoConnect.setAutoStarted(this, false)
                     showState(error)
+                } else if (managedByAutoRule &&
+                    (!CarrierAutoConnect.isEnabled(this) ||
+                        CarrierAutoConnect.detect(this).state != CarrierSimState.MOBILY)
+                ) {
+                    TunnelController.down(this) { stopped ->
+                        main.post {
+                            CarrierAutoConnect.setAutoStarted(this, false)
+                            showState(
+                                if (stopped) "Mobily auto-connect cancelled after SIM selection changed"
+                                else "STOP FAILED: tunnel still active and blocking traffic"
+                            )
+                            renderControls()
+                        }
+                    }
                 } else {
                     CarrierAutoConnect.setAutoStarted(this, managedByAutoRule)
                     lastRx = 0L
