@@ -413,9 +413,9 @@ object AuthorizedTransportProbe {
             require(request.websocketPath.startsWith("/") && request.websocketPath.length <= 256) {
                 "WebSocket path must start with / and be at most 256 characters"
             }
-            require(!request.websocketPath.contains('\\r') &&
-                !request.websocketPath.contains('\\n') &&
-                !request.websocketPath.contains('\\u0000')) {
+            require(!request.websocketPath.contains('\r') &&
+                !request.websocketPath.contains('\n') &&
+                !request.websocketPath.contains('\u0000')) {
                 "WebSocket path contains invalid characters"
             }
         }
@@ -458,18 +458,18 @@ object AuthorizedTransportProbe {
         SecureRandom().nextBytes(nonce)
         val key = Base64.getEncoder().encodeToString(nonce)
         val authority = request.endpointHost + ":" + request.endpointPort
-        val text = "GET " + request.websocketPath + " HTTP/1.1\\r\\n" +
-            "Host: " + authority + "\\r\\n" +
-            "Upgrade: websocket\\r\\n" +
-            "Connection: Upgrade\\r\\n" +
-            "Sec-WebSocket-Key: " + key + "\\r\\n" +
-            "Sec-WebSocket-Version: 13\\r\\n\\r\\n"
+        val text = "GET " + request.websocketPath + " HTTP/1.1\r\n" +
+            "Host: " + authority + "\r\n" +
+            "Upgrade: websocket\r\n" +
+            "Connection: Upgrade\r\n" +
+            "Sec-WebSocket-Key: " + key + "\r\n" +
+            "Sec-WebSocket-Version: 13\r\n\r\n"
         val bytes = text.toByteArray(Charsets.US_ASCII)
         require(bytes.size <= 4096) { "WebSocket request exceeds 4 KiB" }
         socket.getOutputStream().apply { write(bytes); flush() }
         val headers = readHttpHeaders(socket.getInputStream())
-        val lines = headers.split("\\r\\n")
-        require(lines.firstOrNull()?.matches(Regex("^HTTP/1\\\\.[01] 101(?: .*)?$")) == true) {
+        val lines = headers.split("\r\n")
+        require(lines.firstOrNull()?.matches(Regex("^HTTP/1\\.[01] 101(?: .*)?$")) == true) {
             "WebSocket endpoint did not return HTTP 101"
         }
         val fields = lines.drop(1).mapNotNull { line ->
@@ -494,14 +494,14 @@ object AuthorizedTransportProbe {
 
     private fun probeHttpConnect(socket: Socket, request: Request): Pair<Int, Int> {
         val destination = request.destinationHost + ":" + request.destinationPort
-        val text = "CONNECT " + destination + " HTTP/1.1\\r\\n" +
-            "Host: " + destination + "\\r\\n\\r\\n"
+        val text = "CONNECT " + destination + " HTTP/1.1\r\n" +
+            "Host: " + destination + "\r\n\r\n"
         val bytes = text.toByteArray(Charsets.US_ASCII)
         require(bytes.size <= 4096) { "CONNECT request exceeds 4 KiB" }
         socket.getOutputStream().apply { write(bytes); flush() }
         val headers = readHttpHeaders(socket.getInputStream())
-        val status = headers.substringBefore("\\r\\n")
-        require(status.matches(Regex("^HTTP/1\\\\.[01] 200(?: .*)?$"))) {
+        val status = headers.substringBefore("\r\n")
+        require(status.matches(Regex("^HTTP/1\\.[01] 200(?: .*)?$"))) {
             "HTTP CONNECT proxy did not return 200"
         }
         return Pair(bytes.size, headers.toByteArray(Charsets.ISO_8859_1).size)
