@@ -107,3 +107,18 @@ Default status for a new API/device record is **NOT RUN**; the dated report abov
 records the executed native build and blocked emulator attempt.
 Only mark concrete checks PASS after execution. Never promote emulator PASS to physical
 PASS or generated-source checks to native evidence.
+
+## Authorized TLS endpoint diagnostic
+
+The generated Android source now includes `AuthorizedTlsProbe.kt`. It performs a real
+TCP connect, TLS handshake with SNI, normal platform trust-chain validation and HTTPS
+hostname verification, then sends a bounded HTTP GET/HEAD/OPTIONS request and captures
+up to 4 KiB of response data. It requires endpoint hostname, SNI and Host to match,
+limits timeouts to 1–60 seconds, and does not accept proxy authorization headers.
+
+This is an endpoint diagnostic/client transport only. It does **not** create a VPN,
+route other apps' traffic, or replace WireGuard. Invoke it only from a background worker
+for an endpoint you own or are authorized to test; never run network I/O on Android's
+main thread. Record the TLS version, cipher, response status and non-secret byte counts.
+Android compilation and device execution of this new source are still NOT RUN until the
+generated project is rebuilt and tested using the pinned workflow above.
