@@ -895,6 +895,15 @@ class XrayVpnService : VpnService() {
         val outbounds = root.optJSONArray("outbounds")
             ?: throw IllegalArgumentException("Profile has no outbounds")
         require(outbounds.length() in 1..64) { "Profile must contain 1–64 outbounds" }
+        for (index in 0 until outbounds.length()) {
+            val outbound = outbounds.optJSONObject(index)
+                ?: throw IllegalArgumentException("Invalid outbound configuration")
+            val tlsSettings = outbound.optJSONObject("streamSettings")
+                ?.optJSONObject("tlsSettings")
+            require(tlsSettings?.optBoolean("allowInsecure", false) != true) {
+                "TLS certificate verification must remain enabled"
+            }
+        }
         val first = outbounds.optJSONObject(0)
             ?: throw IllegalArgumentException("Invalid outbound configuration")
         val fallbackTag = first.optString("tag").ifBlank {
