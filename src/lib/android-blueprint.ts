@@ -77,7 +77,7 @@ dependencies {
 
 const secureStore = secureStoreSource;
 
-package com.example.advancedtunnel
+const tlsProbe = String.raw`package com.example.advancedtunnel
 
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
@@ -88,63 +88,33 @@ import javax.net.ssl.SSLParameters
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 
-/**
- * Real TLS/HTTP endpoint probe for a server the user owns or is authorized to test.
- * This is a transport diagnostic, not a VPN or system-wide traffic tunnel.
- */
+/** Real TLS endpoint diagnostic for a server the user owns or is authorized to test. */
 object AuthorizedTlsProbe {
-    data class Result(
-        val tlsVersion: String,
-        val cipherSuite: String,
-        val responsePreview: String,
-        val bytesSent: Int,
-        val bytesReceived: Int
-    )
+    data class Result(val tlsVersion: String, val cipherSuite: String, val responsePreview: String, val bytesSent: Int, val bytesReceived: Int)
 
-    fun execute(
-        endpointHost: String,
-        port: Int,
-        tlsServerName: String,
-        hostHeader: String,
-        requestTemplate: String,
-        timeoutMs: Int = 10_000
-    ): Result {
-        require(endpointHost.matches(Regex("(?i)^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\\\.)+[a-z]{2,63}$"))) {
-            "Endpoint must be a DNS hostname"
-        }
+    fun execute(endpointHost: String, port: Int, tlsServerName: String, hostHeader: String, requestTemplate: String, timeoutMs: Int = 10_000): Result {
+        require(endpointHost.matches(Regex("(?i)^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"))) { "Endpoint must be a DNS hostname" }
         require(port in 1..65535) { "Invalid port" }
         require(timeoutMs in 1_000..60_000) { "Invalid timeout" }
-        require(tlsServerName.equals(endpointHost, ignoreCase = true)) {
-            "TLS server name must match the authorized endpoint"
-        }
-        require(hostHeader.equals(tlsServerName, ignoreCase = true)) {
-            "Host header must match the TLS server name"
-        }
+        require(tlsServerName.equals(endpointHost, true)) { "TLS server name must match the authorized endpoint" }
+        require(hostHeader.equals(tlsServerName, true)) { "Host header must match the TLS server name" }
 
-        val request = requestTemplate
-            .replace("[host]", hostHeader, ignoreCase = true)
-            .replace("[crlf]", "\\r\\n", ignoreCase = true)
-            .replace("\\\\r\\\\n", "\\r\\n")
+        val request = requestTemplate.replace("[host]", hostHeader, true).replace("[crlf]", "\r\n", true)
         require(request.toByteArray(Charsets.UTF_8).size <= 4096) { "Request exceeds 4 KiB" }
-        require(!request.contains('\\u0000')) { "Request contains a NUL character" }
-        val lines = request.replace("\\r\\n", "\\n").split("\\n")
-        require(Regex("(?i)^(GET|HEAD|OPTIONS) /[^ ]* HTTP/1\\\\.[01]$").matches(lines.firstOrNull().orEmpty())) {
-            "Only origin-form GET, HEAD, and OPTIONS requests are supported"
-        }
-        val hostLines = lines.drop(1).filter { it.startsWith("Host:", ignoreCase = true) }
-        require(hostLines.size == 1 && hostLines.single().substringAfter(':').trim().equals(hostHeader, true)) {
-            "Exactly one matching Host header is required"
-        }
-        require(lines.none { it.startsWith("Proxy-Authorization:", true) || it.startsWith("Proxy-Connection:", true) }) {
-            "Proxy control headers are not accepted in payload templates"
-        }
+        require(!request.contains('\u0000')) { "Request contains a NUL character" }
+        val lines = request.replace("\r\n", "\n").split("\n")
+        require(Regex("(?i)^(GET|HEAD|OPTIONS) /[^ ]* HTTP/1\\.[01]$").matches(lines.firstOrNull().orEmpty())) { "Only origin-form GET, HEAD, and OPTIONS requests are supported" }
+        val hostLines = lines.drop(1).filter { it.startsWith("Host:", true) }
+        require(hostLines.size == 1 && hostLines.single().substringAfter(':').trim().equals(hostHeader, true)) { "Exactly one matching Host header is required" }
+        require(lines.none { it.startsWith("Proxy-Authorization:", true) || it.startsWith("Proxy-Connection:", true) }) { "Proxy control headers are not accepted" }
 
         val raw = Socket()
         raw.connect(InetSocketAddress(endpointHost, port), timeoutMs)
         raw.soTimeout = timeoutMs
+        var tls: SSLSocket? = null
         try {
             val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
-            val tls = factory.createSocket(raw, endpointHost, port, true) as SSLSocket
+            tls = factory.createSocket(raw, endpointHost, port, true) as SSLSocket
             tls.soTimeout = timeoutMs
             val params: SSLParameters = tls.sslParameters
             params.endpointIdentificationAlgorithm = "HTTPS"
@@ -153,34 +123,26 @@ object AuthorizedTlsProbe {
             tls.startHandshake()
 
             val bytes = request.toByteArray(Charsets.UTF_8)
-            BufferedOutputStream(tls.outputStream).use { output ->
-                output.write(bytes)
-                output.flush()
-            }
+            val output = BufferedOutputStream(tls.outputStream)
+            output.write(bytes)
+            output.flush()
             val response = ByteArray(4096)
-            val received = BufferedInputStream(tls.inputStream).use { input ->
-                var count = 0
-                while (count < response.size) {
-                    val read = input.read(response, count, response.size - count)
-                    if (read <= 0) break
-                    count += read
-                    if (response.copyOf(count).toString(Charsets.UTF_8).contains("\\r\\n\\r\\n")) break
-                }
-                count
+            val input = BufferedInputStream(tls.inputStream)
+            var received = 0
+            while (received < response.size) {
+                val read = input.read(response, received, response.size - received)
+                if (read <= 0) break
+                received += read
+                if (response.copyOf(received).toString(Charsets.UTF_8).contains("\r\n\r\n")) break
             }
-            return Result(
-                tls.session.protocol,
-                tls.session.cipherSuite,
-                response.copyOf(received).toString(Charsets.UTF_8).take(1024),
-                bytes.size,
-                received
-            ).also { tls.close() }
+            return Result(tls.session.protocol, tls.session.cipherSuite, response.copyOf(received).toString(Charsets.UTF_8).take(1024), bytes.size, received)
         } finally {
+            runCatching { tls?.close() }
             runCatching { raw.close() }
         }
     }
 }
-
+`;
 
 const controller = String.raw`package com.example.advancedtunnel
 
@@ -668,7 +630,7 @@ Result records separate emulator from physical; never claim network tests from i
 No JDK/Android SDK/emulator/phone is available here; native execution remains NOT RUN.
 ` },
   { name: "AndroidManifest.xml", path: "app/src/main/AndroidManifest.xml", lang: "xml", code: manifest },
-  { name: "AuthorizedTlsProbe.kt", path: "app/src/main/java/com/example/advancedtunnel/AuthorizedTlsProbe.kt", lang: "kotlin", code: tlsSource },
+  { name: "AuthorizedTlsProbe.kt", path: "app/src/main/java/com/example/advancedtunnel/AuthorizedTlsProbe.kt", lang: "kotlin", code: tlsProbe },
   { name: "TunnelController.kt", path: "app/src/main/java/com/example/advancedtunnel/TunnelController.kt", lang: "kotlin", code: controller },
   { name: "MainActivity.kt", path: "app/src/main/java/com/example/advancedtunnel/MainActivity.kt", lang: "kotlin", code: mainActivity },
   { name: "SecureConfigStore.kt", path: "app/src/main/java/com/example/advancedtunnel/SecureConfigStore.kt", lang: "kotlin", code: secureStore },
