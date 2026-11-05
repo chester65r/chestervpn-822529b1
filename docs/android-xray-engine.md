@@ -9,7 +9,7 @@ The separate process is intentional: do not load the WireGuard Go runtime and th
 
 ## Accepted profile input
 
-The Xray profile editor accepts a complete Xray JSON configuration or one/more share links that the pinned `libXray` parser accepts, including VLESS, VMess AEAD, Trojan, Shadowsocks, SOCKS and Hysteria2. The core supports transports and security layers configured in the Xray outbound JSON, including TCP, WebSocket, gRPC, XHTTP, TLS and REALITY when supported by that outbound and the server. TLS is a security layer, not a generic interchangeable protocol by itself.
+The Xray profile editor accepts a complete Xray JSON configuration or one/more share links that the pinned `libXray` parser accepts, including VLESS, VMess AEAD, Trojan, Shadowsocks, SOCKS and Hysteria2. The core supports transports and security layers configured in the Xray outbound JSON, including TCP, WebSocket, gRPC, XHTTP and standard TLS when supported by that outbound and the server. REALITY camouflage is rejected in this client. TLS is a security layer, not a generic interchangeable protocol by itself. TLS certificate validation must stay enabled, and REALITY camouflage is disabled to prevent impersonating an unrelated SNI identity.
 
 Profiles are stored using the existing Android Keystore AES-GCM store under the independent `xray_profile` key/file name. The Activity clears the profile editor when paused. Imported Xray listener inbounds are replaced with the app's private TUN inbound, so a pasted server configuration cannot unintentionally expose a local or LAN proxy listener. Existing outbounds, DNS settings and routing rules are retained; a final fallback rule sends traffic not matched by custom routing to the first outbound.
 
