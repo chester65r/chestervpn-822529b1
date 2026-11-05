@@ -187,7 +187,7 @@ must be performed on a physical device and do not establish Mobily/STC carrier c
 
 ## Native Xray full-device VPN
 
-The Android companion now includes a real Xray TUN engine in addition to WireGuard. See `docs/android-xray-engine.md` and `THIRD_PARTY_NOTICES.md` for supported profile types, security boundaries and upstream licensing. It accepts Xray JSON or supported VLESS/VMess/Trojan/Shadowsocks/SOCKS/Hysteria2 share links. TLS, WebSocket, gRPC, XHTTP and REALITY are configured as Xray transport/security settings where supported by the selected outbound; they are not all standalone share-link formats.
+The Android companion now includes a real Xray TUN engine in addition to WireGuard. See `docs/android-xray-engine.md` and `THIRD_PARTY_NOTICES.md` for supported profile types, security boundaries and upstream licensing. It accepts Xray JSON or supported VLESS/VMess/Trojan/Shadowsocks/SOCKS/Hysteria2 share links. TLS, WebSocket, gRPC and XHTTP are configured as Xray transport/security settings where supported by the selected outbound; they are not all standalone share-link formats. TLS validation remains enabled and REALITY camouflage is rejected.
 
 The build pins `XTLS/libXray v26.10.31` and verifies the Android release archive SHA-256 before extracting `libXray.aar`. The exact upstream MIT and MPL-2.0 texts are copied into the APK assets. Keep the Xray service in the dedicated `:xray` process: WireGuard and Xray each embed a Go runtime and must not load into the same Android process.
 
