@@ -110,6 +110,17 @@ describe("native Xray full-device VPN engine", () => {
     expect(layout).toContain("@+id/btnToggleXray");
   });
 
+  it("requests Android 13 notification permission before starting the Xray foreground VPN", () => {
+    const manifest = file("AndroidManifest.xml");
+    const activity = file("MainActivity.kt");
+    const service = file("XrayVpnService.kt");
+    expect(manifest).toContain("android.permission.POST_NOTIFICATIONS");
+    expect(activity).toContain("notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)");
+    expect(activity).toContain("continueXrayStart(profile)");
+    expect(service).toContain("checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)");
+    expect(service).toContain("PackageManager.PERMISSION_GRANTED");
+  });
+
   it("keeps the Xray TUN alive if the core refuses to stop", () => {
     const service = file("XrayVpnService.kt");
     expect(service).toContain("if (!stopped)");
