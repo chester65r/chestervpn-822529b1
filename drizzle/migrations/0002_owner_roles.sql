@@ -10,20 +10,5 @@ grant all on public.user_roles to service_role;
 alter table public.user_roles enable row level security;
 create policy "Users read own roles" on public.user_roles for select to authenticated using (auth.uid() = user_id);
 create or replace function public.has_role(_user_id uuid, _role public.app_role)
-returns boolean
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select auth.uid() = _user_id
-    and exists (
-      select 1
-      from public.user_roles
-      where user_id = _user_id
-        and role = _role
-    )
-$$;
-
-revoke execute on function public.has_role(uuid, public.app_role) from public, anon;
-grant execute on function public.has_role(uuid, public.app_role) to authenticated;
+returns boolean language sql stable security definer set search_path = public
+as $$ select exists (select 1 from public.user_roles where user_id = _user_id and role = _role) $$;
