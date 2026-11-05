@@ -11,6 +11,8 @@ const manifest = String.raw`<?xml version="1.0" encoding="utf-8"?>
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!--
       The packet engine's VPN service, com.wireguard.android.backend.GoBackend$VpnService,
@@ -30,6 +32,16 @@ const manifest = String.raw`<?xml version="1.0" encoding="utf-8"?>
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <receiver
+            android:name=".CarrierAutoConnectReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.SIM_STATE_CHANGED" />
+                <action android:name="android.intent.action.ACTION_DEFAULT_DATA_SUBSCRIPTION_CHANGED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>`;
 
@@ -76,6 +88,189 @@ dependencies {
 }`;
 
 const secureStore = secureStoreSource;
+
+const carrierAutoConnect = String.raw`package com.example.advancedtunnel
+
+import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.VpnService
+import android.os.Build
+import android.telephony.SubscriptionManager
+import android.telephony.TelephonyManager
+import androidx.core.content.ContextCompat
+
+enum class CarrierSimState {
+    MOBILY, OTHER, NO_ACTIVE_DATA_SIM, UNKNOWN, PERMISSION_REQUIRED
+}
+
+data class CarrierSimSnapshot(
+    val state: CarrierSimState,
+    val simOperatorName: String = "",
+    val carrierName: String = "",
+    val registeredNetworkName: String = ""
+)
+
+/**
+ * Opt-in SIM-aware start policy. It reads only the active data SIM's operator identity;
+ * it never reads phone numbers, balance, SMS, APN settings, or carrier billing state.
+ */
+object CarrierAutoConnect {
+    private const val PREFS = "carrier_auto_connect"
+    private const val KEY_ENABLED = "enabled"
+    private const val KEY_AUTO_STARTED = "auto_started"
+    private const val KEY_CONSENT_REQUIRED = "vpn_consent_required"
+
+    private fun prefs(context: Context) =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    fun isEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_ENABLED, false)
+
+    fun setEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_ENABLED, enabled).apply()
+    }
+
+    fun isAutoStarted(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_AUTO_STARTED, false)
+
+    fun setAutoStarted(context: Context, started: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AUTO_STARTED, started).apply()
+    }
+
+    fun isConsentRequired(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_CONSENT_REQUIRED, false)
+
+    fun setConsentRequired(context: Context, required: Boolean) {
+        prefs(context).edit().putBoolean(KEY_CONSENT_REQUIRED, required).apply()
+    }
+
+    private fun isMobilyName(value: String): Boolean =
+        value.contains("mobily", ignoreCase = true) ||
+            (value.contains("etihad", ignoreCase = true) &&
+                value.contains("etisalat", ignoreCase = true)) ||
+            value.contains("موبايلي")
+
+    /**
+     * Uses the active-data subscription on API 30+, then the system default data
+     * subscription. The registered network name is display-only: roaming must not
+     * change the identity of the SIM that owns the subscription.
+     */
+    fun detect(context: Context): CarrierSimSnapshot {
+        val app = context.applicationContext
+        if (ContextCompat.checkSelfPermission(app, Manifest.permission.READ_PHONE_STATE) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return CarrierSimSnapshot(CarrierSimState.PERMISSION_REQUIRED)
+        }
+
+        return try {
+            val subscriptions = app.getSystemService(SubscriptionManager::class.java)
+                ?: return CarrierSimSnapshot(CarrierSimState.UNKNOWN)
+
+            val activeDataId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                SubscriptionManager.getActiveDataSubscriptionId()
+            } else {
+                SubscriptionManager.INVALID_SUBSCRIPTION_ID
+            }
+            val defaultDataId = SubscriptionManager.getDefaultDataSubscriptionId()
+            val selectedId = if (activeDataId != SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+                activeDataId
+            } else {
+                defaultDataId
+            }
+
+            val activeSubscriptions = subscriptions.activeSubscriptionInfoList.orEmpty()
+            val selected = if (selectedId != SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+                subscriptions.getActiveSubscriptionInfo(selectedId)
+            } else {
+                null
+            } ?: activeSubscriptions.singleOrNull()
+
+            if (selected == null) {
+                return CarrierSimSnapshot(CarrierSimState.NO_ACTIVE_DATA_SIM)
+            }
+
+            val telephony = app.getSystemService(TelephonyManager::class.java)
+                ?.createForSubscriptionId(selected.subscriptionId)
+                ?: return CarrierSimSnapshot(CarrierSimState.UNKNOWN)
+
+            val simOperator = telephony.simOperatorName.orEmpty().trim()
+            val carrier = selected.carrierName?.toString().orEmpty().trim()
+            val registered = telephony.networkOperatorName.orEmpty().trim()
+            val state = when {
+                isMobilyName(simOperator) || isMobilyName(carrier) -> CarrierSimState.MOBILY
+                simOperator.isNotBlank() || carrier.isNotBlank() -> CarrierSimState.OTHER
+                else -> CarrierSimState.UNKNOWN
+            }
+            CarrierSimSnapshot(state, simOperator, carrier, registered)
+        } catch (_: SecurityException) {
+            CarrierSimSnapshot(CarrierSimState.PERMISSION_REQUIRED)
+        } catch (_: Exception) {
+            CarrierSimSnapshot(CarrierSimState.UNKNOWN)
+        }
+    }
+
+    /** Boot/SIM receiver path. It never launches a consent screen from the background. */
+    fun evaluateInBackground(context: Context, finished: () -> Unit) {
+        val app = context.applicationContext
+        if (!isEnabled(app)) {
+            finished()
+            return
+        }
+
+        when (detect(app).state) {
+            CarrierSimState.MOBILY -> {
+                if (VpnService.prepare(app) != null) {
+                    setConsentRequired(app, true)
+                    finished()
+                    return
+                }
+                setConsentRequired(app, false)
+                val profile = SecureConfigStore(app).load()
+                if (profile == null || !TunnelController.isIdle()) {
+                    finished()
+                    return
+                }
+                TunnelController.up(app, profile) { error ->
+                    if (error == null) setAutoStarted(app, true)
+                    finished()
+                }
+            }
+            CarrierSimState.OTHER, CarrierSimState.NO_ACTIVE_DATA_SIM -> {
+                if (!isAutoStarted(app)) {
+                    finished()
+                } else if (TunnelController.isIdle()) {
+                    setAutoStarted(app, false)
+                    finished()
+                } else {
+                    TunnelController.down(app) { stopped ->
+                        if (stopped) setAutoStarted(app, false)
+                        finished()
+                    }
+                }
+            }
+            CarrierSimState.UNKNOWN, CarrierSimState.PERMISSION_REQUIRED -> finished()
+        }
+    }
+}
+
+/** Re-evaluate only after explicit system SIM/default-data or boot events. */
+class CarrierAutoConnectReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (!CarrierAutoConnect.isEnabled(context)) return
+        val pending = goAsync()
+        try {
+            CarrierAutoConnect.evaluateInBackground(context.applicationContext) {
+                pending.finish()
+            }
+        } catch (_: Exception) {
+            pending.finish()
+        }
+    }
+}`;
 
 const tlsProbe = String.raw`package com.example.advancedtunnel
 
@@ -276,7 +471,14 @@ object TunnelController {
 
 const mainActivity = String.raw`package com.example.advancedtunnel
 
+import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.net.VpnService
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -284,6 +486,7 @@ import android.widget.Toast
 import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.example.advancedtunnel.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
@@ -295,11 +498,38 @@ class MainActivity : AppCompatActivity() {
     private var lastRx = 0L
     private var lastTx = 0L
     private var stopReason: String? = null
+    private var activityResumed = false
+    private var autoStartInFlight = false
+    private var pendingAutoManaged = false
+    private var suppressAutoSwitchListener = false
+    private var simReceiverRegistered = false
+
+    private val simReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            refreshCarrierAutomation()
+        }
+    }
 
     private val vpnPermission =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == RESULT_OK) startTunnel()
-            else showState("VPN permission denied")
+            if (result.resultCode == RESULT_OK) startTunnel(pendingAutoManaged)
+            else {
+                autoStartInFlight = false
+                showState("VPN permission denied")
+            }
+        }
+
+    private val phoneStatePermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                CarrierAutoConnect.setEnabled(this, true)
+                setAutoSwitchChecked(true)
+                refreshCarrierAutomation()
+            } else {
+                setAutoSwitchChecked(false)
+                CarrierAutoConnect.setEnabled(this, false)
+                showState("SIM detection permission denied")
+            }
         }
 
     // UI state is always derived from TunnelController; the activity keeps no running flag.
@@ -317,6 +547,34 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         store = SecureConfigStore(this)
         enrollment = DeviceEnrollment(this)
+        setAutoSwitchChecked(CarrierAutoConnect.isEnabled(this))
+        binding.cbAutoMobily.setOnCheckedChangeListener { _, checked ->
+            if (suppressAutoSwitchListener) return@setOnCheckedChangeListener
+            if (checked) {
+                val granted = ContextCompat.checkSelfPermission(
+                    this, Manifest.permission.READ_PHONE_STATE
+                ) == PackageManager.PERMISSION_GRANTED
+                if (granted) {
+                    CarrierAutoConnect.setEnabled(this, true)
+                    refreshCarrierAutomation()
+                } else {
+                    setAutoSwitchChecked(false)
+                    phoneStatePermission.launch(Manifest.permission.READ_PHONE_STATE)
+                }
+            } else {
+                CarrierAutoConnect.setEnabled(this, false)
+                CarrierAutoConnect.setConsentRequired(this, false)
+                if (CarrierAutoConnect.isAutoStarted(this)) {
+                    if (!TunnelController.isIdle()) {
+                        stopReason = "Mobily automatic connection disabled"
+                        stopTunnel()
+                    } else {
+                        CarrierAutoConnect.setAutoStarted(this, false)
+                    }
+                }
+                binding.tvCarrierInfo.text = "Automatic Mobily connection is off"
+            }
+        }
         binding.btnIdentity.setOnClickListener {
             var key = ""
             TunnelController.whileIdle({ key = enrollment.publicKey() }) { ok ->
@@ -328,8 +586,13 @@ class MainActivity : AppCompatActivity() {
         binding.btnToggle.setOnClickListener {
             stopReason = null
             when (TunnelController.engineState) {
-                EngineState.UP -> stopTunnel()
-                EngineState.DOWN -> if (store.load() != null) requestVpnPermission() else toast("Enroll this device first")
+                EngineState.UP -> {
+                    // An explicit manual stop also pauses the automatic rule.
+                    CarrierAutoConnect.setEnabled(this, false)
+                    setAutoSwitchChecked(false)
+                    stopTunnel()
+                }
+                EngineState.DOWN -> if (store.load() != null) requestVpnPermission(false) else toast("Enroll this device first")
                 else -> toast("Please wait")
             }
         }
@@ -347,16 +610,108 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (!simReceiverRegistered) {
+            val filter = IntentFilter().apply {
+                addAction("android.intent.action.SIM_STATE_CHANGED")
+                addAction("android.intent.action.ACTION_DEFAULT_DATA_SUBSCRIPTION_CHANGED")
+            }
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(simReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(simReceiver, filter)
+            }
+            simReceiverRegistered = true
+        }
+        refreshCarrierAutomation()
+    }
+
     override fun onResume() {
         super.onResume()
+        activityResumed = true
         main.removeCallbacks(poll)
         main.post(poll)
+        refreshCarrierAutomation()
     }
 
     override fun onPause() {
+        activityResumed = false
         main.removeCallbacks(poll)
         binding.etWgConfig.setText("")
         super.onPause()
+    }
+
+    override fun onStop() {
+        if (simReceiverRegistered) {
+            unregisterReceiver(simReceiver)
+            simReceiverRegistered = false
+        }
+        super.onStop()
+    }
+
+    private fun setAutoSwitchChecked(checked: Boolean) {
+        suppressAutoSwitchListener = true
+        binding.cbAutoMobily.isChecked = checked
+        suppressAutoSwitchListener = false
+    }
+
+    private fun refreshCarrierAutomation() {
+        if (!CarrierAutoConnect.isEnabled(this)) {
+            binding.tvCarrierInfo.text = "Automatic Mobily connection is off"
+            return
+        }
+
+        val snapshot = CarrierAutoConnect.detect(this)
+        val simName = snapshot.simOperatorName.ifBlank {
+            snapshot.carrierName.ifBlank { "Unknown" }
+        }
+        val registered = snapshot.registeredNetworkName.ifBlank { "Unavailable" }
+        binding.tvCarrierInfo.text =
+            "SIM operator: " + simName + "\nRegistered network: " + registered
+
+        when (snapshot.state) {
+            CarrierSimState.MOBILY -> {
+                if (store.load() == null) {
+                    showState("Mobily data SIM detected. Enroll a WireGuard profile first.")
+                    return
+                }
+                if (!TunnelController.isIdle() || autoStartInFlight) return
+
+                if (VpnService.prepare(this) != null) {
+                    CarrierAutoConnect.setConsentRequired(this, true)
+                    if (activityResumed) {
+                        requestVpnPermission(true)
+                    } else {
+                        showState("Mobily detected. Open the app to approve VPN access.")
+                    }
+                } else {
+                    CarrierAutoConnect.setConsentRequired(this, false)
+                    requestVpnPermission(true)
+                }
+            }
+            CarrierSimState.OTHER -> stopAutoManagedTunnel(
+                "Default data SIM is not Mobily; automatic tunnel stopped"
+            )
+            CarrierSimState.NO_ACTIVE_DATA_SIM -> stopAutoManagedTunnel(
+                "No active data SIM; automatic tunnel stopped"
+            )
+            CarrierSimState.PERMISSION_REQUIRED ->
+                showState("Allow Phone permission to identify the Mobily SIM.")
+            CarrierSimState.UNKNOWN ->
+                showState("SIM operator is unavailable; automatic start is paused.")
+        }
+    }
+
+    private fun stopAutoManagedTunnel(reason: String) {
+        if (!CarrierAutoConnect.isAutoStarted(this)) return
+        if (TunnelController.isIdle()) {
+            CarrierAutoConnect.setAutoStarted(this, false)
+        } else {
+            stopReason = reason
+            stopTunnel()
+        }
     }
 
     private fun validateAndSave() {
@@ -368,7 +723,7 @@ class MainActivity : AppCompatActivity() {
         }) { ok ->
             main.post {
                 when {
-                    ok -> { binding.etWgConfig.setText(""); toast("Profile saved securely") }
+                    ok -> { binding.etWgConfig.setText(""); toast("Profile saved securely"); refreshCarrierAutomation() }
                     !TunnelController.isIdle() -> toast("Stop the tunnel before replacing credentials")
                     rejected -> binding.etWgConfig.error = "Enrollment rejected; check server identity and full-tunnel profile"
                     else -> binding.etWgConfig.error = "Invalid WireGuard profile"
@@ -377,18 +732,33 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestVpnPermission() {
+    private fun requestVpnPermission(managedByAutoRule: Boolean = false) {
+        pendingAutoManaged = managedByAutoRule
+        if (managedByAutoRule) autoStartInFlight = true
         val intent = VpnService.prepare(this)
-        if (intent != null) vpnPermission.launch(intent) else startTunnel()
+        if (intent != null) {
+            vpnPermission.launch(intent)
+        } else {
+            startTunnel(managedByAutoRule)
+        }
     }
 
-    private fun startTunnel() {
-        val text = store.load() ?: return showState("No stored profile")
+    private fun startTunnel(managedByAutoRule: Boolean = false) {
+        val text = store.load() ?: run {
+            autoStartInFlight = false
+            return showState("No stored profile")
+        }
+        if (!managedByAutoRule) CarrierAutoConnect.setAutoStarted(this, false)
         showState("STARTING")
         renderControls()
         TunnelController.up(this, text) { error ->
             main.post {
-                if (error != null) showState(error) else {
+                autoStartInFlight = false
+                if (error != null) {
+                    if (managedByAutoRule) CarrierAutoConnect.setAutoStarted(this, false)
+                    showState(error)
+                } else {
+                    CarrierAutoConnect.setAutoStarted(this, managedByAutoRule)
                     lastRx = 0L
                     lastTx = 0L
                     stopReason = null
@@ -406,7 +776,10 @@ class MainActivity : AppCompatActivity() {
         renderControls()
         TunnelController.down(this) { stopped ->
             main.post {
-                if (stopped) render(TunnelStatus.Down) else {
+                if (stopped) {
+                    CarrierAutoConnect.setAutoStarted(this, false)
+                    render(TunnelStatus.Down)
+                } else {
                     showState("STOP FAILED: tunnel still active and blocking traffic")
                     main.post(poll)
                 }
@@ -501,6 +874,15 @@ const layout = String.raw`<?xml version="1.0" encoding="utf-8"?>
                 android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:text="DISCONNECTED" android:gravity="center" />
         </LinearLayout>
+
+        <CheckBox android:id="@+id/cbAutoMobily"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Auto-connect only on Mobily data SIM (balance is not checked)" />
+
+        <TextView android:id="@+id/tvCarrierInfo"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Automatic Mobily connection is off"
+            android:paddingTop="8dp" android:paddingBottom="8dp" />
 
         <Button android:id="@+id/btnToggle"
             android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -634,6 +1016,7 @@ No JDK/Android SDK/emulator/phone is available here; native execution remains NO
   { name: "TunnelController.kt", path: "app/src/main/java/com/example/advancedtunnel/TunnelController.kt", lang: "kotlin", code: controller },
   { name: "MainActivity.kt", path: "app/src/main/java/com/example/advancedtunnel/MainActivity.kt", lang: "kotlin", code: mainActivity },
   { name: "SecureConfigStore.kt", path: "app/src/main/java/com/example/advancedtunnel/SecureConfigStore.kt", lang: "kotlin", code: secureStore },
+  { name: "CarrierAutoConnect.kt", path: "app/src/main/java/com/example/advancedtunnel/CarrierAutoConnect.kt", lang: "kotlin", code: carrierAutoConnect },
   { name: "DeviceEnrollment.kt", path: "app/src/main/java/com/example/advancedtunnel/DeviceEnrollment.kt", lang: "kotlin", code: deviceEnrollmentSource },
   { name: "NativeCredentialsTest.kt", path: "app/src/androidTest/java/com/example/advancedtunnel/NativeCredentialsTest.kt", lang: "kotlin", code: nativeCredentialTestsSource },
   { name: "native-auth.md", path: "docs/native-auth.md", lang: "markdown", code: enrollmentGuide },
