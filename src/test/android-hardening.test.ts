@@ -101,6 +101,8 @@ describe("native Xray full-device VPN engine", () => {
     expect(activity).toContain('SecureConfigStore(this, "xray_profile")');
     expect(activity).toContain("xrayStore.save(value)");
     expect(activity).toContain("xrayStore.load()");
+    expect(activity).toContain("val active = isXrayServiceAlive()");
+    expect(activity).toContain("SharedPreferences caches are process-local");
     expect(layout).toContain("@+id/etXrayProfile");
     expect(layout).toContain("@+id/btnToggleXray");
   });
