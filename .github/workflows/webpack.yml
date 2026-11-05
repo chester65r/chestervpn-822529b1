@@ -1,28 +1,39 @@
-name: NodeJS with Webpack
+name: Web app CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
+      - feature/authorized-carrier-transports
   pull_request:
-    branches: [ "main" ]
+    branches:
+      - main
+      - feature/authorized-carrier-transports
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x, 22.x]
+    timeout-minutes: 25
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Check out source
+        uses: actions/checkout@v4
 
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
 
-    - name: Build
-      run: |
-        npm install
-        npx webpack
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run carrier, transport and Android policy tests
+        run: bun run test -- src/test/carrier-profiles.test.ts src/test/transport-adapters.test.ts src/test/android-hardening.test.ts src/test/android-workflow.test.ts
+
+      - name: Build the TanStack Start / Vite application
+        run: bun run build
