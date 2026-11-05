@@ -139,3 +139,40 @@ export function serverConfig(server: WireGuardServer): string {
     ]),
   ].join("\n");
 }
+
+/**
+ * Sample WireGuard server configuration for VPS setup.
+ * REPLACE ALL PLACEHOLDER VALUES with your actual keys and settings.
+ * Generate keys with: wg genkey | wg pubkey
+ */
+export const SAMPLE_SERVER_CONFIG: WireGuardServer = {
+  privateKey: "REPLACE_WITH_YOUR_SERVER_PRIVATE_KEY_BASE64_44CHARS",
+  address: "10.66.66.1/24",
+  listenPort: 51820,
+  mtu: 1420,
+  peers: [
+    {
+      name: "Android Client",
+      publicKey: "REPLACE_WITH_CLIENT_PUBLIC_KEY_BASE64_44CHARS",
+      presharedKey: "REPLACE_WITH_PRESHARED_KEY_BASE64_44CHARS",
+      address: "10.66.66.2/32",
+    },
+  ],
+};
+
+/**
+ * Sample WireGuard client configuration for Android.
+ * REPLACE ALL PLACEHOLDER VALUES with your actual keys and server details.
+ */
+export const SAMPLE_CLIENT_CONFIG: WireGuardClient = {
+  privateKey: "REPLACE_WITH_YOUR_CLIENT_PRIVATE_KEY_BASE64_44CHARS",
+  address: "10.66.66.2/32",
+  dns: "10.66.66.1",
+  mtu: 1420,
+  serverPublicKey: "REPLACE_WITH_SERVER_PUBLIC_KEY_BASE64_44CHARS",
+  presharedKey: "REPLACE_WITH_PRESHARED_KEY_BASE64_44CHARS",
+  endpointHost: "your-vps.example.com",
+  endpointPort: 51820,
+  allowedIps: ["0.0.0.0/0", "::/0"],
+  keepalive: 25,
+};

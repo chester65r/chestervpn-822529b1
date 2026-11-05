@@ -25,6 +25,37 @@ export const TRANSPORTS = [
   { id: "tls", label: "TLS socket" },
 ];
 
+/** Sample VPS server presets for quick setup. Replace with your actual server details. */
+export const SAMPLE_VPS_SERVERS: RelayServer[] = [
+  {
+    id: "sample-vps-1",
+    name: "US East VPS",
+    host: "your-vps-ny.example.com",
+    port: 443,
+    transport: "websocket",
+    notes: "Replace with your actual VPS hostname or IP",
+    createdAt: 0,
+  },
+  {
+    id: "sample-vps-2",
+    name: "Europe VPS",
+    host: "your-vps-fra.example.com",
+    port: 8443,
+    transport: "tls",
+    notes: "Replace with your actual VPS hostname or IP",
+    createdAt: 0,
+  },
+  {
+    id: "sample-vps-3",
+    name: "Asia VPS",
+    host: "your-vps-sgp.example.com",
+    port: 443,
+    transport: "websocket",
+    notes: "Replace with your actual VPS hostname or IP",
+    createdAt: 0,
+  },
+];
+
 export function validateServerInput(input: ServerInput): ServerErrors {
   const errors: ServerErrors = {};
   if (!input.name.trim()) errors.name = "Name is required";
