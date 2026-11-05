@@ -12,7 +12,7 @@ The browser connection indicator is a UI simulation. Actual VPN traffic is handl
 - **Android VPN:** WireGuard using the official Android tunnel library.
 - **Server:** WireGuard with `wg-quick`; peer changes are persisted before live synchronization.
 
-See [AGENTS.md](./AGENTS.md) for project invariants and safety requirements. In particular, do not reintroduce the retired custom TLS/payload transport from the legacy Android sample below.
+See [AGENTS.md](./AGENTS.md) for project invariants and safety requirements. In particular, do not reintroduce the retired custom TLS/payload transport from older project notes.
 
 ## Development
 
