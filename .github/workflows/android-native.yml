@@ -44,6 +44,9 @@ jobs:
       - name: Generate native Android project
         run: bun native/android/generate-project.ts "$RUNNER_TEMP/tunnel-android"
 
+      - name: Fetch SHA-256-pinned Xray Android engine and license notices
+        run: bash native/android/fetch-libxray.sh "$RUNNER_TEMP/tunnel-android/app/libs"
+
       - name: Download and verify Gradle 8.9
         shell: bash
         run: |
