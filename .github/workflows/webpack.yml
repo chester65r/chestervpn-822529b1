@@ -38,7 +38,7 @@ jobs:
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
 
-      - name: ESLint (functional rules)
+      - name: ESLint (maintained code; legacy transport files excluded)
         run: bun run lint:ci
 
       - name: Prettier baseline (non-blocking until existing files are normalized)
