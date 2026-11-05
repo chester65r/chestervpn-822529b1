@@ -192,3 +192,6 @@ The Android companion now includes a real Xray TUN engine in addition to WireGua
 The build pins `XTLS/libXray v26.10.31` and verifies the Android release archive SHA-256 before extracting `libXray.aar`. The exact upstream MIT and MPL-2.0 texts are copied into the APK assets. Keep the Xray service in the dedicated `:xray` process: WireGuard and Xray each embed a Go runtime and must not load into the same Android process.
 
 The native CI compile/lint lane must pass with this AAR before considering the app buildable. A passing compile does not yet prove remote-server interoperability, leak-free IPv4/IPv6/DNS or physical SIM behavior; those require Android device tests against an authorized server. Android's **Block connections without VPN** lockdown remains a separate system setting.
+
+
+**Xray TUN scope:** IPv4/IPv6 device packets are routed to Xray; its TUN stack supports TCP/UDP and ICMP Echo only. Other ICMP types are ignored, and this is not a generic layer-3 tunnel for arbitrary IP protocols. A local core start is not proof of a remote authenticated handshake. See `docs/android-xray-engine.md`.
