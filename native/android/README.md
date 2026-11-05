@@ -146,7 +146,10 @@ and Android VPN consent is already granted; otherwise open the app to complete c
 SIM/operator values remain best-effort and must be checked on the physical handset,
 especially for dual-SIM, MVNO, roaming and OEM-specific behavior.
 
-Automatic start is limited to a cellular route. A validated Wi-Fi route pauses the Mobily
-rule, and network capability callbacks trigger reevaluation when available networks change.
+Automatic start is based on the active Mobily data SIM and the absence of an active
+Wi-Fi/Ethernet route. A validated Wi-Fi route pauses the Mobily rule, and network capability
+callbacks trigger reevaluation when available networks change. The balance is not checked:
+when no mobile-data path is available, the app may start the tunnel but it cannot complete a
+WireGuard handshake or carry Internet traffic until the carrier provides a usable data path.
 On devices with multiple simultaneously connected networks, Android/OEM routing can differ;
 the active SIM and transport decision must therefore be confirmed on the physical phone.
