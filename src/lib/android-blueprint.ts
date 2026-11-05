@@ -796,7 +796,6 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.app.ActivityManager
 import android.content.Intent
 import android.net.VpnService
 import android.os.Build
