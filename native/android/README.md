@@ -153,3 +153,29 @@ when no mobile-data path is available, the app may start the tunnel but it canno
 WireGuard handshake or carry Internet traffic until the carrier provides a usable data path.
 On devices with multiple simultaneously connected networks, Android/OEM routing can differ;
 the active SIM and transport decision must therefore be confirmed on the physical phone.
+
+
+## Authorized protocol diagnostics
+
+The generated Android companion exposes a separate **Test selected protocol** action for
+endpoints the user owns or is explicitly authorized to test:
+
+- TLS/TCP: verifies a TLS handshake and reports protocol/cipher metadata.
+- WS and WSS: performs a bounded WebSocket upgrade and validates the server's
+  Sec-WebSocket-Accept response.
+- HTTP CONNECT and HTTPS CONNECT: sends a single CONNECT request to the configured
+  proxy and requires HTTP 200.
+- SOCKS5 and SOCKS5 over TLS: negotiates the no-authentication method and performs one
+  bounded CONNECT request to the explicitly entered destination.
+
+TLS adapters use the platform trust store, certificate-chain validation, endpoint
+hostname verification and SNI for the exact authorized endpoint hostname. There is no
+trust-all mode, hostname override, automatic plaintext downgrade, proxy credential field,
+or unbounded response read. Connect/read timeouts are limited to 1–60 seconds; HTTP
+response headers are capped at 16 KiB and diagnostic requests at 4 KiB.
+
+These actions are protocol diagnostics only. They close the test socket after recording
+the handshake result and do not carry Android application traffic or establish a VPN.
+SOCKS5/HTTP CONNECT/WebSocket/TLS must not be described as full-device VPN transports.
+WireGuard remains the only full-device VPN in this generated app. Real endpoint checks
+must be performed on a physical device and do not establish Mobily/STC carrier compatibility.
