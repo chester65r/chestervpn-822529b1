@@ -122,3 +122,26 @@ for an endpoint you own or are authorized to test; never run network I/O on Andr
 main thread. Record the TLS version, cipher, response status and non-secret byte counts.
 Android compilation and device execution of this new source are still NOT RUN until the
 generated project is rebuilt and tested using the pinned workflow above.
+
+
+## Mobily SIM-aware automatic WireGuard connection
+
+The generated Android companion can optionally auto-start its saved WireGuard profile when
+the active data SIM is identified as Mobily (including the Etihad Etisalat operator label).
+It uses the active-data subscription on Android 11+ and falls back to the default data
+subscription on older supported versions. The SIM operator/carrier label is the identity
+signal; the currently registered network name is display-only so roaming does not cause
+a SIM to be misclassified.
+
+Enable **Auto-connect only on Mobily data SIM** in the native app. Android asks for the
+Phone permission to read subscription/operator metadata and separately asks for VPN
+consent. The app never reads account balance, phone numbers, SMS, APN settings, or billing
+state. A zero-balance SIM therefore follows the same start decision as a funded SIM; a
+WireGuard handshake and usable Internet still require a working carrier data path.
+
+The auto rule is opt-in and manages only tunnels it started itself. It does not stop a
+manually started tunnel on a different carrier. A manual stop disables the auto rule.
+After reboot, the receiver can start only if the app was opted in, a saved profile exists,
+and Android VPN consent is already granted; otherwise open the app to complete consent.
+SIM/operator values remain best-effort and must be checked on the physical handset,
+especially for dual-SIM, MVNO, roaming and OEM-specific behavior.
