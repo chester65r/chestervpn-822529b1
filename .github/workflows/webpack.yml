@@ -1,28 +1,55 @@
-name: NodeJS with Webpack
+name: Tunnel Console CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main", "feature/codex-work"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tunnel-console-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  verify:
+    name: Web app and WireGuard interoperability
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x, 22.x]
-
     steps:
-    - uses: actions/checkout@v4
+      - name: Check out source
+        uses: actions/checkout@v5
 
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
 
-    - name: Build
-      run: |
-        npm install
-        npx webpack
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: interop/wireguard/go.mod
+          cache-dependency-path: interop/wireguard/go.sum
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: ESLint (maintained code; legacy transport files excluded)
+        run: bun run lint:ci
+
+      - name: Prettier baseline (non-blocking until existing files are normalized)
+        run: bunx prettier --check .
+        continue-on-error: true
+
+      - name: Unit and integration tests
+        run: bun run test
+
+      - name: WireGuard packet interoperability tests
+        run: bun run test:interop
+
+      - name: Build application
+        run: bun run build

@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
 const MODEL = "google/gemini-3.8-flash";
@@ -9,7 +10,9 @@ const DiagnosticsSchema = z.object({
   port: z.string().max(10),
   sniSet: z.boolean(),
   payloadSet: z.boolean(),
-  profileErrors: z.record(z.string(), z.string().max(200)),
+  profileErrors: z
+    .record(z.string().max(64), z.string().max(200))
+    .refine((value) => Object.keys(value).length <= 20, "Too many profile errors"),
   browserOnline: z.boolean(),
   sessionSeconds: z.number().min(0).max(1e7),
   downloadMbps: z.number().min(0).max(1e5),
@@ -24,7 +27,8 @@ Using ONLY the diagnostics given, explain in plain, friendly language what is wr
 Keep it under 120 words. No markdown headings. Never suggest bypassing carrier billing, spoofing hosts, or using carrier/social hostnames.`;
 
 export const explainConnection = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => DiagnosticsSchema.parse(d))
+  .middleware([requireSupabaseAuth])
+  .validator((d: unknown) => DiagnosticsSchema.parse(d))
   .handler(async ({ data }): Promise<{ text: string } | { error: string }> => {
     const key = process.env["LOVABLE_API_KEY"];
     if (!key) return { error: "The AI helper isn't configured yet." };

@@ -12,7 +12,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:interop": "bash interop/wireguard/run.sh",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "lint:ci": "eslint . --rule 'prettier/prettier: off' --ignore-pattern 'src/lib/tunnel-engine.ts' --ignore-pattern 'src/lib/wireguard-enhanced.ts'"
   },
   "overrides": {
     "rolldown": "1.2.1"
