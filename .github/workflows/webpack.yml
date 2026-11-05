@@ -1,4 +1,4 @@
-name: CI
+name: Tunnel Console CI
 
 on:
   push:
@@ -6,28 +6,50 @@ on:
   pull_request:
     branches: ["main"]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: tunnel-console-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
+  verify:
+    name: Web app and WireGuard interoperability
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out source
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Install dependencies
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: interop/wireguard/go.mod
+          cache-dependency-path: interop/wireguard/go.sum
+
+      - name: Install locked dependencies
         run: bun install --frozen-lockfile
 
-      - name: Lint
-        run: bun run lint
+      - name: ESLint (functional rules)
+        run: bun run lint:ci
 
-      - name: Test
+      - name: Prettier baseline (non-blocking until existing files are normalized)
+        run: bunx prettier --check .
+        continue-on-error: true
+
+      - name: Unit and integration tests
         run: bun run test
 
-      - name: Build
+      - name: WireGuard packet interoperability tests
+        run: bun run test:interop
+
+      - name: Build application
         run: bun run build
