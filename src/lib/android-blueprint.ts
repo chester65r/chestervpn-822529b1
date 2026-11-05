@@ -818,6 +818,7 @@ class MainActivity : AppCompatActivity() {
     private var suppressAutoSwitchListener = false
     private var simReceiverRegistered = false
     private var networkCallbackRegistered = false
+    private var transportProbeInFlight = false
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -923,6 +924,12 @@ class MainActivity : AppCompatActivity() {
             AuthorizedTransportProbe.Protocol.values().map { it.name.replace('_', ' ') }
         )
         binding.btnProbeTransport.setOnClickListener {
+            if (transportProbeInFlight) {
+                toast("A protocol test is already running")
+                return@setOnClickListener
+            }
+            transportProbeInFlight = true
+            binding.btnProbeTransport.isEnabled = false
             val protocol = AuthorizedTransportProbe.Protocol.values()
                 .getOrNull(binding.spTransportProtocol.selectedItemPosition)
                 ?: AuthorizedTransportProbe.Protocol.TLS_TCP
@@ -950,7 +957,11 @@ class MainActivity : AppCompatActivity() {
                 } catch (error: Exception) {
                     "FAILED: " + (error.message ?: "Transport check failed").take(160)
                 }
-                main.post { binding.tvTransportResult.text = outcome }
+                main.post {
+                    transportProbeInFlight = false
+                    binding.btnProbeTransport.isEnabled = true
+                    binding.tvTransportResult.text = outcome
+                }
             }.apply { isDaemon = true }.start()
         }
 
