@@ -6,6 +6,7 @@ mode="${2:-build}"
 serial="${3:-}"
 [[ "$mode" == build || "$mode" == emulator || "$mode" == physical ]] || { echo "Invalid mode"; exit 1; }
 [[ -f "$project/gradlew" && -f "$project/app/build.gradle.kts" ]] || { echo "Generate project and install pinned wrapper first; see README."; exit 1; }
+[[ -s "$project/app/libs/libXray.aar" ]] || { echo "Verified libXray AAR is missing; run native/android/fetch-libxray.sh first."; exit 1; }
 [[ -n "${JAVA_HOME:-}" && -n "${ANDROID_HOME:-}" ]] || { echo "Set JDK 17 JAVA_HOME and Android SDK ANDROID_HOME"; exit 1; }
 java_version="$("$JAVA_HOME/bin/java" -version 2>&1 | head -1)"
 [[ "$java_version" =~ \"17[\.\"] ]] || { echo "JDK 17 required"; exit 1; }
