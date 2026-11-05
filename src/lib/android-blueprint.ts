@@ -10,19 +10,29 @@ const manifest = String.raw`<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!--
-      The packet engine's VPN service, com.wireguard.android.backend.GoBackend$VpnService,
-      is declared by the WireGuard tunnel library manifest with BIND_VPN_SERVICE and
-      exported=false, and is merged automatically. Do not declare a second VpnService.
-    -->
+    <!-- WireGuard contributes its own VPN service. Xray uses a separate process because
+         the two Go-based engines must not load into the same Android process. -->
     <application
         android:allowBackup="false"
         android:label="Tunnel Console"
         android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
+
+        <service
+            android:name=".XrayVpnService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false"
+            android:process=":xray"
+            android:foregroundServiceType="systemExempted">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
 
         <activity
             android:name=".MainActivity"
@@ -77,6 +87,8 @@ android {
 dependencies {
     // Packet engine: official WireGuard userspace implementation (wireguard-go) + VpnService.
     implementation("${WIREGUARD_ANDROID_TUNNEL}")
+    // Xray/libXray runs in its own :xray VpnService process, isolated from WireGuard Go.
+    implementation(files("libs/libXray.aar"))
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 
     implementation("androidx.core:core-ktx:1.12.0")
@@ -778,6 +790,284 @@ object TunnelController {
     }
 }`;
 
+const xrayVpnService = String.raw\`package com.example.advancedtunnel
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
+import android.net.VpnService
+import android.os.Build
+import android.os.IBinder
+import android.os.ParcelFileDescriptor
+import org.json.JSONArray
+import org.json.JSONObject
+import libXray.DialerController
+import libXray.LibXray
+import java.util.concurrent.Executors
+
+/**
+ * Xray runs in :xray, separate from WireGuard's Go runtime.
+ * This service owns the Android TUN descriptor and protects Xray's upstream sockets.
+ */
+class XrayVpnService : VpnService() {
+    companion object {
+        const val ACTION_START = "com.example.advancedtunnel.XRAY_START"
+        const val ACTION_STOP = "com.example.advancedtunnel.XRAY_STOP"
+        const val ACTION_STATE = "com.example.advancedtunnel.XRAY_STATE"
+        const val EXTRA_PROFILE = "profile"
+        const val EXTRA_RUNNING = "running"
+        const val EXTRA_MESSAGE = "message"
+        private const val CHANNEL = "xray_vpn"
+        private const val NOTIFICATION_ID = 4502
+        private const val PREFS = "xray_runtime"
+    }
+
+    private val worker = Executors.newSingleThreadExecutor()
+    @Volatile private var tunnel: ParcelFileDescriptor? = null
+    @Volatile private var running = false
+
+    private val socketController = object : DialerController {
+        override fun protectFd(fd: Int): Boolean = protect(fd)
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_START -> {
+                startForeground(NOTIFICATION_ID, notification("Starting secure Xray tunnel"))
+                val profile = intent.getStringExtra(EXTRA_PROFILE)
+                worker.execute {
+                    if (profile.isNullOrBlank()) {
+                        publish(false, "No saved Xray profile")
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelf(startId)
+                    } else {
+                        startEngine(profile, startId)
+                    }
+                }
+            }
+            ACTION_STOP -> worker.execute { stopEngine("Disconnected") }
+            else -> {
+                publish(running, if (running) "Xray tunnel active" else "Disconnected")
+            }
+        }
+        return START_NOT_STICKY
+    }
+
+    private fun invoke(method: String, payload: JSONObject = JSONObject()): JSONObject {
+        val request = JSONObject()
+            .put("apiVersion", 3)
+            .put("method", method)
+            .put("payload", payload)
+        val response = JSONObject(LibXray.invoke(request.toString()))
+        check(response.optBoolean("success")) { "Xray rejected the profile or operation" }
+        return response.optJSONObject("data") ?: JSONObject()
+    }
+
+    private fun isCoreRunning(): Boolean = runCatching {
+        invoke("getXrayState").optBoolean("running", false)
+    }.getOrDefault(false)
+
+    /**
+     * Accept one Xray share link (or a complete Xray JSON profile).
+     * Custom inbound listeners are replaced by our private TUN inbound so an imported
+     * profile cannot accidentally expose an unauthenticated local/LAN proxy port.
+     * Existing DNS, outbounds and routing policy are retained; an inbound-specific
+     * fallback sends otherwise-unmatched device traffic to the first configured outbound.
+     */
+    private fun buildRuntimeConfig(profile: String, fd: Int): String {
+        require(profile.toByteArray(Charsets.UTF_8).size in 1..1_048_576) {
+            "Profile size must be 1 MiB or less"
+        }
+        val trimmed = profile.trim()
+        val root = if (trimmed.startsWith("{")) {
+            JSONObject(trimmed)
+        } else {
+            val data = invoke(
+                "convertShareLinksToXrayJson",
+                JSONObject().put("text", trimmed)
+            )
+            JSONObject()
+                .put("log", JSONObject().put("loglevel", "warning"))
+                .put("outbounds", data.optJSONArray("outbounds") ?: JSONArray())
+        }
+
+        val outbounds = root.optJSONArray("outbounds")
+            ?: throw IllegalArgumentException("Profile has no outbounds")
+        require(outbounds.length() in 1..64) { "Profile must contain 1–64 outbounds" }
+        val first = outbounds.optJSONObject(0)
+            ?: throw IllegalArgumentException("Invalid outbound configuration")
+        val fallbackTag = first.optString("tag").ifBlank {
+            "tunnel-default".also { first.put("tag", it) }
+        }
+
+        val inboundSettings = JSONObject()
+            .put("name", "tun0")
+            .put("mtu", 1280)
+        val tunInbound = JSONObject()
+            .put("tag", "tun-in")
+            .put("port", 0)
+            .put("protocol", "tun")
+            .put("settings", inboundSettings)
+
+        // Only the owned TUN inbound is retained; imported listener ports are never opened.
+        root.put("inbounds", JSONArray().put(tunInbound))
+        val env = root.optJSONObject("env") ?: JSONObject()
+        env.put("xray.tun.fd", fd.toString())
+        root.put("env", env)
+
+        val routing = root.optJSONObject("routing") ?: JSONObject()
+        val rules = routing.optJSONArray("rules") ?: JSONArray()
+        rules.put(
+            JSONObject()
+                .put("type", "field")
+                .put("inboundTag", JSONArray().put("tun-in"))
+                .put("outboundTag", fallbackTag)
+        )
+        routing.put("rules", rules)
+        root.put("routing", routing)
+        if (root.optJSONObject("log") == null) {
+            root.put("log", JSONObject().put("loglevel", "warning"))
+        }
+        return root.toString()
+    }
+
+    private fun startEngine(profile: String, startId: Int) {
+        if (running || isCoreRunning()) {
+            running = true
+            publish(true, "Xray tunnel already active")
+            return
+        }
+
+        var pfd: ParcelFileDescriptor? = null
+        try {
+            pfd = Builder()
+                .setSession("Tunnel Console · Xray")
+                .setMtu(1280)
+                .addAddress("10.77.0.1", 32)
+                .addAddress("fdfe:dcba:9876::1", 128)
+                .addRoute("0.0.0.0", 0)
+                .addRoute("::", 0)
+                .addDnsServer("1.1.1.1")
+                .addDnsServer("2606:4700:4700::1111")
+                .establish() ?: error("Android did not establish the VPN interface")
+
+            tunnel = pfd
+            LibXray.registerDialerController(socketController)
+            LibXray.registerListenerController(socketController)
+            LibXray.setDNS(socketController, "1.1.1.1:53")
+
+            val runtimeConfig = buildRuntimeConfig(profile, pfd.fd)
+            invoke("runXray", JSONObject().put("xrayJson", runtimeConfig))
+            check(isCoreRunning()) { "Xray core did not enter the running state" }
+
+            running = true
+            updateNotification("Xray tunnel is running")
+            publish(true, "Xray tunnel started · awaiting server traffic")
+        } catch (_: Exception) {
+            // If the core has actually started, never close its TUN descriptor underneath it.
+            if (isCoreRunning()) {
+                running = true
+                tunnel = pfd
+                updateNotification("Xray stop required · traffic remains inside VPN")
+                publish(true, "START/STOP ERROR · Xray is still active; use Stop")
+                return
+            }
+            runCatching { LibXray.resetDNS() }
+            runCatching { pfd?.close() }
+            tunnel = null
+            running = false
+            publish(false, "Xray could not start · check the profile and authorized server")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf(startId)
+        }
+    }
+
+    private fun stopEngine(message: String) {
+        if (isCoreRunning()) {
+            val stopped = runCatching {
+                invoke("stopXray")
+                !isCoreRunning()
+            }.getOrDefault(false)
+            if (!stopped) {
+                running = true
+                updateNotification("Xray stop incomplete · traffic remains inside VPN")
+                publish(true, "STOP FAILED · tunnel is still active; do not force-close")
+                return
+            }
+        }
+        runCatching { LibXray.resetDNS() }
+        runCatching { tunnel?.close() }
+        tunnel = null
+        running = false
+        publish(false, message)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    private fun ensureNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            getSystemService(NotificationManager::class.java)
+                .createNotificationChannel(
+                    NotificationChannel(CHANNEL, "Xray VPN", NotificationManager.IMPORTANCE_LOW)
+                )
+        }
+    }
+
+    private fun notification(message: String): Notification {
+        ensureNotificationChannel()
+        val stopIntent = PendingIntent.getService(
+            this,
+            0,
+            Intent(this, XrayVpnService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return Notification.Builder(this, CHANNEL)
+            .setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setContentTitle("Tunnel Console · Xray")
+            .setContentText(message)
+            .setOngoing(true)
+            .addAction(Notification.Action.Builder(null, "Stop", stopIntent).build())
+            .build()
+    }
+
+    private fun updateNotification(message: String) {
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIFICATION_ID, notification(message))
+    }
+
+    private fun publish(isRunning: Boolean, message: String) {
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+            .edit()
+            .putBoolean(EXTRA_RUNNING, isRunning)
+            .putString(EXTRA_MESSAGE, message)
+            .commit()
+        sendBroadcast(
+            Intent(ACTION_STATE)
+                .setPackage(packageName)
+                .putExtra(EXTRA_RUNNING, isRunning)
+                .putExtra(EXTRA_MESSAGE, message)
+        )
+    }
+
+    override fun onRevoke() {
+        worker.execute { stopEngine("VPN permission revoked") }
+    }
+
+    override fun onDestroy() {
+        // Best-effort orderly teardown; the OS also closes the TUN descriptor on process death.
+        runCatching {
+            if (isCoreRunning()) invoke("stopXray")
+            LibXray.resetDNS()
+        }
+        runCatching { tunnel?.close() }
+        tunnel = null
+        worker.shutdown()
+        super.onDestroy()
+    }
+}\`;
+
 const mainActivity = String.raw`package com.example.advancedtunnel
 
 import android.Manifest
@@ -808,6 +1098,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var store: SecureConfigStore
     private lateinit var enrollment: DeviceEnrollment
+    private lateinit var xrayStore: SecureConfigStore
+    private var xrayRunning = false
+    private var pendingXrayStart = false
+    private var pendingXrayProfile: String? = null
+    private var xrayReceiverRegistered = false
     private val main = Handler(Looper.getMainLooper())
     private var lastRx = 0L
     private var lastTx = 0L
@@ -837,6 +1132,31 @@ class MainActivity : AppCompatActivity() {
             refreshCarrierAutomation()
         }
     }
+
+    private val xrayStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            xrayRunning = intent.getBooleanExtra(XrayVpnService.EXTRA_RUNNING, false)
+            pendingXrayStart = false
+            pendingXrayProfile = null
+            val message = intent.getStringExtra(XrayVpnService.EXTRA_MESSAGE) ?: "Xray state updated"
+            showXrayState(message, xrayRunning)
+            renderControls()
+            refreshCarrierAutomation()
+        }
+    }
+
+    private val xrayVpnPermission =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val profile = pendingXrayProfile
+            pendingXrayProfile = null
+            if (result.resultCode == RESULT_OK && !profile.isNullOrBlank()) {
+                startXrayEngine(profile)
+            } else {
+                pendingXrayStart = false
+                showXrayState("VPN permission denied", false)
+                renderControls()
+            }
+        }
 
     private val vpnPermission =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -882,6 +1202,13 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         store = SecureConfigStore(this)
         enrollment = DeviceEnrollment(this)
+        xrayStore = SecureConfigStore(this, "xray_profile")
+        val xrayPrefs = getSharedPreferences("xray_runtime", MODE_PRIVATE)
+        xrayRunning = xrayPrefs.getBoolean(XrayVpnService.EXTRA_RUNNING, false)
+        showXrayState(
+            xrayPrefs.getString(XrayVpnService.EXTRA_MESSAGE, "No Xray session") ?: "No Xray session",
+            xrayRunning
+        )
         setAutoSwitchChecked(CarrierAutoConnect.isEnabled(this))
         binding.cbAutoMobily.setOnCheckedChangeListener { _, checked ->
             if (suppressAutoSwitchListener) return@setOnCheckedChangeListener
@@ -965,7 +1292,46 @@ class MainActivity : AppCompatActivity() {
             }.apply { isDaemon = true }.start()
         }
 
+        binding.btnSaveXrayProfile.setOnClickListener {
+            val value = binding.etXrayProfile.text.toString().trim()
+            try {
+                xrayStore.save(value)
+                binding.etXrayProfile.setText("")
+                showXrayState("Xray profile saved securely", xrayRunning)
+            } catch (_: Exception) {
+                binding.tvXrayStatus.text = "Unable to save profile securely"
+            }
+        }
+        binding.btnToggleXray.setOnClickListener {
+            if (xrayRunning) {
+                startService(Intent(this, XrayVpnService::class.java).setAction(XrayVpnService.ACTION_STOP))
+                binding.tvXrayStatus.text = "Stopping Xray..."
+            } else {
+                if (!TunnelController.isIdle()) {
+                    toast("Stop the WireGuard tunnel before starting Xray")
+                    return@setOnClickListener
+                }
+                val saved = xrayStore.load()
+                if (saved == null) {
+                    toast("Save an Xray URI or JSON profile first")
+                } else {
+                    pendingXrayStart = true
+                    val permission = VpnService.prepare(this)
+                    if (permission != null) {
+                        pendingXrayProfile = saved
+                        xrayVpnPermission.launch(permission)
+                    } else {
+                        startXrayEngine(saved)
+                    }
+                }
+            }
+        }
+
         binding.btnToggle.setOnClickListener {
+            if (xrayRunning || pendingXrayStart) {
+                toast("Stop Xray before starting WireGuard")
+                return@setOnClickListener
+            }
             stopReason = null
             when (TunnelController.engineState) {
                 EngineState.UP -> {
@@ -994,6 +1360,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        if (!xrayReceiverRegistered) {
+            val filter = IntentFilter(XrayVpnService.ACTION_STATE)
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(xrayStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(xrayStateReceiver, filter)
+            }
+            xrayReceiverRegistered = true
+        }
         if (!simReceiverRegistered) {
             val filter = IntentFilter().apply {
                 addAction("android.intent.action.SIM_STATE_CHANGED")
@@ -1032,10 +1408,15 @@ class MainActivity : AppCompatActivity() {
         activityResumed = false
         main.removeCallbacks(poll)
         binding.etWgConfig.setText("")
+        binding.etXrayProfile.setText("")
         super.onPause()
     }
 
     override fun onStop() {
+        if (xrayReceiverRegistered) {
+            unregisterReceiver(xrayStateReceiver)
+            xrayReceiverRegistered = false
+        }
         if (simReceiverRegistered) {
             unregisterReceiver(simReceiver)
             simReceiverRegistered = false
@@ -1054,6 +1435,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshCarrierAutomation() {
+        if (xrayRunning || pendingXrayStart) {
+            binding.tvCarrierInfo.text = "Xray tunnel active; Mobily auto-WireGuard is paused"
+            return
+        }
         if (!CarrierAutoConnect.isEnabled(this)) {
             binding.tvCarrierInfo.text = "Automatic Mobily connection is off"
             return
@@ -1142,6 +1527,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startTunnel(managedByAutoRule: Boolean = false) {
+        if (xrayRunning || pendingXrayStart) {
+            autoStartInFlight = false
+            return showState("Stop Xray before starting WireGuard")
+        }
         if (managedByAutoRule &&
             (!CarrierAutoConnect.isEnabled(this) ||
                 CarrierAutoConnect.detect(this).state != CarrierSimState.MOBILY)
@@ -1233,12 +1622,38 @@ class MainActivity : AppCompatActivity() {
     private fun renderControls() {
         val state = TunnelController.engineState
         val idle = TunnelController.isIdle()
-        binding.btnToggle.isEnabled = state == EngineState.UP || state == EngineState.DOWN
-        binding.btnToggle.text = if (state == EngineState.DOWN) "START TUNNEL" else "STOP TUNNEL"
+        binding.btnToggle.isEnabled = !xrayRunning && !pendingXrayStart &&
+            (state == EngineState.UP || state == EngineState.DOWN)
+        binding.btnToggle.text = if (state == EngineState.DOWN) "START WIREGUARD" else "STOP WIREGUARD"
+        binding.btnToggleXray.isEnabled = state == EngineState.DOWN &&
+            (xrayRunning || !pendingXrayStart)
+        binding.btnToggleXray.text = if (xrayRunning) "STOP XRAY TUNNEL" else "START XRAY TUNNEL"
+        binding.btnSaveXrayProfile.isEnabled = state == EngineState.DOWN && !xrayRunning && !pendingXrayStart
         // Credential controls are locked whenever the engine is not confirmed down.
         binding.btnIdentity.isEnabled = idle
         binding.btnSave.isEnabled = idle
         binding.btnClear.isEnabled = idle
+    }
+
+    private fun startXrayEngine(profile: String) {
+        if (!TunnelController.isIdle()) {
+            pendingXrayStart = false
+            return toast("Stop the WireGuard tunnel first")
+        }
+        pendingXrayStart = true
+        showXrayState("Starting Xray VPN...", false)
+        renderControls()
+        val intent = Intent(this, XrayVpnService::class.java)
+            .setAction(XrayVpnService.ACTION_START)
+            .putExtra(XrayVpnService.EXTRA_PROFILE, profile)
+        androidx.core.content.ContextCompat.startForegroundService(this, intent)
+        pendingXrayProfile = null
+    }
+
+    private fun showXrayState(message: String, running: Boolean) {
+        binding.tvXrayStatus.text = message
+        xrayRunning = running
+        binding.btnToggleXray.text = if (running) "STOP XRAY TUNNEL" else "START XRAY TUNNEL"
     }
 
     private fun showState(text: String) { binding.tvStatusInfo.text = text }
@@ -1350,9 +1765,34 @@ const layout = String.raw`<?xml version="1.0" encoding="utf-8"?>
             android:text="No protocol test run" android:paddingTop="8dp"
             android:paddingBottom="12dp" />
 
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Full-device Xray tunnel · URI or JSON"
+            android:textStyle="bold" android:paddingTop="20dp" />
+
+        <EditText android:id="@+id/etXrayProfile"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="vless://, vmess://, trojan://, ss://, socks://, hysteria2:// or Xray JSON"
+            android:inputType="textMultiLine|textNoSuggestions|textPassword"
+            android:importantForAutofill="no" android:saveEnabled="false"
+            android:longClickable="false" android:minLines="5"
+            android:fontFamily="monospace" />
+
+        <Button android:id="@+id/btnSaveXrayProfile"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Save Xray profile securely" />
+
+        <Button android:id="@+id/btnToggleXray"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="START XRAY TUNNEL" />
+
+        <TextView android:id="@+id/tvXrayStatus"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="No Xray session" android:paddingTop="8dp" android:paddingBottom="12dp" />
+
         <Button android:id="@+id/btnToggle"
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="START TUNNEL" />
+            android:text="START WIREGUARD" />
 
         <Button android:id="@+id/btnSave"
             android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -1460,6 +1900,7 @@ echo "Server initialized without authorized devices. Use peer-admin.py enroll wi
 `;
 
 export const BLUEPRINT_FILES: BlueprintFile[] = [
+  { name: "XrayVpnService.kt", path: "app/src/main/java/com/example/advancedtunnel/XrayVpnService.kt", lang: "kotlin", code: xrayVpnService },
   { name: "android-workflow.md", path: "native/android/README.md (full workflow in project source)", lang: "markdown", code: `# Repeatable Android checks — all native results NOT RUN
 Complete instructions: native/android/README.md in the project source.
 Pinned tools: JDK 17, Gradle 8.9, AGP 8.7.3, Kotlin 2.0.21, SDK 34.
@@ -1479,6 +1920,7 @@ No JDK/Android SDK/emulator/phone is available here; native execution remains NO
 ` },
   { name: "AndroidManifest.xml", path: "app/src/main/AndroidManifest.xml", lang: "xml", code: manifest },
   { name: "AuthorizedTransportProbe.kt", path: "app/src/main/java/com/example/advancedtunnel/AuthorizedTransportProbe.kt", lang: "kotlin", code: transportProbe },
+  { name: "XrayVpnService.kt", path: "app/src/main/java/com/example/advancedtunnel/XrayVpnService.kt", lang: "kotlin", code: xrayVpnService },
   { name: "AuthorizedTlsProbe.kt", path: "app/src/main/java/com/example/advancedtunnel/AuthorizedTlsProbe.kt", lang: "kotlin", code: tlsProbe },
   { name: "TunnelController.kt", path: "app/src/main/java/com/example/advancedtunnel/TunnelController.kt", lang: "kotlin", code: controller },
   { name: "MainActivity.kt", path: "app/src/main/java/com/example/advancedtunnel/MainActivity.kt", lang: "kotlin", code: mainActivity },
