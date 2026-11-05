@@ -156,18 +156,20 @@ object CarrierAutoConnect {
             value.contains("موبايلي")
 
     /**
-     * Require the current physical route to be cellular. When Android's active route is
-     * already a VPN, inspect available non-VPN networks; a validated Wi-Fi route wins
-     * conservatively so a connected Wi-Fi network does not trigger the Mobily rule.
+     * Do not auto-connect over Wi-Fi or Ethernet. A missing/unvalidated cellular route
+     * is still allowed to attempt the tunnel: the balance is not queried, and the tunnel
+     * will remain without a handshake until Android has a usable mobile-data path.
      */
-    private fun isCellularRoute(context: Context): Boolean {
-        val manager = context.getSystemService(ConnectivityManager::class.java) ?: return false
-        val active = manager.activeNetwork
-        val activeCaps = active?.let(manager::getNetworkCapabilities)
-        if (activeCaps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true) return true
-        if (activeCaps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true) return false
+    private fun isMobilyRouteEligible(context: Context): Boolean {
+        val manager = context.getSystemService(ConnectivityManager::class.java) ?: return true
+        val active = manager.activeNetwork ?: return true
+        val activeCaps = manager.getNetworkCapabilities(active) ?: return true
+        if (activeCaps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) return true
+        if (activeCaps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            activeCaps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+        ) return false
 
-        if (activeCaps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true) {
+        if (activeCaps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
             val physical = manager.allNetworks
                 .filter { network ->
                     manager.getNetworkCapabilities(network)
@@ -179,7 +181,8 @@ object CarrierAutoConnect {
                     it.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
             }
             if (validatedWifi) return false
-            return physical.any { it.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) }
+            if (physical.any { it.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) }) return false
+            return true
         }
         return false
     }
@@ -196,7 +199,7 @@ object CarrierAutoConnect {
         ) {
             return CarrierSimSnapshot(CarrierSimState.PERMISSION_REQUIRED)
         }
-        if (!isCellularRoute(app)) {
+        if (!isMobilyRouteEligible(app)) {
             return CarrierSimSnapshot(CarrierSimState.NON_CELLULAR_NETWORK)
         }
 
