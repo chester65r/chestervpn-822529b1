@@ -29,19 +29,21 @@ def probe(interface: str, runner: Callable = _run) -> dict:
     try:
         link_result = runner(["ip", "-j", "link", "show", "dev", interface])
         links = json.loads(link_result.stdout)
+        # Kernel reports operstate=UNKNOWN for some administratively-up WireGuard
+        # interfaces. Use the authoritative IFF_UP flag, not carrier operstate.
         if len(links) != 1 or links[0].get("ifname") != interface:
             raise RuntimeError("interface not found")
-        if links[0].get("operstate") != "UP":
-            raise RuntimeError("interface is not up")
+        if "UP" not in links[0].get("flags", []):
+            raise RuntimeError("interface is administratively down")
 
         peer_result = runner(["wg", "show", interface, "latest-handshakes"])
         rows = [line.split() for line in peer_result.stdout.splitlines() if line.strip()]
-        if any(len(row) != 2 for row in rows):
+        if any(len(row) != 2 or not row[1].isdigit() for row in rows):
             raise RuntimeError("unexpected WireGuard output")
         now = int(datetime.now(timezone.utc).timestamp())
         active_peers = sum(
             1 for _public_key, timestamp in rows
-            if timestamp.isdigit() and int(timestamp) > 0 and now - int(timestamp) <= 180
+            if int(timestamp) > 0 and now - int(timestamp) <= 180
         )
         return {
             "status": "ok",
@@ -74,7 +76,6 @@ def make_handler(interface: str):
             self.wfile.write(body)
 
         def log_message(self, _format: str, *_args: object) -> None:
-            # Avoid writing request details into logs; the endpoint is intentionally quiet.
             return
 
     return Handler

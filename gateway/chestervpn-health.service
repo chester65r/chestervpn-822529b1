@@ -1,0 +1,32 @@
+[Unit]
+Description=Chestervpn read-only WireGuard health probe
+Documentation=file:/opt/chestervpn-gateway/README.md
+After=network.target wg-quick@wg0.service
+Wants=wg-quick@wg0.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/python3 /opt/chestervpn-gateway/health.py --interface wg0 --host 127.0.0.1 --port 9080
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=10s
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ReadOnlyPaths=/etc/wireguard/wg0.conf
+
+[Install]
+WantedBy=multi-user.target
