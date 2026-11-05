@@ -796,6 +796,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.ActivityManager
 import android.content.Intent
 import android.net.VpnService
 import android.os.Build
@@ -1028,7 +1029,7 @@ class XrayVpnService : VpnService() {
             .setContentTitle("Tunnel Console · Xray")
             .setContentText(message)
             .setOngoing(true)
-            .addAction(Notification.Action.Builder(null, "Stop", stopIntent).build())
+            .addAction(Notification.Action.Builder(android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_media_pause), "Stop", stopIntent).build())
             .build()
     }
 
@@ -1203,12 +1204,7 @@ class MainActivity : AppCompatActivity() {
         store = SecureConfigStore(this)
         enrollment = DeviceEnrollment(this)
         xrayStore = SecureConfigStore(this, "xray_profile")
-        val xrayPrefs = getSharedPreferences("xray_runtime", MODE_PRIVATE)
-        xrayRunning = xrayPrefs.getBoolean(XrayVpnService.EXTRA_RUNNING, false)
-        showXrayState(
-            xrayPrefs.getString(XrayVpnService.EXTRA_MESSAGE, "No Xray session") ?: "No Xray session",
-            xrayRunning
-        )
+        refreshXrayState()
         setAutoSwitchChecked(CarrierAutoConnect.isEnabled(this))
         binding.cbAutoMobily.setOnCheckedChangeListener { _, checked ->
             if (suppressAutoSwitchListener) return@setOnCheckedChangeListener
@@ -1360,6 +1356,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        refreshXrayState()
         if (!xrayReceiverRegistered) {
             val filter = IntentFilter(XrayVpnService.ACTION_STATE)
             if (Build.VERSION.SDK_INT >= 33) {
@@ -1648,6 +1645,25 @@ class MainActivity : AppCompatActivity() {
             .putExtra(XrayVpnService.EXTRA_PROFILE, profile)
         androidx.core.content.ContextCompat.startForegroundService(this, intent)
         pendingXrayProfile = null
+    }
+
+    private fun isXrayServiceAlive(): Boolean {
+        val manager = getSystemService(ACTIVITY_SERVICE) as? ActivityManager ?: return false
+        @Suppress("DEPRECATION")
+        return manager.getRunningServices(Int.MAX_VALUE).any {
+            it.service.className == XrayVpnService::class.java.name
+        }
+    }
+
+    private fun refreshXrayState() {
+        val prefs = getSharedPreferences("xray_runtime", MODE_PRIVATE)
+        val active = prefs.getBoolean(XrayVpnService.EXTRA_RUNNING, false) && isXrayServiceAlive()
+        if (!active) prefs.edit().putBoolean(XrayVpnService.EXTRA_RUNNING, false).apply()
+        if (!active) pendingXrayStart = false
+        showXrayState(
+            prefs.getString(XrayVpnService.EXTRA_MESSAGE, "No Xray session") ?: "No Xray session",
+            active
+        )
     }
 
     private fun showXrayState(message: String, running: Boolean) {
