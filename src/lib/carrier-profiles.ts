@@ -52,7 +52,7 @@ export function detectCarrierFromOperatorName(operatorName: string | null | unde
   if (!name) return "manual";
 
   if (/\b(stc|saudi telecom|saudi telecommunications)\b/i.test(name)) return "stc";
-  if (/\b(mobily|etihad etisalat)\b/i.test(name)) return "mobily";
+  if (/\b(mobily|etihad etisalat)\b/i.test(name) || name.includes("موبايلي")) return "mobily";
   return "manual";
 }
 
@@ -77,4 +77,23 @@ export function canMarkCarrierTested(evidence: {
     evidence.realConnectionTestPassed &&
     evidence.endpointAuthorized
   );
+}
+
+
+/** Prefer the SIM/operator identity; a roaming network name is deliberately not accepted. */
+export function detectCarrierFromSimIdentity(
+  simOperatorName: string | null | undefined,
+  carrierName: string | null | undefined,
+): CarrierId {
+  const simId = detectCarrierFromOperatorName(simOperatorName);
+  return simId !== "manual" ? simId : detectCarrierFromOperatorName(carrierName);
+}
+
+/** Balance is intentionally not an input: Mobily auto-connect depends only on opt-in and SIM identity. */
+export function shouldAutoConnectForMobilySim(input: {
+  enabled: boolean;
+  simOperatorName: string | null | undefined;
+  carrierName: string | null | undefined;
+}): boolean {
+  return input.enabled && detectCarrierFromSimIdentity(input.simOperatorName, input.carrierName) === "mobily";
 }
