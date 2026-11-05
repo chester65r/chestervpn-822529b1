@@ -1656,13 +1656,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshXrayState() {
         val prefs = getSharedPreferences("xray_runtime", MODE_PRIVATE)
-        val active = prefs.getBoolean(XrayVpnService.EXTRA_RUNNING, false) && isXrayServiceAlive()
-        if (!active) prefs.edit().putBoolean(XrayVpnService.EXTRA_RUNNING, false).apply()
-        if (!active) pendingXrayStart = false
-        showXrayState(
-            prefs.getString(XrayVpnService.EXTRA_MESSAGE, "No Xray session") ?: "No Xray session",
-            active
-        )
+        // SharedPreferences caches are process-local; Xray runs in :xray.
+        // The service process itself is the authoritative liveness signal on re-entry.
+        val active = isXrayServiceAlive()
+        if (!active) {
+            prefs.edit().putBoolean(XrayVpnService.EXTRA_RUNNING, false).apply()
+            pendingXrayStart = false
+        }
+        val message = if (active) {
+            prefs.getString(XrayVpnService.EXTRA_MESSAGE, null) ?: "Xray tunnel service is active"
+        } else {
+            prefs.getString(XrayVpnService.EXTRA_MESSAGE, "No Xray session") ?: "No Xray session"
+        }
+        showXrayState(message, active)
     }
 
     private fun showXrayState(message: String, running: Boolean) {
