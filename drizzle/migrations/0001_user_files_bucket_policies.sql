@@ -1,5 +1,9 @@
--- Per-user private files in the "user-files" bucket.
+-- Private per-user files in the "user-files" bucket.
 -- Each authenticated user may read/write only objects inside a folder named with their own user id.
+insert into storage.buckets (id, name, public)
+values ('user-files', 'user-files', false)
+on conflict (id) do update set public = false;
+
 create policy "user-files: select own files"
   on storage.objects for select to authenticated
   using (bucket_id = 'user-files' and (storage.foldername(name))[1] = auth.uid()::text);
