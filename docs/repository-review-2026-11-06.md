@@ -42,6 +42,16 @@ The CI-specific ESLint command excludes two legacy modules from the maintained-c
 
 These files were deliberately left untouched. The developer-facing `bun run lint` still scans the full tree and will continue to report their existing issues. Before either module is reused, it needs a separate security-focused review and replacement of any unsafe primitives with standards-based implementations. The CI green path must not be represented as validation of these excluded files.
 
+
+## Repository governance observations (2026-11-06)
+
+- The repository is public.
+- GitHub reports the current `main` branch as unprotected. The branch-protection details endpoint was not accessible through this connection, so required checks/review rules could not be confirmed.
+- Enable a repository ruleset for `main`: require pull requests, at least one independent approval, required passing CI checks (web CI, maintained-code lint, unit tests, WireGuard interoperability, and Android build/lint when native files change), dismiss stale approvals after new commits, require conversation resolution, and block force pushes/deletion.
+- Keep `delete_branch_on_merge` disabled unless the owner explicitly chooses otherwise; no branch cleanup was performed.
+- Repository code search returned no hits for common committed-token patterns (GitHub token prefixes, OpenAI secret-key prefixes, and Supabase service-role key references). This is only a targeted pattern search, not a complete secret scan. Secret-scanning and code-scanning alert endpoints were not accessible through the current GitHub connection; their status remains unverified.
+- Keep publishable Supabase client configuration separate from service-role and integration secrets. Server-only credentials belong in managed secret storage, never source control or `VITE_*` variables.
+
 ## Release gates still required
 
 1. Reconcile draft PRs with current main; review their complete diffs and migration ordering before merge.
