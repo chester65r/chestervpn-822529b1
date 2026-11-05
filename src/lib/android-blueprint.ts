@@ -96,6 +96,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.telephony.SubscriptionManager
@@ -103,7 +105,7 @@ import android.telephony.TelephonyManager
 import androidx.core.content.ContextCompat
 
 enum class CarrierSimState {
-    MOBILY, OTHER, NO_ACTIVE_DATA_SIM, UNKNOWN, PERMISSION_REQUIRED
+    MOBILY, OTHER, NO_ACTIVE_DATA_SIM, NON_CELLULAR_NETWORK, UNKNOWN, PERMISSION_REQUIRED
 }
 
 data class CarrierSimSnapshot(
@@ -154,6 +156,35 @@ object CarrierAutoConnect {
             value.contains("موبايلي")
 
     /**
+     * Require the current physical route to be cellular. When Android's active route is
+     * already a VPN, inspect available non-VPN networks; a validated Wi-Fi route wins
+     * conservatively so a connected Wi-Fi network does not trigger the Mobily rule.
+     */
+    private fun isCellularRoute(context: Context): Boolean {
+        val manager = context.getSystemService(ConnectivityManager::class.java) ?: return false
+        val active = manager.activeNetwork
+        val activeCaps = active?.let(manager::getNetworkCapabilities)
+        if (activeCaps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true) return true
+        if (activeCaps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true) return false
+
+        if (activeCaps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true) {
+            val physical = manager.allNetworks
+                .filter { network ->
+                    manager.getNetworkCapabilities(network)
+                        ?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) != true
+                }
+                .mapNotNull(manager::getNetworkCapabilities)
+            val validatedWifi = physical.any {
+                it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+                    it.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            }
+            if (validatedWifi) return false
+            return physical.any { it.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) }
+        }
+        return false
+    }
+
+    /**
      * Uses the active-data subscription on API 30+, then the system default data
      * subscription. The registered network name is display-only: roaming must not
      * change the identity of the SIM that owns the subscription.
@@ -164,6 +195,9 @@ object CarrierAutoConnect {
             PackageManager.PERMISSION_GRANTED
         ) {
             return CarrierSimSnapshot(CarrierSimState.PERMISSION_REQUIRED)
+        }
+        if (!isCellularRoute(app)) {
+            return CarrierSimSnapshot(CarrierSimState.NON_CELLULAR_NETWORK)
         }
 
         return try {
@@ -252,7 +286,9 @@ object CarrierAutoConnect {
                     }
                 }
             }
-            CarrierSimState.UNKNOWN, CarrierSimState.PERMISSION_REQUIRED -> finished()
+            CarrierSimState.NON_CELLULAR_NETWORK,
+            CarrierSimState.UNKNOWN,
+            CarrierSimState.PERMISSION_REQUIRED -> finished()
         }
     }
 }
@@ -477,6 +513,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
@@ -503,6 +543,19 @@ class MainActivity : AppCompatActivity() {
     private var pendingAutoManaged = false
     private var suppressAutoSwitchListener = false
     private var simReceiverRegistered = false
+    private var networkCallbackRegistered = false
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            main.post { refreshCarrierAutomation() }
+        }
+        override fun onLost(network: Network) {
+            main.post { refreshCarrierAutomation() }
+        }
+        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+            main.post { refreshCarrierAutomation() }
+        }
+    }
 
     private val simReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -632,6 +685,16 @@ class MainActivity : AppCompatActivity() {
             }
             simReceiverRegistered = true
         }
+        if (!networkCallbackRegistered) {
+            val manager = getSystemService(ConnectivityManager::class.java)
+            if (manager != null) {
+                manager.registerNetworkCallback(
+                    NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(),
+                    networkCallback
+                )
+                networkCallbackRegistered = true
+            }
+        }
         refreshCarrierAutomation()
     }
 
@@ -654,6 +717,10 @@ class MainActivity : AppCompatActivity() {
         if (simReceiverRegistered) {
             unregisterReceiver(simReceiver)
             simReceiverRegistered = false
+        }
+        if (networkCallbackRegistered) {
+            getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(networkCallback)
+            networkCallbackRegistered = false
         }
         super.onStop()
     }
@@ -704,6 +771,8 @@ class MainActivity : AppCompatActivity() {
             CarrierSimState.NO_ACTIVE_DATA_SIM -> stopAutoManagedTunnel(
                 "No active data SIM; automatic tunnel stopped"
             )
+            CarrierSimState.NON_CELLULAR_NETWORK ->
+                stopAutoManagedTunnel("Wi-Fi or a non-cellular route is active; Mobily auto-connect is paused")
             CarrierSimState.PERMISSION_REQUIRED ->
                 showState("Allow Phone permission to identify the Mobily SIM.")
             CarrierSimState.UNKNOWN ->
