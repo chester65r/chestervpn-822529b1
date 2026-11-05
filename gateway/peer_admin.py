@@ -94,7 +94,7 @@ def _render(interface: list[str], peers: list[list[str]]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _network(interface: list[str]) -> ipaddress.IPv4Network:
+def _interface_address(interface: list[str]) -> ipaddress.IPv4Interface:
     address = _field(interface, "Address")
     if not address:
         raise PeerAdminError("Interface must have an IPv4 Address")
@@ -103,7 +103,7 @@ def _network(interface: list[str]) -> ipaddress.IPv4Network:
     if len(ipv4) != 1:
         raise PeerAdminError("Interface must have exactly one IPv4 tunnel network")
     try:
-        return ipaddress.IPv4Interface(ipv4[0]).network
+        return ipaddress.IPv4Interface(ipv4[0])
     except ValueError:
         raise PeerAdminError("Invalid WireGuard interface address") from None
 
@@ -143,8 +143,10 @@ def _validate_config_path(path: pathlib.Path, interface: str, owner_uid: int = 0
         raise PeerAdminError("WireGuard config file not found") from None
     if resolved.name != f"{interface}.conf":
         raise PeerAdminError("Config filename must match the WireGuard interface")
-    if not resolved.is_file() or info.st_uid != owner_uid or info.st_mode & 0o077:
-        raise PeerAdminError("WireGuard config must be a root-owned regular file with mode 0600 or stricter")
+    parent = resolved.parent.stat()
+    if (not resolved.is_file() or info.st_uid != owner_uid or info.st_mode & 0o077
+            or parent.st_uid != owner_uid or parent.st_mode & 0o022):
+        raise PeerAdminError("WireGuard config and parent must be owner-controlled and not group/world writable; config mode 0600 or stricter")
     return resolved
 
 
@@ -246,8 +248,9 @@ def apply(action: str, config_path: pathlib.Path, interface: str, public_key: st
             client_address = ipaddress.IPv4Interface(address)
         except ValueError:
             raise PeerAdminError("Device address must be an IPv4 /32") from None
-        network = _network(interface_lines)
-        if client_address.network.prefixlen != 32 or client_address.ip not in network or client_address.ip == network.network_address or client_address.ip == network.broadcast_address:
+        server_address = _interface_address(interface_lines)
+        network = server_address.network
+        if client_address.network.prefixlen != 32 or client_address.ip not in network or client_address.ip == network.network_address or client_address.ip == network.broadcast_address or client_address.ip == server_address.ip:
             raise PeerAdminError("Device needs an unused host /32 inside the WireGuard interface network")
         for peer in peers:
             if _field(peer, "PublicKey") == public_key:
@@ -275,7 +278,7 @@ def apply(action: str, config_path: pathlib.Path, interface: str, public_key: st
         enrollment = (
             "[Interface]\n"
             f"Address = {client_address.ip}/32\n"
-            f"DNS = {network.network_address + 1}\n"
+            f"DNS = {server_address.ip}\n"
             "MTU = 1280\n\n"
             "[Peer]\n"
             f"PublicKey = {server_public}\n"
@@ -294,16 +297,17 @@ def apply(action: str, config_path: pathlib.Path, interface: str, public_key: st
             response_path.unlink(missing_ok=True)
             raise PeerAdminError("Could not safely write enrollment response") from None
 
-        _atomic_write(path, updated)
         try:
+            _atomic_write(path, updated)
             _sync(interface, updated, runner, temp_root)
         except Exception:
             response_path.unlink(missing_ok=True)
             try:
-                _atomic_write(path, original)
+                if path.read_text(encoding="utf-8") != original:
+                    _atomic_write(path, original)
                 _sync(interface, original, runner, temp_root)
             except Exception:
-                raise PeerAdminError("Change rolled back on disk, but the live WireGuard interface could not be restored; stop/restart wg-quick@" + interface) from None
+                raise PeerAdminError("Change rolled back on disk where possible, but the live WireGuard interface could not be restored; stop/restart wg-quick@" + interface) from None
             raise PeerAdminError("WireGuard synchronization failed; previous peer configuration restored and enrollment response deleted") from None
     finally:
         os.close(lock_fd)

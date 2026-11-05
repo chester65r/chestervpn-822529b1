@@ -1,12 +1,13 @@
 # WireGuard peer administration (owned Linux gateway only)
 
-`peer_admin.py` is an initial root-only peer lifecycle utility for an already configured `wg-quick` interface. It supports enrollment, PSK rotation, and revocation. It does **not** provision a server, manage a database or API, change routes/firewall/DNS, create Android private keys, or prove traffic passes.
+`peer_admin.py` is an initial root-only peer lifecycle utility for an already configured `wg-quick` interface. It supports enrollment, PSK rotation, and revocation. It does **not** provision a server, manage a database or API, change routes/firewall/DNS, create Android private keys, or prove traffic passes. It atomically persists changes; enrollment/rotation restore prior configuration if live sync fails, and revoke attempts a direct live peer removal if sync fails.
 
 ## Preconditions
 
 - Use only on a Linux server you own/administer and have permission to manage.
 - `wg0` is already running under `wg-quick@wg0.service`.
-- `/etc/wireguard/wg0.conf` exists, is root-owned, and has mode `0600` or stricter.
+- `/etc/wireguard/wg0.conf` exists, is root-owned, and has mode `0600` or stricter; its parent directory must be root-owned and not group/world writable.
+- The interface has exactly one IPv4 address on the configured tunnel network; enrollment rejects its own address and all reserved/used peer addresses.
 - `wg`, `wg-quick`, Python 3.10+ are installed.
 - The enrollment response directory must be root-owned and not group/world writable; response file is created mode `0600` and contains a preshared key. Transfer securely to the device owner, then remove it.
 - Back up config securely before a change. The tool uses a lock file and atomic disk writes, updates only the WireGuard config/live interface, and never invokes firewall commands.

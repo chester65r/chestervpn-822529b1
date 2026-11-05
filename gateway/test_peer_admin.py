@@ -34,15 +34,19 @@ class PeerAdminUnitTests(unittest.TestCase):
         self.assertTrue(interface)
         self.assertEqual(len(peers), 1)
 
-    def fake_runner(self, fail_sync=False):
+    def fake_runner(self, fail_sync=False, fail_sync_once=False):
         calls = []
+        sync_failures = 0
         def runner(args, **kwargs):
+            nonlocal sync_failures
             calls.append(args)
             class Result: stdout = ""
             if args[:2] == ["wg", "genpsk"]: Result.stdout = PSK
             elif args[:4] == ["wg", "show", "wg0", "public-key"]: Result.stdout = SERVER
             elif args[:2] == ["wg-quick", "strip"]: Result.stdout = "[Interface]\nPrivateKey = private-server-material\n"
-            elif args[:2] == ["wg", "syncconf"] and fail_sync: raise OSError("simulated failure")
+            elif args[:2] == ["wg", "syncconf"] and (fail_sync or (fail_sync_once and sync_failures == 0)):
+                sync_failures += 1
+                raise OSError("simulated failure")
             return Result()
         return runner, calls
 
@@ -67,6 +71,7 @@ class PeerAdminUnitTests(unittest.TestCase):
             self.assertEqual(response.stat().st_mode & 0o777, 0o600)
             self.assertIn(f"PresharedKey = {PSK}", response.read_text())
             self.assertIn(f"PublicKey = {SERVER}", response.read_text())
+            self.assertIn("DNS = 10.66.66.1", response.read_text())
             self.assertNotIn("PrivateKey =", response.read_text())
             self.assertNotIn("private-server-material", config.read_text())
             self.assertTrue(any(c[:2] == ["wg", "syncconf"] for c in calls))
@@ -96,6 +101,18 @@ class PeerAdminUnitTests(unittest.TestCase):
                 self.apply("revoke", config, DEVICE, runner=runner, temp_root=tmp)
             self.assertNotIn(f"PublicKey = {DEVICE}", config.read_text())
             self.assertTrue(any(c[:5] == ["wg", "set", "wg0", "peer", DEVICE] for c in calls))
+
+    def test_enroll_sync_failure_rolls_back_and_deletes_response(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp); config = self.prepare(root); before = config.read_text()
+            private_dir = root / "private"; private_dir.mkdir(mode=0o700); private_dir.chmod(0o700)
+            response = private_dir / "enrollment.conf"
+            runner, calls = self.fake_runner(fail_sync_once=True)
+            with self.assertRaises(PeerAdminError):
+                self.apply("enroll", config, DEVICE, "10.66.66.2/32", "vpn.example.org:51820", response, runner=runner, temp_root=tmp)
+            self.assertEqual(config.read_text(), before)
+            self.assertFalse(response.exists())
+            self.assertEqual(sum(c[:2] == ["wg", "syncconf"] for c in calls), 2)
 
     def test_mode_and_root_check(self):
         with tempfile.TemporaryDirectory() as tmp:
