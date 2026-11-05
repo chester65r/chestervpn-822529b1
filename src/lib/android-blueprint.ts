@@ -800,7 +800,6 @@ import android.app.ActivityManager
 import android.content.Intent
 import android.net.VpnService
 import android.os.Build
-import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import org.json.JSONArray
 import org.json.JSONObject
@@ -1072,6 +1071,7 @@ class XrayVpnService : VpnService() {
 const mainActivity = String.raw`package com.example.advancedtunnel
 
 import android.Manifest
+import android.app.ActivityManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
