@@ -12,7 +12,7 @@ The browser connection indicator is a UI simulation. Actual VPN traffic is handl
 - **Android VPN:** WireGuard using the official Android tunnel library.
 - **Server:** WireGuard with `wg-quick`; peer changes are persisted before live synchronization.
 
-See [AGENTS.md](./AGENTS.md) for the project invariants and safety requirements. In particular, do not reintroduce the retired custom TLS/payload transport described in older project notes.
+See [AGENTS.md](./AGENTS.md) for project invariants and safety requirements. In particular, do not reintroduce the retired custom TLS/payload transport from the legacy Android sample below.
 
 ## Development
 
@@ -34,6 +34,17 @@ bun run test:interop
 
 ## Environment
 
-Configure the Supabase URL and publishable key, plus any server-only integration keys required by the features you enable. Never put Supabase secret/service-role keys or other server credentials in client-exposed `VITE_*` variables.
+Configure the Supabase URL and publishable key, plus any server-only integration keys required by enabled features. Never put Supabase secret/service-role keys or other server credentials in client-exposed `VITE_*` variables.
 
-This project is connected to [Lovable](https://lovable.dev). Keep published history intact: do not force-push, rebase, amend, or squash commits that have already been pushed.
+## Live app
+
+https://chestervpn.lovable.app
+
+## Build with Lovable
+
+Continue developing this project in the [Lovable editor](https://lovable.dev/projects/316563bc-095f-489d-bb30-eabf79a4e7cb).
+
+- **Ship faster:** describe what you want to build and Lovable handles the code.
+- **Stay in sync:** every change made in Lovable is committed straight to this repository.
+- **Full ownership:** changes pushed to the connected branch sync into Lovable.
+
