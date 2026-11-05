@@ -311,6 +311,276 @@ class CarrierAutoConnectReceiver : BroadcastReceiver() {
     }
 }`;
 
+const transportProbe = String.raw`package com.example.advancedtunnel
+
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.Base64
+import javax.net.ssl.SNIHostName
+import javax.net.ssl.SSLParameters
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
+
+/**
+ * Bounded protocol diagnostics for endpoints the user owns or is authorized to test.
+ * These probes validate a protocol handshake only; they do not create a VPN or forward
+ * Android device traffic. WireGuard remains the full-device VPN engine.
+ */
+object AuthorizedTransportProbe {
+    enum class Protocol(val usesTls: Boolean) {
+        TLS_TCP(true),
+        WS(false),
+        WSS(true),
+        HTTP_CONNECT(false),
+        HTTPS_CONNECT(true),
+        SOCKS5(false),
+        SOCKS5_TLS(true)
+    }
+
+    data class Request(
+        val protocol: Protocol,
+        val endpointHost: String,
+        val endpointPort: Int,
+        val tlsServerName: String = "",
+        val websocketPath: String = "/",
+        val destinationHost: String = "",
+        val destinationPort: Int = 443,
+        val timeoutMs: Int = 10_000
+    )
+
+    data class Result(
+        val protocol: String,
+        val summary: String,
+        val tlsVersion: String,
+        val cipherSuite: String,
+        val bytesSent: Int,
+        val bytesReceived: Int
+    )
+
+    private const val MAX_HTTP_HEADER_BYTES = 16 * 1024
+    private val DNS_HOST = Regex("(?i)^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$")
+    private val IPV4_HOST = Regex("^(25[0-5]|2[0-4]\\d|1?\\d?\\d)(\\.(25[0-5]|2[0-4]\\d|1?\\d?\\d)){3}$")
+
+    fun execute(request: Request): Result {
+        validate(request)
+        val socket = open(request)
+        try {
+            val counts = when (request.protocol) {
+                Protocol.TLS_TCP -> Pair(0, 0)
+                Protocol.WS, Protocol.WSS -> probeWebSocket(socket, request)
+                Protocol.HTTP_CONNECT, Protocol.HTTPS_CONNECT -> probeHttpConnect(socket, request)
+                Protocol.SOCKS5, Protocol.SOCKS5_TLS -> probeSocks5(socket, request)
+            }
+            val tls = socket as? SSLSocket
+            val tlsVersion = tls?.session?.protocol.orEmpty()
+            val cipher = tls?.session?.cipherSuite.orEmpty()
+            val summary = when (request.protocol) {
+                Protocol.TLS_TCP -> "TLS handshake succeeded"
+                Protocol.WS, Protocol.WSS -> "WebSocket upgrade accepted"
+                Protocol.HTTP_CONNECT, Protocol.HTTPS_CONNECT -> "HTTP CONNECT returned 200"
+                Protocol.SOCKS5, Protocol.SOCKS5_TLS -> "SOCKS5 CONNECT succeeded"
+            }
+            return Result(
+                request.protocol.name,
+                summary,
+                tlsVersion,
+                cipher,
+                counts.first,
+                counts.second
+            )
+        } finally {
+            runCatching { socket.close() }
+        }
+    }
+
+    private fun validate(request: Request) {
+        require(request.endpointPort in 1..65535) { "Endpoint port must be 1-65535" }
+        require(request.timeoutMs in 1_000..60_000) { "Timeout must be 1-60 seconds" }
+        require(DNS_HOST.matches(request.endpointHost) || IPV4_HOST.matches(request.endpointHost)) {
+            "Endpoint must be a DNS hostname or IPv4 address"
+        }
+        if (request.protocol.usesTls) {
+            require(DNS_HOST.matches(request.endpointHost)) { "TLS requires a DNS endpoint hostname" }
+            require(request.tlsServerName.equals(request.endpointHost, true)) {
+                "TLS server name must match the authorized endpoint"
+            }
+        }
+        if (request.protocol == Protocol.WS || request.protocol == Protocol.WSS) {
+            require(request.websocketPath.startsWith("/") && request.websocketPath.length <= 256) {
+                "WebSocket path must start with / and be at most 256 characters"
+            }
+            require(!request.websocketPath.contains('\\r') &&
+                !request.websocketPath.contains('\\n') &&
+                !request.websocketPath.contains('\\u0000')) {
+                "WebSocket path contains invalid characters"
+            }
+        }
+        if (request.protocol == Protocol.HTTP_CONNECT ||
+            request.protocol == Protocol.HTTPS_CONNECT ||
+            request.protocol == Protocol.SOCKS5 ||
+            request.protocol == Protocol.SOCKS5_TLS
+        ) {
+            require(DNS_HOST.matches(request.destinationHost) || IPV4_HOST.matches(request.destinationHost)) {
+                "Proxy destination must be a DNS hostname or IPv4 address"
+            }
+            require(request.destinationPort in 1..65535) { "Destination port must be 1-65535" }
+        }
+    }
+
+    private fun open(request: Request): Socket {
+        val raw = Socket()
+        raw.connect(InetSocketAddress(request.endpointHost, request.endpointPort), request.timeoutMs)
+        raw.soTimeout = request.timeoutMs
+        if (!request.protocol.usesTls) return raw
+
+        try {
+            val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
+            val tls = factory.createSocket(raw, request.endpointHost, request.endpointPort, true) as SSLSocket
+            tls.soTimeout = request.timeoutMs
+            val parameters: SSLParameters = tls.sslParameters
+            parameters.endpointIdentificationAlgorithm = "HTTPS"
+            parameters.serverNames = listOf(SNIHostName(request.tlsServerName))
+            tls.sslParameters = parameters
+            tls.startHandshake()
+            return tls
+        } catch (error: Exception) {
+            runCatching { raw.close() }
+            throw error
+        }
+    }
+
+    private fun probeWebSocket(socket: Socket, request: Request): Pair<Int, Int> {
+        val nonce = ByteArray(16)
+        SecureRandom().nextBytes(nonce)
+        val key = Base64.getEncoder().encodeToString(nonce)
+        val authority = request.endpointHost + ":" + request.endpointPort
+        val text = "GET " + request.websocketPath + " HTTP/1.1\\r\\n" +
+            "Host: " + authority + "\\r\\n" +
+            "Upgrade: websocket\\r\\n" +
+            "Connection: Upgrade\\r\\n" +
+            "Sec-WebSocket-Key: " + key + "\\r\\n" +
+            "Sec-WebSocket-Version: 13\\r\\n\\r\\n"
+        val bytes = text.toByteArray(Charsets.US_ASCII)
+        require(bytes.size <= 4096) { "WebSocket request exceeds 4 KiB" }
+        socket.getOutputStream().apply { write(bytes); flush() }
+        val headers = readHttpHeaders(socket.getInputStream())
+        val lines = headers.split("\\r\\n")
+        require(lines.firstOrNull()?.matches(Regex("^HTTP/1\\\\.[01] 101(?: .*)?$")) == true) {
+            "WebSocket endpoint did not return HTTP 101"
+        }
+        val fields = lines.drop(1).mapNotNull { line ->
+            val index = line.indexOf(':')
+            if (index <= 0) null else line.substring(0, index).trim().lowercase() to line.substring(index + 1).trim()
+        }.groupBy({ it.first }, { it.second })
+        require(fields["upgrade"]?.any { it.equals("websocket", true) } == true) {
+            "WebSocket Upgrade header is missing"
+        }
+        require(fields["connection"]?.any { value -> value.split(',').any { it.trim().equals("upgrade", true) } } == true) {
+            "WebSocket Connection header is missing Upgrade"
+        }
+        val expectedAccept = Base64.getEncoder().encodeToString(
+            MessageDigest.getInstance("SHA-1")
+                .digest((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray(Charsets.US_ASCII))
+        )
+        require(fields["sec-websocket-accept"]?.singleOrNull() == expectedAccept) {
+            "WebSocket handshake response did not validate"
+        }
+        return Pair(bytes.size, headers.toByteArray(Charsets.ISO_8859_1).size)
+    }
+
+    private fun probeHttpConnect(socket: Socket, request: Request): Pair<Int, Int> {
+        val destination = request.destinationHost + ":" + request.destinationPort
+        val text = "CONNECT " + destination + " HTTP/1.1\\r\\n" +
+            "Host: " + destination + "\\r\\n\\r\\n"
+        val bytes = text.toByteArray(Charsets.US_ASCII)
+        require(bytes.size <= 4096) { "CONNECT request exceeds 4 KiB" }
+        socket.getOutputStream().apply { write(bytes); flush() }
+        val headers = readHttpHeaders(socket.getInputStream())
+        val status = headers.substringBefore("\\r\\n")
+        require(status.matches(Regex("^HTTP/1\\\\.[01] 200(?: .*)?$"))) {
+            "HTTP CONNECT proxy did not return 200"
+        }
+        return Pair(bytes.size, headers.toByteArray(Charsets.ISO_8859_1).size)
+    }
+
+    private fun probeSocks5(socket: Socket, request: Request): Pair<Int, Int> {
+        val input = socket.getInputStream()
+        val output = socket.getOutputStream()
+        output.write(byteArrayOf(0x05, 0x01, 0x00))
+        output.flush()
+        val method = readExact(input, 2)
+        require(method[0] == 0x05.toByte() && method[1] == 0x00.toByte()) {
+            "SOCKS5 endpoint does not offer unauthenticated method 0"
+        }
+
+        val connect = ByteArrayOutputStream()
+        connect.write(byteArrayOf(0x05, 0x01, 0x00))
+        val ipv4 = request.destinationHost.split('.')
+        if (IPV4_HOST.matches(request.destinationHost)) {
+            connect.write(0x01)
+            ipv4.forEach { connect.write(it.toInt()) }
+        } else {
+            val hostBytes = request.destinationHost.toByteArray(Charsets.UTF_8)
+            require(hostBytes.isNotEmpty() && hostBytes.size <= 255) { "SOCKS5 destination hostname is too long" }
+            connect.write(0x03)
+            connect.write(hostBytes.size)
+            connect.write(hostBytes)
+        }
+        connect.write((request.destinationPort shr 8) and 0xff)
+        connect.write(request.destinationPort and 0xff)
+        val bytes = connect.toByteArray()
+        output.write(bytes)
+        output.flush()
+
+        val response = readExact(input, 4)
+        require(response[0] == 0x05.toByte() && response[1] == 0x00.toByte() && response[2] == 0x00.toByte()) {
+            "SOCKS5 CONNECT request was rejected"
+        }
+        val addressLength = when (response[3].toInt() and 0xff) {
+            0x01 -> 4
+            0x03 -> readExact(input, 1)[0].toInt() and 0xff
+            0x04 -> 16
+            else -> throw IllegalStateException("SOCKS5 returned an unknown address type")
+        }
+        readExact(input, addressLength + 2)
+        return Pair(3 + bytes.size, 2 + 4 + addressLength + 2)
+    }
+
+    private fun readHttpHeaders(input: InputStream): String {
+        val output = ByteArrayOutputStream()
+        while (output.size() < MAX_HTTP_HEADER_BYTES) {
+            val next = input.read()
+            if (next < 0) throw IllegalStateException("Endpoint closed before response headers completed")
+            output.write(next)
+            val data = output.toByteArray()
+            val size = data.size
+            if (size >= 4 && data[size - 4] == 13.toByte() && data[size - 3] == 10.toByte() &&
+                data[size - 2] == 13.toByte() && data[size - 1] == 10.toByte()
+            ) {
+                return String(data, Charsets.ISO_8859_1)
+            }
+        }
+        throw IllegalStateException("Response headers exceed 16 KiB")
+    }
+
+    private fun readExact(input: InputStream, count: Int): ByteArray {
+        require(count in 1..1024) { "Invalid protocol response length" }
+        val result = ByteArray(count)
+        var offset = 0
+        while (offset < count) {
+            val read = input.read(result, offset, count - offset)
+            if (read < 0) throw IllegalStateException("Endpoint closed during protocol response")
+            offset += read
+        }
+        return result
+    }
+}
+`;
+
 const tlsProbe = String.raw`package com.example.advancedtunnel
 
 import java.io.BufferedInputStream
@@ -526,6 +796,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import android.widget.ArrayAdapter
 import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -646,6 +917,43 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnSave.setOnClickListener { validateAndSave() }
+        binding.spTransportProtocol.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            AuthorizedTransportProbe.Protocol.values().map { it.name.replace('_', ' ') }
+        )
+        binding.btnProbeTransport.setOnClickListener {
+            val protocol = AuthorizedTransportProbe.Protocol.values()
+                .getOrNull(binding.spTransportProtocol.selectedItemPosition)
+                ?: AuthorizedTransportProbe.Protocol.TLS_TCP
+            val endpointHost = binding.etTransportHost.text.toString().trim()
+            val request = AuthorizedTransportProbe.Request(
+                protocol = protocol,
+                endpointHost = endpointHost,
+                endpointPort = binding.etTransportPort.text.toString().trim().toIntOrNull() ?: 0,
+                tlsServerName = binding.etTlsServerName.text.toString().trim().ifBlank { endpointHost },
+                websocketPath = binding.etWebSocketPath.text.toString().trim().ifBlank { "/" },
+                destinationHost = binding.etDestinationHost.text.toString().trim(),
+                destinationPort = binding.etDestinationPort.text.toString().trim().toIntOrNull() ?: 0
+            )
+            binding.tvTransportResult.text = "Testing authorized endpoint..."
+            Thread {
+                val outcome = try {
+                    val result = AuthorizedTransportProbe.execute(request)
+                    val tlsDetails = if (result.tlsVersion.isNotBlank()) {
+                        " · " + result.tlsVersion + " · " + result.cipherSuite
+                    } else {
+                        " · no TLS"
+                    }
+                    "PASS: " + result.summary + tlsDetails +
+                        " · sent " + result.bytesSent + " B · received " + result.bytesReceived + " B"
+                } catch (error: Exception) {
+                    "FAILED: " + (error.message ?: "Transport check failed").take(160)
+                }
+                main.post { binding.tvTransportResult.text = outcome }
+            }.apply { isDaemon = true }.start()
+        }
+
         binding.btnToggle.setOnClickListener {
             stopReason = null
             when (TunnelController.engineState) {
@@ -984,6 +1292,53 @@ const layout = String.raw`<?xml version="1.0" encoding="utf-8"?>
             android:text="Automatic Mobily connection is off"
             android:paddingTop="8dp" android:paddingBottom="8dp" />
 
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Authorized protocol diagnostics (not a full-device VPN)"
+            android:textStyle="bold" android:paddingTop="16dp" />
+
+        <Spinner android:id="@+id/spTransportProtocol"
+            android:layout_width="match_parent" android:layout_height="wrap_content" />
+
+        <EditText android:id="@+id/etTransportHost"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="Authorized endpoint hostname" android:inputType="textUri"
+            android:importantForAutofill="no" />
+
+        <EditText android:id="@+id/etTransportPort"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="Endpoint port" android:inputType="number"
+            android:text="443" android:importantForAutofill="no" />
+
+        <EditText android:id="@+id/etTlsServerName"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="TLS server name (must equal endpoint hostname)" android:inputType="textUri"
+            android:importantForAutofill="no" />
+
+        <EditText android:id="@+id/etWebSocketPath"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="WebSocket path (default /)" android:text="/"
+            android:importantForAutofill="no" />
+
+        <EditText android:id="@+id/etDestinationHost"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="Proxy destination hostname (CONNECT / SOCKS5)" android:inputType="textUri"
+            android:importantForAutofill="no" />
+
+        <EditText android:id="@+id/etDestinationPort"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="Proxy destination port" android:inputType="number"
+            android:text="443" android:importantForAutofill="no" />
+
+        <Button android:id="@+id/btnProbeTransport"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Test selected protocol" />
+
+        <TextView android:id="@+id/tvTransportResult"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="No protocol test run" android:paddingTop="8dp"
+            android:paddingBottom="12dp" />
+
         <Button android:id="@+id/btnToggle"
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="START TUNNEL" />
@@ -1112,6 +1467,7 @@ Result records separate emulator from physical; never claim network tests from i
 No JDK/Android SDK/emulator/phone is available here; native execution remains NOT RUN.
 ` },
   { name: "AndroidManifest.xml", path: "app/src/main/AndroidManifest.xml", lang: "xml", code: manifest },
+  { name: "AuthorizedTransportProbe.kt", path: "app/src/main/java/com/example/advancedtunnel/AuthorizedTransportProbe.kt", lang: "kotlin", code: transportProbe },
   { name: "AuthorizedTlsProbe.kt", path: "app/src/main/java/com/example/advancedtunnel/AuthorizedTlsProbe.kt", lang: "kotlin", code: tlsProbe },
   { name: "TunnelController.kt", path: "app/src/main/java/com/example/advancedtunnel/TunnelController.kt", lang: "kotlin", code: controller },
   { name: "MainActivity.kt", path: "app/src/main/java/com/example/advancedtunnel/MainActivity.kt", lang: "kotlin", code: mainActivity },
