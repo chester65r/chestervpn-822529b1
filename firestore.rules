@@ -1,8 +1,67 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: /users/{userId}/relay_servers/{serverId}
+    // Document ID: {serverId} (1-128 chars)
+    // Fields:
+    //   - name: string (required, 1-100 chars)
+    //   - host: string (required, 1-253 chars)
+    //   - port: int (required, 1..65535)
+    //   - transport: string (required, 1-40 chars)
+    //   - notes: string (required, 0-500 chars)
+    //   - createdAt: timestamp (required, serverTimestamp or immutable on update)
+    //   - updatedAt: timestamp (required, serverTimestamp)
+    //
+    // ===============================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidRelayServer(data) {
+      let allowedKeys = ['name', 'host', 'port', 'transport', 'notes', 'createdAt', 'updatedAt'];
+      return data.keys().hasAll(allowedKeys)
+        && data.keys().hasOnly(allowedKeys)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 100
+        && data.host is string && data.host.size() >= 1 && data.host.size() <= 253
+        && data.port is int && data.port >= 1 && data.port <= 65535
+        && data.transport is string && data.transport.size() >= 1 && data.transport.size() <= 40
+        && data.notes is string && data.notes.size() <= 500
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /users/{userId}/relay_servers/{serverId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && isValidId(serverId)
+        && isValidRelayServer(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isOwner(userId)
+        && isValidId(serverId)
+        && isValidRelayServer(request.resource.data)
+        && (request.resource.data.createdAt == resource.data.createdAt || request.resource.data.createdAt == request.time)
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isOwner(userId);
+    }
+
+    // Default deny catch-all rule
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

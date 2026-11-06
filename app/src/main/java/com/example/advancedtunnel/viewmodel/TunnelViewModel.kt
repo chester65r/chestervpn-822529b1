@@ -244,15 +244,21 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
         val disallowed = if (isSplit) _disallowedApps.value.toList() else emptyList()
 
         if (VpnManager.isVpnPrepared(context)) {
-            VpnManager.startVpn(
-                context = context,
-                profile = _profile.value,
-                killswitchEnabled = _killswitchEnabled.value,
-                disallowedApps = disallowed
-            )
+            onVpnPermissionGranted(context)
         } else {
             onRequestPermission()
         }
+    }
+
+    fun onVpnPermissionGranted(context: Context) {
+        val isSplit = _splitTunnelingEnabled.value
+        val disallowed = if (isSplit) _disallowedApps.value.toList() else emptyList()
+        VpnManager.startVpn(
+            context = context,
+            profile = _profile.value,
+            killswitchEnabled = _killswitchEnabled.value,
+            disallowedApps = disallowed
+        )
     }
 
     fun toggleKillswitch(enabled: Boolean) {
@@ -419,9 +425,13 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun signInWithGoogle(onResult: (Boolean, String?) -> Unit) {
+    fun signInWithGoogle(activityContext: Context? = null, onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
-            val result = authManager.signInWithGoogle()
+            val result = if (activityContext != null) {
+                authManager.signInWithGoogle(activityContext)
+            } else {
+                authManager.signInWithGoogle()
+            }
             if (result.isSuccess) {
                 onResult(true, null)
             } else {
@@ -442,7 +452,9 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun signOut() {
-        authManager.signOut()
+        viewModelScope.launch {
+            authManager.signOut()
+        }
     }
 
     fun runAiDiagnostics() {

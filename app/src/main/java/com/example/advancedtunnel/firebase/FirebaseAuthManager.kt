@@ -3,10 +3,13 @@ package com.example.advancedtunnel.firebase
 import android.app.Activity
 import android.content.Context
 import android.util.Log
+import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
+import com.example.advancedtunnel.R
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
@@ -19,7 +22,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.tasks.await
 
 private const val TAG = "FirebaseAuthManager"
-private const val WEB_CLIENT_ID = "1075657195872-n1255nbc69gf1s9qkf0mkh2f6ntk26jm.apps.googleusercontent.com"
 private const val MICROSOFT_PROVIDER_ID = "microsoft.com"
 private val MICROSOFT_SCOPES = listOf("openid", "profile", "email")
 
@@ -40,32 +42,53 @@ class FirebaseAuthManager(private val context: Context) {
         }
     }
 
-    suspend fun signInWithGoogle(): Result<FirebaseUser> {
-        _isLoading.value = true
+    /**
+     * Attempts silent auto-sign-in for returning users using GetGoogleIdOption.
+     */
+    suspend fun attemptAutoSignIn(activityContext: Context = context): Result<FirebaseUser> {
+        if (auth.currentUser != null) {
+            return Result.success(auth.currentUser!!)
+        }
         return try {
-            val signInOption = GetSignInWithGoogleOption.Builder(WEB_CLIENT_ID)
+            val clientId = activityContext.getString(R.string.default_web_client_id)
+            val googleIdOption = GetGoogleIdOption.Builder()
+                .setFilterByAuthorizedAccounts(true)
+                .setServerClientId(clientId)
+                .setAutoSelectEnabled(true)
                 .build()
 
             val request = GetCredentialRequest.Builder()
-                .addCredentialOption(signInOption)
+                .addCredentialOption(googleIdOption)
                 .build()
 
-            val result = credentialManager.getCredential(context, request)
-            val credential = result.credential
+            val result = credentialManager.getCredential(activityContext, request)
+            handleSignInResult(result.credential)
+        } catch (e: GetCredentialCancellationException) {
+            Log.w(TAG, "Auto sign-in cancelled by user", e)
+            Result.failure(e)
+        } catch (e: Exception) {
+            Log.d(TAG, "No authorized account available for silent sign-in: ${e.message}")
+            Result.failure(e)
+        }
+    }
 
-            if (credential is CustomCredential &&
-                credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
-            ) {
-                val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
-                val idToken = googleIdTokenCredential.idToken
-                val authCredential = GoogleAuthProvider.getCredential(idToken, null)
-                val authResult = auth.signInWithCredential(authCredential).await()
-                val user = authResult.user ?: throw Exception("Firebase user is null after sign in.")
-                _currentUser.value = user
-                Result.success(user)
-            } else {
-                throw Exception("Unexpected credential type: ${credential.type}")
-            }
+    /**
+     * Explicit interactive Google Sign-In button flow using GetSignInWithGoogleOption
+     * and the project's R.string.default_web_client_id generated from google-services.json.
+     */
+    suspend fun signInWithGoogle(activityContext: Context = context): Result<FirebaseUser> {
+        _isLoading.value = true
+        return try {
+            val clientId = activityContext.getString(R.string.default_web_client_id)
+            val signInWithGoogleOption = GetSignInWithGoogleOption.Builder(clientId)
+                .build()
+
+            val request = GetCredentialRequest.Builder()
+                .addCredentialOption(signInWithGoogleOption)
+                .build()
+
+            val result = credentialManager.getCredential(activityContext, request)
+            handleSignInResult(result.credential)
         } catch (e: GetCredentialCancellationException) {
             Log.w(TAG, "User cancelled Google Sign-In flow", e)
             Result.failure(Exception("Sign-in was cancelled."))
@@ -77,12 +100,25 @@ class FirebaseAuthManager(private val context: Context) {
         }
     }
 
+    private suspend fun handleSignInResult(credential: androidx.credentials.Credential): Result<FirebaseUser> {
+        if (credential is CustomCredential &&
+            credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+        ) {
+            val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
+            val idToken = googleIdTokenCredential.idToken
+            val authCredential = GoogleAuthProvider.getCredential(idToken, null)
+            val authResult = auth.signInWithCredential(authCredential).await()
+            val user = authResult.user ?: throw Exception("Firebase user is null after sign in.")
+            _currentUser.value = user
+            return Result.success(user)
+        } else {
+            throw Exception("Unexpected credential type: ${credential.type}")
+        }
+    }
+
     /**
      * Signs the user in with their Microsoft account through Firebase's federated OAuth
-     * flow. The provider opens the Microsoft consent screen and returns the signed-in
-     * user directly, so no activity-result plumbing is required. Microsoft must be
-     * enabled in the Firebase console and the Firebase redirect URI registered with the
-     * Microsoft app registration before this can succeed.
+     * flow.
      */
     suspend fun signInWithMicrosoft(activity: Activity): Result<FirebaseUser> {
         _isLoading.value = true
@@ -104,8 +140,13 @@ class FirebaseAuthManager(private val context: Context) {
         }
     }
 
-    fun signOut() {
+    suspend fun signOut() {
         auth.signOut()
+        try {
+            credentialManager.clearCredentialState(ClearCredentialStateRequest())
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to clear credential manager state", e)
+        }
         _currentUser.value = null
     }
 }

@@ -1,7 +1,6 @@
 package com.example.advancedtunnel
 
 import android.app.Activity
-import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
 import android.widget.Toast
@@ -14,7 +13,6 @@ import com.example.advancedtunnel.firebase.configureAppCheck
 import com.example.advancedtunnel.ui.TunnelApp
 import com.example.advancedtunnel.ui.theme.TunnelTheme
 import com.example.advancedtunnel.viewmodel.TunnelViewModel
-import com.example.advancedtunnel.vpn.VpnManager
 
 class MainActivity : ComponentActivity() {
 
@@ -23,7 +21,7 @@ class MainActivity : ComponentActivity() {
     private val vpnConsentLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
-                VpnManager.startVpn(this, viewModel.profile.value)
+                viewModel.onVpnPermissionGranted(this)
             } else {
                 Toast.makeText(this, "VPN permission required to create secure tunnel", Toast.LENGTH_LONG).show()
             }
@@ -46,7 +44,7 @@ class MainActivity : ComponentActivity() {
                         if (prepareIntent != null) {
                             vpnConsentLauncher.launch(prepareIntent)
                         } else {
-                            VpnManager.startVpn(this, viewModel.profile.value)
+                            viewModel.onVpnPermissionGranted(this)
                         }
                     }
                 )

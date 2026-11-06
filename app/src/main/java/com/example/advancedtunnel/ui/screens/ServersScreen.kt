@@ -175,7 +175,7 @@ fun ServersScreen(
                         ) {
                             Button(
                                 onClick = {
-                                    viewModel.signInWithGoogle { success, error ->
+                                    viewModel.signInWithGoogle(context.findActivity() ?: context) { success, error ->
                                         if (success) {
                                             Toast.makeText(context, "Signed in with Google", Toast.LENGTH_SHORT).show()
                                         } else if (error != null) {

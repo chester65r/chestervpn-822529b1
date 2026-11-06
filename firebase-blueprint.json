@@ -1,0 +1,50 @@
+{
+  "entities": {
+    "RelayServer": {
+      "title": "RelayServer",
+      "description": "User-owned VPN relay endpoint configuration synchronized across devices.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Display name of the relay server (1-100 chars)."
+        },
+        "host": {
+          "type": "string",
+          "description": "IPv4, IPv6, or domain hostname of the relay endpoint (1-253 chars)."
+        },
+        "port": {
+          "type": "integer",
+          "description": "TCP/UDP port of the relay endpoint (1-65535)."
+        },
+        "transport": {
+          "type": "string",
+          "description": "Transport protocol label (e.g. WebSocket, TLS, SSH, HTTP Proxy, WireGuard)."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional user notes (0-500 chars)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the relay server record was created or saved."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the relay server record was last updated."
+        }
+      },
+      "required": ["name", "host", "port", "transport", "notes", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/relay_servers/{serverId}": {
+      "schema": {
+        "$ref": "#/entities/RelayServer"
+      },
+      "description": "Private user-scoped collection of VPN relay servers."
+    }
+  }
+}

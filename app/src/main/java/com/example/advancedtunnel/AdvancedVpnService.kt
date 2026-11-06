@@ -16,6 +16,7 @@ import java.io.FileOutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import javax.net.ssl.SNIHostName
 import javax.net.ssl.SSLParameters
 import javax.net.ssl.SSLSocket
@@ -30,9 +31,15 @@ class AdvancedVpnService : VpnService(), Runnable {
         private const val BUFFER_SIZE = 32768
     }
 
+    @Volatile
     private var vpnInterface: ParcelFileDescriptor? = null
+    @Volatile
+    private var activeRawSocket: Socket? = null
+    @Volatile
+    private var activeSecureSocket: SSLSocket? = null
     private var tunnelThread: Thread? = null
     private val isRunning = AtomicBoolean(false)
+    private val sessionIdGenerator = AtomicLong(0L)
 
     private var serverIp = ""
     private var serverPort = 443
@@ -47,7 +54,7 @@ class AdvancedVpnService : VpnService(), Runnable {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "ACTION_STOP") {
-            stopTunnel("User requested disconnect")
+            stopTunnel("User requested disconnect", stopService = true)
             return START_NOT_STICKY
         }
 
@@ -67,22 +74,31 @@ class AdvancedVpnService : VpnService(), Runnable {
         }
 
         if (isRunning.get()) {
-            Log.w(TAG, "Tunnel already running; stopping previous session")
-            stopTunnel()
+            Log.w(TAG, "Tunnel already running; stopping previous session before reconnect")
+            closeActiveResources()
+            tunnelThread?.interrupt()
         }
 
+        totalBytesSent = 0
+        totalBytesReceived = 0
         isRunning.set(true)
+        val currentSession = sessionIdGenerator.incrementAndGet()
         showForegroundNotification("Connecting to $serverIp:$serverPort...")
-        tunnelThread = Thread(this, "RealVpnTunnelThread").apply { start() }
+        tunnelThread = Thread({ runSession(currentSession) }, "RealVpnTunnelThread-$currentSession").apply { start() }
 
         return START_STICKY
     }
 
     override fun run() {
+        runSession(sessionIdGenerator.get())
+    }
+
+    private fun runSession(mySessionId: Long) {
         var rawSocket: Socket? = null
         var secureSocket: SSLSocket? = null
         var vpnInput: FileInputStream? = null
         var vpnOutput: FileOutputStream? = null
+        var localVpnInterface: ParcelFileDescriptor? = null
 
         try {
             Log.d(TAG, "Initializing real VPN tunnel to $serverIp:$serverPort (SNI: $sniHost)")
@@ -90,6 +106,7 @@ class AdvancedVpnService : VpnService(), Runnable {
 
             // 1. Create and protect the outbound socket FIRST to avoid establishing TUN on failure
             rawSocket = Socket()
+            activeRawSocket = rawSocket
             val protected = protect(rawSocket)
             if (!protected) {
                 Log.w(TAG, "Warning: Could not protect raw socket from VPN routing table.")
@@ -105,6 +122,7 @@ class AdvancedVpnService : VpnService(), Runnable {
             // 2. Establish TLS with SNI
             val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
             secureSocket = factory.createSocket(rawSocket, serverIp, serverPort, true) as SSLSocket
+            activeSecureSocket = secureSocket
             val params = SSLParameters()
             if (sniHost.isNotBlank()) {
                 params.serverNames = listOf(SNIHostName(sniHost))
@@ -167,13 +185,14 @@ class AdvancedVpnService : VpnService(), Runnable {
                 }
             }
 
-            vpnInterface = builder.establish()
-            if (vpnInterface == null) {
+            localVpnInterface = builder.establish()
+            vpnInterface = localVpnInterface
+            if (localVpnInterface == null) {
                 throw IllegalStateException("VPN interface could not be established by Android OS.")
             }
 
-            vpnInput = FileInputStream(vpnInterface?.fileDescriptor)
-            vpnOutput = FileOutputStream(vpnInterface?.fileDescriptor)
+            vpnInput = FileInputStream(localVpnInterface.fileDescriptor)
+            vpnOutput = FileOutputStream(localVpnInterface.fileDescriptor)
 
             // Update state: genuinely CONNECTED only now!
             VpnManager.onServiceConnected("$serverIp:$serverPort")
@@ -183,7 +202,7 @@ class AdvancedVpnService : VpnService(), Runnable {
             val downThread = Thread({
                 val buf = ByteArray(BUFFER_SIZE)
                 try {
-                    while (isRunning.get()) {
+                    while (isRunning.get() && sessionIdGenerator.get() == mySessionId) {
                         val n = serverIn.read(buf)
                         if (n > 0) {
                             vpnOutput.write(buf, 0, n)
@@ -196,16 +215,16 @@ class AdvancedVpnService : VpnService(), Runnable {
                         }
                     }
                 } catch (e: Exception) {
-                    if (isRunning.get()) {
+                    if (isRunning.get() && sessionIdGenerator.get() == mySessionId) {
                         Log.e(TAG, "Downstream pipe error: ${e.message}")
                     }
                 }
-            }, "VpnDownstream")
+            }, "VpnDownstream-$mySessionId")
             downThread.start()
 
             // 6. Upstream loop (TUN -> Server)
             val upBuf = ByteArray(BUFFER_SIZE)
-            while (isRunning.get()) {
+            while (isRunning.get() && sessionIdGenerator.get() == mySessionId) {
                 val n = vpnInput.read(upBuf)
                 if (n > 0) {
                     serverOut.write(upBuf, 0, n)
@@ -222,30 +241,43 @@ class AdvancedVpnService : VpnService(), Runnable {
         } catch (e: java.net.UnknownHostException) {
             val msg = "Cannot resolve '$serverIp'. Enter your Hetzner Cloud IP or valid domain."
             Log.e(TAG, "DNS resolution failed: $msg", e)
-            VpnManager.onServiceStopped(msg)
+            if (sessionIdGenerator.get() == mySessionId) VpnManager.onServiceStopped(msg)
         } catch (e: java.net.SocketTimeoutException) {
             val msg = "Connection to $serverIp:$serverPort timed out after 7s. Check Hetzner firewall rules."
             Log.e(TAG, "Connection timeout: $msg", e)
-            VpnManager.onServiceStopped(msg)
+            if (sessionIdGenerator.get() == mySessionId) VpnManager.onServiceStopped(msg)
         } catch (e: java.net.ConnectException) {
             val msg = "Connection refused by $serverIp:$serverPort. Check if your tunnel service is active."
             Log.e(TAG, "Connection refused: $msg", e)
-            VpnManager.onServiceStopped(msg)
+            if (sessionIdGenerator.get() == mySessionId) VpnManager.onServiceStopped(msg)
         } catch (e: javax.net.ssl.SSLHandshakeException) {
             val msg = "TLS Handshake failed with $sniHost: ${e.localizedMessage ?: "Certificate mismatch"}"
             Log.e(TAG, "TLS error: $msg", e)
-            VpnManager.onServiceStopped(msg)
+            if (sessionIdGenerator.get() == mySessionId) VpnManager.onServiceStopped(msg)
         } catch (e: Exception) {
-            Log.e(TAG, "Tunnel session terminated: ${e.message}", e)
-            VpnManager.onServiceStopped("Connection error: ${e.localizedMessage ?: e.javaClass.simpleName}")
+            if (isRunning.get() && sessionIdGenerator.get() == mySessionId) {
+                Log.e(TAG, "Tunnel session terminated: ${e.message}", e)
+                VpnManager.onServiceStopped("Connection error: ${e.localizedMessage ?: e.javaClass.simpleName}")
+            }
         } finally {
             try { secureSocket?.close() } catch (_: Exception) {}
             try { rawSocket?.close() } catch (_: Exception) {}
             try { vpnInput?.close() } catch (_: Exception) {}
             try { vpnOutput?.close() } catch (_: Exception) {}
-            try { vpnInterface?.close() } catch (_: Exception) {}
-            stopTunnel()
+            try { localVpnInterface?.close() } catch (_: Exception) {}
+            if (sessionIdGenerator.get() == mySessionId) {
+                stopTunnel(stopService = true)
+            }
         }
+    }
+
+    private fun closeActiveResources() {
+        try { activeSecureSocket?.close() } catch (_: Exception) {}
+        try { activeRawSocket?.close() } catch (_: Exception) {}
+        try { vpnInterface?.close() } catch (_: Exception) {}
+        activeSecureSocket = null
+        activeRawSocket = null
+        vpnInterface = null
     }
 
     private fun showForegroundNotification(statusText: String) {
@@ -290,17 +322,27 @@ class AdvancedVpnService : VpnService(), Runnable {
         startForeground(NOTIFICATION_ID, notification)
     }
 
-    private fun stopTunnel(reason: String? = null) {
-        if (!isRunning.compareAndSet(true, false)) return
+    private fun stopTunnel(reason: String? = null, stopService: Boolean = true) {
+        val wasRunning = isRunning.getAndSet(false)
+        closeActiveResources()
         tunnelThread?.interrupt()
         tunnelThread = null
-        VpnManager.onServiceStopped(reason)
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        if (wasRunning || reason != null) {
+            VpnManager.onServiceStopped(reason)
+        }
+        if (stopService) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
+
+    override fun onRevoke() {
+        stopTunnel("VPN permission revoked by system", stopService = true)
+        super.onRevoke()
     }
 
     override fun onDestroy() {
-        stopTunnel("Service destroyed")
+        stopTunnel("Service destroyed", stopService = false)
         super.onDestroy()
     }
 }
