@@ -39,6 +39,8 @@ class AdvancedVpnService : VpnService(), Runnable {
     private var sniHost = ""
     private var rawPayload = ""
     private var protocol = "tls"
+    private var killswitchEnabled = false
+    private var disallowedApps = ArrayList<String>()
 
     private var totalBytesSent: Long = 0
     private var totalBytesReceived: Long = 0
@@ -54,6 +56,8 @@ class AdvancedVpnService : VpnService(), Runnable {
         sniHost = intent?.getStringExtra("SNI_HOST") ?: ""
         rawPayload = intent?.getStringExtra("PAYLOAD") ?: ""
         protocol = intent?.getStringExtra("PROTOCOL") ?: "tls"
+        killswitchEnabled = intent?.getBooleanExtra("KILLSWITCH_ENABLED", false) ?: false
+        disallowedApps = intent?.getStringArrayListExtra("DISALLOWED_APPS") ?: ArrayList()
 
         if (serverIp.isBlank()) {
             Log.e(TAG, "No server IP provided")
@@ -144,6 +148,23 @@ class AdvancedVpnService : VpnService(), Runnable {
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 builder.setMetered(false)
+                if (killswitchEnabled) {
+                    try {
+                        builder.setBlocking(true)
+                        Log.i(TAG, "Killswitch enabled: blocking traffic outside VPN")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Killswitch setBlocking skipped: ${e.message}")
+                    }
+                }
+            }
+
+            disallowedApps.forEach { pkg ->
+                try {
+                    builder.addDisallowedApplication(pkg)
+                    Log.d(TAG, "Split Tunneling: Excluded app $pkg from VPN route")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Split Tunneling: Could not exclude app $pkg: ${e.message}")
+                }
             }
 
             vpnInterface = builder.establish()

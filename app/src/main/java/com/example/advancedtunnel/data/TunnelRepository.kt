@@ -20,9 +20,21 @@ class TunnelRepository(context: Context) {
         private const val KEY_ACTIVE_PROFILE_SNI = "active_sni"
         private const val KEY_ACTIVE_PROFILE_PAYLOAD = "active_payload"
         private const val KEY_ACTIVE_PRESET_ID = "active_preset_id"
+        private const val KEY_KILLSWITCH = "killswitch_enabled"
+        private const val KEY_SPLIT_TUNNELING = "split_tunneling_enabled"
+        private const val KEY_DISALLOWED_APPS = "disallowed_apps_set"
         private const val KEY_SAVED_PROFILES = "saved_profiles_json"
         private const val KEY_CUSTOM_SERVERS = "custom_servers_json"
     }
+
+    fun loadKillswitchEnabled(): Boolean = prefs.getBoolean(KEY_KILLSWITCH, false)
+    fun saveKillswitchEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_KILLSWITCH, enabled).apply()
+
+    fun loadSplitTunnelingEnabled(): Boolean = prefs.getBoolean(KEY_SPLIT_TUNNELING, false)
+    fun saveSplitTunnelingEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_SPLIT_TUNNELING, enabled).apply()
+
+    fun loadDisallowedApps(): Set<String> = prefs.getStringSet(KEY_DISALLOWED_APPS, emptySet()) ?: emptySet()
+    fun saveDisallowedApps(apps: Set<String>) = prefs.edit().putStringSet(KEY_DISALLOWED_APPS, apps).apply()
 
     fun loadActiveProfile(): Pair<TunnelProfile, String> {
         var ip = prefs.getString(KEY_ACTIVE_PROFILE_IP, "") ?: ""

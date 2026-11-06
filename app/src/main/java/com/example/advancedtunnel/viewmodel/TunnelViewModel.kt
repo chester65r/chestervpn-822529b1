@@ -77,6 +77,21 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
     val currentUser: StateFlow<FirebaseUser?> = authManager.currentUser
     val isAuthLoading: StateFlow<Boolean> = authManager.isLoading
 
+    private val _killswitchEnabled = MutableStateFlow(repository.loadKillswitchEnabled())
+    val killswitchEnabled: StateFlow<Boolean> = _killswitchEnabled.asStateFlow()
+
+    private val _splitTunnelingEnabled = MutableStateFlow(repository.loadSplitTunnelingEnabled())
+    val splitTunnelingEnabled: StateFlow<Boolean> = _splitTunnelingEnabled.asStateFlow()
+
+    private val _disallowedApps = MutableStateFlow(repository.loadDisallowedApps())
+    val disallowedApps: StateFlow<Set<String>> = _disallowedApps.asStateFlow()
+
+    private val _selectedServer = MutableStateFlow<RelayServer?>(null)
+    val selectedServer: StateFlow<RelayServer?> = _selectedServer.asStateFlow()
+
+    private val _serverLatencies = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val serverLatencies: StateFlow<Map<String, Long>> = _serverLatencies.asStateFlow()
+
     private var firestoreSyncJob: Job? = null
 
     init {
@@ -224,10 +239,65 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
+        val isSplit = _splitTunnelingEnabled.value
+        val disallowed = if (isSplit) _disallowedApps.value.toList() else emptyList()
+
         if (VpnManager.isVpnPrepared(context)) {
-            VpnManager.startVpn(context, _profile.value)
+            VpnManager.startVpn(
+                context = context,
+                profile = _profile.value,
+                killswitchEnabled = _killswitchEnabled.value,
+                disallowedApps = disallowed
+            )
         } else {
             onRequestPermission()
+        }
+    }
+
+    fun toggleKillswitch(enabled: Boolean) {
+        _killswitchEnabled.value = enabled
+        repository.saveKillswitchEnabled(enabled)
+    }
+
+    fun toggleSplitTunneling(enabled: Boolean) {
+        _splitTunnelingEnabled.value = enabled
+        repository.saveSplitTunnelingEnabled(enabled)
+    }
+
+    fun toggleDisallowedApp(pkgName: String) {
+        val current = _disallowedApps.value.toMutableSet()
+        if (current.contains(pkgName)) {
+            current.remove(pkgName)
+        } else {
+            current.add(pkgName)
+        }
+        _disallowedApps.value = current
+        repository.saveDisallowedApps(current)
+    }
+
+    fun selectServerNode(server: RelayServer) {
+        _selectedServer.value = server
+        val updated = _profile.value.copy(
+            ip = server.host,
+            port = server.port.toString(),
+            sni = server.host
+        )
+        _profile.value = updated
+        _presetId.value = "custom"
+        _errors.value = emptyMap()
+        repository.saveActiveProfile(updated, "custom")
+    }
+
+    fun probeAllServerLatencies() {
+        viewModelScope.launch {
+            val currentMap = _serverLatencies.value.toMutableMap()
+            _servers.value.forEach { server ->
+                val lat = VpnManager.checkServerReachability(server.host, server.port, 2500)
+                if (lat != null) {
+                    currentMap[server.id] = lat
+                }
+            }
+            _serverLatencies.value = currentMap
         }
     }
 

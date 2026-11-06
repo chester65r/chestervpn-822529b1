@@ -59,6 +59,7 @@ import com.example.advancedtunnel.model.PayloadGeneratorConfig
 import com.example.advancedtunnel.model.ROUTE_PRESETS
 import com.example.advancedtunnel.model.TunnelStatus
 import com.example.advancedtunnel.model.TunnelUtils
+import com.example.advancedtunnel.ui.components.SplitTunnelingCard
 import com.example.advancedtunnel.ui.theme.BorderDark
 import com.example.advancedtunnel.ui.theme.CardBackground
 import com.example.advancedtunnel.ui.theme.CyanPrimary
@@ -403,6 +404,9 @@ fun ConfigScreen(
                 }
             }
         }
+
+        // Killswitch & Split Tunneling Card
+        SplitTunnelingCard(viewModel = viewModel)
 
         if (showPayloadGenerator) {
             PayloadGeneratorDialog(

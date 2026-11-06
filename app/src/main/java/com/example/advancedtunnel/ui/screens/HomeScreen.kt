@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.advancedtunnel.model.TunnelStatus
 import com.example.advancedtunnel.model.TunnelUtils
+import com.example.advancedtunnel.ui.components.ServerNodeSelectorCard
 import com.example.advancedtunnel.ui.components.SpeedGraphCanvas
 import com.example.advancedtunnel.ui.theme.AccentOrange
 import com.example.advancedtunnel.ui.theme.BorderDark
@@ -284,6 +285,9 @@ fun HomeScreen(
                 }
             }
         }
+
+        // Firestore & Local VPN Node Region Selector
+        ServerNodeSelectorCard(viewModel = viewModel)
 
         // Real Telemetry Speed Cards
         Row(

@@ -1,9 +1,13 @@
 package com.example.advancedtunnel.ui.screens
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -22,10 +26,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.Button
@@ -34,6 +41,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -52,6 +60,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.core.content.ContextCompat
 import com.example.advancedtunnel.ui.theme.BorderDark
 import com.example.advancedtunnel.ui.theme.CardBackground
 import com.example.advancedtunnel.ui.theme.CyanPrimary
@@ -76,6 +86,27 @@ fun ShareScreen(
     var profileName by remember { mutableStateOf("") }
     var importCodeText by remember { mutableStateOf("") }
     var importError by remember { mutableStateOf<String?>(null) }
+    var showQrScannerDialog by remember { mutableStateOf(false) }
+
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasCameraPermission = isGranted
+        if (isGranted) {
+            showQrScannerDialog = true
+        } else {
+            Toast.makeText(context, "Camera permission is required to scan QR codes", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Column(
         modifier = modifier
@@ -346,33 +377,190 @@ fun ShareScreen(
                     )
                 }
 
-                Button(
-                    onClick = {
-                        val success = viewModel.importProfileCode(importCodeText)
-                        if (success) {
-                            Toast.makeText(context, "Profile imported successfully", Toast.LENGTH_SHORT).show()
-                            importCodeText = ""
-                            onNavigateToConfig()
-                        } else {
-                            importError = "Invalid TUNNEL:// profile code. Please check syntax."
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .testTag("submit_import_button"),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = SurfaceVariantDark,
-                        contentColor = TextPrimary
-                    ),
-                    shape = RoundedCornerShape(12.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(imageVector = Icons.Default.Download, contentDescription = null)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Import Profile", fontWeight = FontWeight.SemiBold)
+                    OutlinedButton(
+                        onClick = {
+                            if (hasCameraPermission) {
+                                showQrScannerDialog = true
+                            } else {
+                                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("scan_qr_code_button"),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = CyanPrimary
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CyanPrimary),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.QrCodeScanner, contentDescription = null, tint = CyanPrimary)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Scan QR", fontWeight = FontWeight.SemiBold, color = CyanPrimary)
+                    }
+
+                    Button(
+                        onClick = {
+                            val success = viewModel.importProfileCode(importCodeText)
+                            if (success) {
+                                Toast.makeText(context, "Profile imported successfully", Toast.LENGTH_SHORT).show()
+                                importCodeText = ""
+                                onNavigateToConfig()
+                            } else {
+                                importError = "Invalid TUNNEL:// profile code. Please check syntax."
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("submit_import_button"),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = CyanPrimary,
+                            contentColor = SurfaceDark
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Download, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Import Code", fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
         }
+
+    if (showQrScannerDialog) {
+        Dialog(onDismissRequest = { showQrScannerDialog = false }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = CardBackground),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.QrCodeScanner,
+                                contentDescription = null,
+                                tint = CyanPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "QR CODE SCANNER",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                        }
+                        IconButton(onClick = { showQrScannerDialog = false }) {
+                            Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = TextMuted)
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(220.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(SurfaceDark)
+                            .border(2.dp, CyanPrimary, RoundedCornerShape(16.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = null,
+                                tint = CyanPrimary,
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Text(
+                                text = "Point camera at TUNNEL:// QR Code",
+                                fontSize = 11.sp,
+                                color = TextMuted
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "Scan or paste profile payload directly below:",
+                        fontSize = 11.sp,
+                        color = TextSecondary
+                    )
+
+                    var qrScannedText by remember { mutableStateOf("") }
+                    OutlinedTextField(
+                        value = qrScannedText,
+                        onValueChange = { qrScannedText = it },
+                        placeholder = { Text("TUNNEL://...", fontSize = 11.sp) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(75.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = CyanPrimary,
+                            unfocusedBorderColor = BorderDark,
+                            focusedContainerColor = SurfaceDark,
+                            unfocusedContainerColor = SurfaceDark
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        singleLine = false,
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            color = TextPrimary
+                        )
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showQrScannerDialog = false },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("Cancel", color = TextSecondary)
+                        }
+                        Button(
+                            onClick = {
+                                val ok = viewModel.importProfileCode(qrScannedText)
+                                if (ok) {
+                                    Toast.makeText(context, "QR Profile decoded and imported!", Toast.LENGTH_SHORT).show()
+                                    showQrScannerDialog = false
+                                    onNavigateToConfig()
+                                } else {
+                                    Toast.makeText(context, "Invalid QR code payload format", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = SurfaceDark),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("Import", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
 
         // Security Advisory
         Row(

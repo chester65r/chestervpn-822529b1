@@ -69,7 +69,12 @@ object VpnManager {
         return VpnService.prepare(context) == null
     }
 
-    fun startVpn(context: Context, profile: TunnelProfile) {
+    fun startVpn(
+        context: Context,
+        profile: TunnelProfile,
+        killswitchEnabled: Boolean = false,
+        disallowedApps: List<String> = emptyList()
+    ) {
         if (_vpnState.value is RealVpnState.Connected || _vpnState.value is RealVpnState.Connecting) {
             return
         }
@@ -83,6 +88,8 @@ object VpnManager {
             putExtra("SNI_HOST", profile.sni)
             putExtra("PAYLOAD", profile.payload)
             putExtra("PROTOCOL", "tls")
+            putExtra("KILLSWITCH_ENABLED", killswitchEnabled)
+            putStringArrayListExtra("DISALLOWED_APPS", ArrayList(disallowedApps))
         }
 
         try {

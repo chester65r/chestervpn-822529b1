@@ -56,6 +56,34 @@ class FirestoreManager(context: Context) {
         awaitClose { listener.remove() }
     }
 
+    fun observePublicRelayNodes(): Flow<List<RelayServer>> = callbackFlow {
+        val collection = firestore.collection("public_relay_nodes")
+        val listener = collection.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                Log.w(TAG, "Error listening for public relay nodes", error)
+                return@addSnapshotListener
+            }
+            if (snapshot != null && !snapshot.isEmpty) {
+                val servers = snapshot.documents.mapNotNull { doc ->
+                    try {
+                        RelayServer(
+                            id = doc.id,
+                            name = doc.getString("name") ?: "",
+                            host = doc.getString("host") ?: "",
+                            port = doc.getLong("port")?.toInt() ?: 443,
+                            transport = doc.getString("transport") ?: "TLS",
+                            notes = doc.getString("notes") ?: ""
+                        )
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+                trySend(servers)
+            }
+        }
+        awaitClose { listener.remove() }
+    }
+
     suspend fun saveRelayServer(userId: String, server: RelayServer): Result<Unit> {
         return try {
             val doc = firestore.collection("users").document(userId).collection("relay_servers").document(server.id)
