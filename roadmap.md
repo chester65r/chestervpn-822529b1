@@ -58,3 +58,5 @@
 - [x] Deep review fixes: fail-closed Android tunnel state, credential locks, full-tunnel profile checks, transactional server peer changes, server-local firewall isolation persisted on boot, account-scoped server list loading, correct Mbps units, Go launcher fallback; 49 app tests + 7 packet tests pass. Android device/deployed-server verification still blocked (no toolchain/devices).
 
 - [x] AI helper explaining connection errors (Gemini via AI Gateway)
+
+- [x] Microsoft sign-in button in the Android app (2026-11-06): Servers sign-in card now offers Google and Microsoft side by side; Microsoft uses Firebase's federated OAuth flow (`OAuthProvider` + `startActivityForSignInWithProvider`) in FirebaseAuthManager, exposed through TunnelViewModel.signInWithMicrosoft. Not compiled or run here (no Android toolchain in this environment, and the web preview was removed by the project's own Compose migration commit). Needs Microsoft enabled in the Firebase console plus the Firebase redirect URI registered in the customer's Microsoft app registration before a real sign-in can succeed.
