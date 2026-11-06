@@ -151,60 +151,109 @@ fun ServersScreen(
                         }
                     }
                 } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "CLOUD RELAY SYNC",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = CyanPrimary,
-                                letterSpacing = 1.sp
-                            )
-                            Text(
-                                text = "Sign in to synchronize your relay endpoints across devices via Firestore.",
-                                fontSize = 12.sp,
-                                color = TextMuted,
-                                lineHeight = 16.sp,
-                                modifier = Modifier.padding(top = 2.dp)
-                            )
-                        }
+                    Column {
+                        Text(
+                            text = "CLOUD RELAY SYNC",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CyanPrimary,
+                            letterSpacing = 1.sp
+                        )
+                        Text(
+                            text = "Sign in to synchronize your relay endpoints across devices via Firestore.",
+                            fontSize = 12.sp,
+                            color = TextMuted,
+                            lineHeight = 16.sp,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
 
-                        Button(
-                            onClick = {
-                                viewModel.signInWithGoogle { success, error ->
-                                    if (success) {
-                                        Toast.makeText(context, "Signed in with Google", Toast.LENGTH_SHORT).show()
-                                    } else if (error != null) {
-                                        Toast.makeText(context, error, Toast.LENGTH_LONG).show()
-                                    }
-                                }
-                            },
-                            enabled = !isAuthLoading,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = CyanPrimary,
-                                contentColor = SurfaceDark
-                            ),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.testTag("sign_in_google_button")
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            if (isAuthLoading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(14.dp),
-                                    color = SurfaceDark,
-                                    strokeWidth = 1.5.dp
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Login,
-                                    contentDescription = "Sign in",
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Sign in", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Button(
+                                onClick = {
+                                    viewModel.signInWithGoogle { success, error ->
+                                        if (success) {
+                                            Toast.makeText(context, "Signed in with Google", Toast.LENGTH_SHORT).show()
+                                        } else if (error != null) {
+                                            Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                },
+                                enabled = !isAuthLoading,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = CyanPrimary,
+                                    contentColor = SurfaceDark
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("sign_in_google_button")
+                            ) {
+                                if (isAuthLoading) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        color = SurfaceDark,
+                                        strokeWidth = 1.5.dp
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Login,
+                                        contentDescription = "Sign in with Google",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Google", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+
+                            Button(
+                                onClick = {
+                                    val activity = context.findActivity()
+                                    if (activity == null) {
+                                        Toast.makeText(
+                                            context,
+                                            "Microsoft sign-in needs a screen to open",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    } else {
+                                        viewModel.signInWithMicrosoft(activity) { success, error ->
+                                            if (success) {
+                                                Toast.makeText(context, "Signed in with Microsoft", Toast.LENGTH_SHORT).show()
+                                            } else if (error != null) {
+                                                Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                },
+                                enabled = !isAuthLoading,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = SurfaceVariantDark,
+                                    contentColor = TextPrimary
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("sign_in_microsoft_button")
+                            ) {
+                                if (isAuthLoading) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        color = TextPrimary,
+                                        strokeWidth = 1.5.dp
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Work,
+                                        contentDescription = "Sign in with Microsoft",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Microsoft", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
                             }
                         }
                     }
