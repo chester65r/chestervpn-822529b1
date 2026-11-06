@@ -66,7 +66,89 @@ val SAMPLE_VPS_SERVERS = listOf(
     RelayServer("sample-vps-1", "Custom VPS Node", "127.0.0.1", 443, "TLS", "Dedicated Ubuntu 22.04 tunnel node")
 )
 
+data class PayloadGeneratorConfig(
+    val urlHost: String = "[host]",
+    val requestMethod: String = "GET",
+    val injectionMode: String = "Normal", // Normal, Front Query, Back Query, SSL SNI, Dual Split
+    val enableWebSocket: Boolean = true,
+    val enableKeepAlive: Boolean = true,
+    val enableUserAgent: Boolean = true,
+    val enableXForwardedFor: Boolean = false,
+    val enableXOnlineHost: Boolean = false,
+    val enableReferer: Boolean = false,
+    val customHeaders: String = ""
+)
+
 object TunnelUtils {
+
+    fun generatePayload(config: PayloadGeneratorConfig): String {
+        val targetHost = config.urlHost.ifBlank { "[host]" }
+        val method = config.requestMethod.uppercase()
+        val crlf = "[crlf]"
+        val builder = StringBuilder()
+
+        when (config.injectionMode) {
+            "Front Query" -> {
+                builder.append("$method http://$targetHost/ HTTP/1.1$crlf")
+                builder.append("Host: $targetHost$crlf")
+            }
+            "Back Query" -> {
+                builder.append("$method /?$targetHost HTTP/1.1$crlf")
+                builder.append("Host: $targetHost$crlf")
+            }
+            "SSL SNI" -> {
+                builder.append("$method / HTTP/1.1$crlf")
+                builder.append("Host: $targetHost$crlf")
+            }
+            "Dual Split" -> {
+                builder.append("CONNECT [host_port] HTTP/1.1$crlf[split]$method / HTTP/1.1$crlf")
+                builder.append("Host: $targetHost$crlf")
+            }
+            else -> { // Normal
+                if (method == "CONNECT") {
+                    builder.append("CONNECT [host_port] HTTP/1.1$crlf")
+                } else {
+                    builder.append("$method / HTTP/1.1$crlf")
+                }
+                builder.append("Host: $targetHost$crlf")
+            }
+        }
+
+        if (config.enableWebSocket) {
+            builder.append("Upgrade: websocket$crlf")
+            builder.append("Connection: Upgrade$crlf")
+        } else if (config.enableKeepAlive) {
+            builder.append("Connection: Keep-Alive$crlf")
+            builder.append("Proxy-Connection: Keep-Alive$crlf")
+        }
+
+        if (config.enableUserAgent) {
+            builder.append("User-Agent: Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36$crlf")
+        }
+
+        if (config.enableXForwardedFor) {
+            builder.append("X-Forwarded-For: $targetHost$crlf")
+        }
+
+        if (config.enableXOnlineHost) {
+            builder.append("X-Online-Host: $targetHost$crlf")
+        }
+
+        if (config.enableReferer) {
+            builder.append("Referer: https://$targetHost/$crlf")
+        }
+
+        if (config.customHeaders.isNotBlank()) {
+            config.customHeaders.lineSequence().forEach { line ->
+                if (line.isNotBlank()) {
+                    val formattedLine = line.replace("\r\n", "").replace("\n", "")
+                    builder.append("$formattedLine$crlf")
+                }
+            }
+        }
+
+        return builder.toString()
+    }
 
     fun parsePayload(raw: String, host: String): String {
         val template = if (raw.isBlank()) DEFAULT_PAYLOAD_TEMPLATE else raw

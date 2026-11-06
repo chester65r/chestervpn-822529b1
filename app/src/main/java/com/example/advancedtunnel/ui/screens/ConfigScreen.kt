@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -44,7 +46,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.window.Dialog
 import com.example.advancedtunnel.model.DEFAULT_PAYLOAD_TEMPLATE
+import com.example.advancedtunnel.model.PayloadGeneratorConfig
 import com.example.advancedtunnel.model.ROUTE_PRESETS
 import com.example.advancedtunnel.model.TunnelStatus
 import com.example.advancedtunnel.model.TunnelUtils
@@ -71,6 +82,7 @@ fun ConfigScreen(
 
     val isLocked = status != TunnelStatus.DISCONNECTED
     var dropdownExpanded by remember { mutableStateOf(false) }
+    var showPayloadGenerator by remember { mutableStateOf(false) }
 
     val activePreset = ROUTE_PRESETS.find { it.id == presetId } ?: ROUTE_PRESETS.last()
     val parsedPreview = remember(profile.payload, profile.sni) {
@@ -253,14 +265,40 @@ fun ConfigScreen(
             border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark)
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
-                Text(
-                    text = "HANDSHAKE PAYLOAD",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextMuted,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "HANDSHAKE PAYLOAD",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextMuted,
+                        letterSpacing = 1.sp
+                    )
+
+                    Button(
+                        onClick = { showPayloadGenerator = true },
+                        enabled = !isLocked,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SurfaceDark,
+                            contentColor = CyanPrimary
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("open_payload_generator_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Payload Generator", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
 
                 OutlinedTextField(
                     value = profile.payload,
@@ -366,6 +404,370 @@ fun ConfigScreen(
             }
         }
 
+        if (showPayloadGenerator) {
+            PayloadGeneratorDialog(
+                initialHost = profile.sni.ifBlank { profile.ip },
+                onDismiss = { showPayloadGenerator = false },
+                onApplyPayload = { generated ->
+                    viewModel.updateProfile(payload = generated)
+                }
+            )
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+@Composable
+fun PayloadGeneratorDialog(
+    initialHost: String,
+    onDismiss: () -> Unit,
+    onApplyPayload: (String) -> Unit
+) {
+    var urlHost by remember { mutableStateOf(initialHost.ifBlank { "[host]" }) }
+    var requestMethod by remember { mutableStateOf("GET") }
+    var injectionMode by remember { mutableStateOf("Normal") }
+    var enableWebSocket by remember { mutableStateOf(true) }
+    var enableKeepAlive by remember { mutableStateOf(true) }
+    var enableUserAgent by remember { mutableStateOf(true) }
+    var enableXForwardedFor by remember { mutableStateOf(false) }
+    var enableXOnlineHost by remember { mutableStateOf(false) }
+    var enableReferer by remember { mutableStateOf(false) }
+    var customHeaders by remember { mutableStateOf("") }
+
+    var methodDropdownExpanded by remember { mutableStateOf(false) }
+    var modeDropdownExpanded by remember { mutableStateOf(false) }
+
+    val generatedPayload = remember(
+        urlHost, requestMethod, injectionMode, enableWebSocket,
+        enableKeepAlive, enableUserAgent, enableXForwardedFor,
+        enableXOnlineHost, enableReferer, customHeaders
+    ) {
+        TunnelUtils.generatePayload(
+            PayloadGeneratorConfig(
+                urlHost = urlHost,
+                requestMethod = requestMethod,
+                injectionMode = injectionMode,
+                enableWebSocket = enableWebSocket,
+                enableKeepAlive = enableKeepAlive,
+                enableUserAgent = enableUserAgent,
+                enableXForwardedFor = enableXForwardedFor,
+                enableXOnlineHost = enableXOnlineHost,
+                enableReferer = enableReferer,
+                customHeaders = customHeaders
+            )
+        )
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(4.dp),
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
+            shape = RoundedCornerShape(20.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, CyanPrimary)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = CyanPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "PAYLOAD GENERATOR",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CyanPrimary,
+                            letterSpacing = 1.sp
+                        )
+                    }
+
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = TextMuted
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Construct custom HTTP tunnel headers with request methods, injection modes, and macro replacements:",
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                    lineHeight = 16.sp
+                )
+
+                // URL / Host Input
+                OutlinedTextField(
+                    value = urlHost,
+                    onValueChange = { urlHost = it },
+                    label = { Text("URL / Host Domain", fontSize = 11.sp) },
+                    placeholder = { Text("[host]") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("payload_gen_host_input"),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = CyanPrimary,
+                        unfocusedBorderColor = BorderDark,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    )
+                )
+
+                // Request Method & Injection Mode Selectors
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Method
+                    Box(modifier = Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = requestMethod,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Method", fontSize = 11.sp) },
+                            trailingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = null,
+                                    tint = CyanPrimary,
+                                    modifier = Modifier.clickable { methodDropdownExpanded = true }
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { methodDropdownExpanded = true },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = CyanPrimary,
+                                unfocusedBorderColor = BorderDark,
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary
+                            )
+                        )
+
+                        DropdownMenu(
+                            expanded = methodDropdownExpanded,
+                            onDismissRequest = { methodDropdownExpanded = false },
+                            modifier = Modifier.background(SurfaceVariantDark)
+                        ) {
+                            listOf("GET", "POST", "CONNECT", "HEAD", "OPTIONS", "PUT").forEach { m ->
+                                DropdownMenuItem(
+                                    text = { Text(m, color = TextPrimary) },
+                                    onClick = {
+                                        requestMethod = m
+                                        methodDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // Injection Mode
+                    Box(modifier = Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = injectionMode,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Injection Mode", fontSize = 11.sp) },
+                            trailingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = null,
+                                    tint = CyanPrimary,
+                                    modifier = Modifier.clickable { modeDropdownExpanded = true }
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { modeDropdownExpanded = true },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = CyanPrimary,
+                                unfocusedBorderColor = BorderDark,
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary
+                            )
+                        )
+
+                        DropdownMenu(
+                            expanded = modeDropdownExpanded,
+                            onDismissRequest = { modeDropdownExpanded = false },
+                            modifier = Modifier.background(SurfaceVariantDark)
+                        ) {
+                            listOf("Normal", "Front Query", "Back Query", "SSL SNI", "Dual Split").forEach { mode ->
+                                DropdownMenuItem(
+                                    text = { Text(mode, color = TextPrimary) },
+                                    onClick = {
+                                        injectionMode = mode
+                                        modeDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Checkbox Options
+                Text(
+                    text = "HEADER OPTIONS",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextMuted,
+                    letterSpacing = 1.sp
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { enableWebSocket = !enableWebSocket }
+                    ) {
+                        Checkbox(
+                            checked = enableWebSocket,
+                            onCheckedChange = { enableWebSocket = it },
+                            colors = CheckboxDefaults.colors(checkedColor = CyanPrimary)
+                        )
+                        Text("WebSocket Upgrade", fontSize = 12.sp, color = TextPrimary)
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { enableKeepAlive = !enableKeepAlive }
+                    ) {
+                        Checkbox(
+                            checked = enableKeepAlive,
+                            onCheckedChange = { enableKeepAlive = it },
+                            colors = CheckboxDefaults.colors(checkedColor = CyanPrimary)
+                        )
+                        Text("Keep-Alive Header", fontSize = 12.sp, color = TextPrimary)
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { enableUserAgent = !enableUserAgent }
+                    ) {
+                        Checkbox(
+                            checked = enableUserAgent,
+                            onCheckedChange = { enableUserAgent = it },
+                            colors = CheckboxDefaults.colors(checkedColor = CyanPrimary)
+                        )
+                        Text("Chrome User-Agent Header", fontSize = 12.sp, color = TextPrimary)
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { enableXForwardedFor = !enableXForwardedFor }
+                    ) {
+                        Checkbox(
+                            checked = enableXForwardedFor,
+                            onCheckedChange = { enableXForwardedFor = it },
+                            colors = CheckboxDefaults.colors(checkedColor = CyanPrimary)
+                        )
+                        Text("X-Forwarded-For Header", fontSize = 12.sp, color = TextPrimary)
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { enableXOnlineHost = !enableXOnlineHost }
+                    ) {
+                        Checkbox(
+                            checked = enableXOnlineHost,
+                            onCheckedChange = { enableXOnlineHost = it },
+                            colors = CheckboxDefaults.colors(checkedColor = CyanPrimary)
+                        )
+                        Text("X-Online-Host Header", fontSize = 12.sp, color = TextPrimary)
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { enableReferer = !enableReferer }
+                    ) {
+                        Checkbox(
+                            checked = enableReferer,
+                            onCheckedChange = { enableReferer = it },
+                            colors = CheckboxDefaults.colors(checkedColor = CyanPrimary)
+                        )
+                        Text("Referer Header", fontSize = 12.sp, color = TextPrimary)
+                    }
+                }
+
+                // Generated Preview
+                Text(
+                    text = "GENERATED PAYLOAD PREVIEW",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextMuted,
+                    letterSpacing = 1.sp
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(SurfaceDark)
+                        .border(1.dp, BorderDark, RoundedCornerShape(10.dp))
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = generatedPayload,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        color = CyanPrimary,
+                        lineHeight = 16.sp
+                    )
+                }
+
+                // Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SurfaceDark,
+                            contentColor = TextSecondary
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Cancel")
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Button(
+                        onClick = {
+                            onApplyPayload(generatedPayload)
+                            onDismiss()
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = CyanPrimary,
+                            contentColor = SurfaceDark
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.testTag("apply_generated_payload_button")
+                    ) {
+                        Text("Apply Payload", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
     }
 }
