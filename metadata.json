@@ -1,6 +1,6 @@
 {
   "name": "Tunnel Console",
-  "description": "VPN dashboard, live bandwidth simulation, TUNNEL:// profile sharing, and server configuration.",
+  "description": "Native Android VPN, Google Cloud and Hetzner VPS Quick Connect, real TUN interface telemetry, and HTTP Payload Generator.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
