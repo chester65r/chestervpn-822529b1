@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -54,6 +55,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.advancedtunnel.model.SAMPLE_VPS_SERVERS
+import com.example.advancedtunnel.ui.findActivity
 import com.example.advancedtunnel.ui.theme.BorderDark
 import com.example.advancedtunnel.ui.theme.CardBackground
 import com.example.advancedtunnel.ui.theme.CyanPrimary

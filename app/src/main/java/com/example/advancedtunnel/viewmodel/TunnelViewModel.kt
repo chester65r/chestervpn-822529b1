@@ -1,5 +1,6 @@
 package com.example.advancedtunnel.viewmodel
 
+import android.app.Activity
 import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
@@ -421,6 +422,17 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
     fun signInWithGoogle(onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
             val result = authManager.signInWithGoogle()
+            if (result.isSuccess) {
+                onResult(true, null)
+            } else {
+                onResult(false, result.exceptionOrNull()?.localizedMessage)
+            }
+        }
+    }
+
+    fun signInWithMicrosoft(activity: Activity, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            val result = authManager.signInWithMicrosoft(activity)
             if (result.isSuccess) {
                 onResult(true, null)
             } else {
