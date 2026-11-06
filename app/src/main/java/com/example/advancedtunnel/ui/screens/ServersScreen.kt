@@ -54,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.advancedtunnel.data.EnvironmentConfig
 import com.example.advancedtunnel.model.SAMPLE_VPS_SERVERS
 import com.example.advancedtunnel.ui.findActivity
 import com.example.advancedtunnel.ui.theme.BorderDark
@@ -258,6 +259,53 @@ fun ServersScreen(
                         }
                     }
                 }
+            }
+        }
+
+        // Read-Only Cloud Environment Status Card (from BuildConfig / AI Studio Secrets Panel)
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("cloud_environment_status_card"),
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
+            shape = RoundedCornerShape(16.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark)
+        ) {
+            val isConfigured = EnvironmentConfig.isSupabaseConfigured()
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "SUPABASE CLOUD ENVIRONMENT",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = CyanPrimary,
+                        letterSpacing = 1.sp
+                    )
+                    Text(
+                        text = if (isConfigured) "CONFIGURED" else "AWAITING SECRETS PANEL",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isConfigured) CyanPrimary else TextMuted
+                    )
+                }
+                Text(
+                    text = if (isConfigured) {
+                        "Project ID: ${EnvironmentConfig.supabaseProjectId} • URL: ${EnvironmentConfig.supabaseUrl}"
+                    } else {
+                        "Variables declared in .env.example. Set SUPABASE_PROJECT_ID, SUPABASE_URL, and SUPABASE_PUBLISHABLE_KEY in the AI Studio Secrets panel."
+                    },
+                    fontSize = 11.sp,
+                    color = TextSecondary,
+                    lineHeight = 15.sp
+                )
             }
         }
 
