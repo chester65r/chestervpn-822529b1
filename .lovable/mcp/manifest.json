@@ -34,6 +34,50 @@
         "outputSchema": null
       },
       {
+        "name": "add_relay_server",
+        "title": "Add a relay server",
+        "description": "Add a new relay server to your account. Requires authentication.",
+        "annotations": {
+          "readOnlyHint": false,
+          "idempotentHint": false,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "host": {
+              "type": "string",
+              "minLength": 1
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "transport": {
+              "default": "websocket",
+              "type": "string"
+            },
+            "notes": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "host",
+            "port"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": null
+      },
+      {
         "name": "get_android_compatibility",
         "title": "Android compatibility requirements",
         "description": "Read the Android and relay checklist, including known blockers and unverified production requirements; these are not device test results.",
