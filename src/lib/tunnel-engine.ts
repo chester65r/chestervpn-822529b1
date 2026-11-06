@@ -471,7 +471,7 @@ export class PayloadBuilder {
     
     // Replace placeholders
     for (const [key, value] of Object.entries(params)) {
-      payload = payload.replace(new RegExp(\[${key}\]\\, "g"), value);
+      payload = payload.replace(new RegExp(`\\[${key}\\]`, "g"), () => value);
     }
 
     // Generate random values for special placeholders
