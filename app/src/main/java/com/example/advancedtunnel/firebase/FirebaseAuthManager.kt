@@ -1,5 +1,6 @@
 package com.example.advancedtunnel.firebase
 
+import android.app.Activity
 import android.content.Context
 import android.util.Log
 import androidx.credentials.CredentialManager
@@ -11,6 +12,7 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.OAuthProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +20,8 @@ import kotlinx.coroutines.tasks.await
 
 private const val TAG = "FirebaseAuthManager"
 private const val WEB_CLIENT_ID = "1075657195872-n1255nbc69gf1s9qkf0mkh2f6ntk26jm.apps.googleusercontent.com"
+private const val MICROSOFT_PROVIDER_ID = "microsoft.com"
+private val MICROSOFT_SCOPES = listOf("openid", "profile", "email")
 
 class FirebaseAuthManager(private val context: Context) {
 
@@ -67,6 +71,33 @@ class FirebaseAuthManager(private val context: Context) {
             Result.failure(Exception("Sign-in was cancelled."))
         } catch (e: Exception) {
             Log.e(TAG, "Google Sign-In failed", e)
+            Result.failure(e)
+        } finally {
+            _isLoading.value = false
+        }
+    }
+
+    /**
+     * Signs the user in with their Microsoft account through Firebase's federated OAuth
+     * flow. The provider opens the Microsoft consent screen and returns the signed-in
+     * user directly, so no activity-result plumbing is required. Microsoft must be
+     * enabled in the Firebase console and the Firebase redirect URI registered with the
+     * Microsoft app registration before this can succeed.
+     */
+    suspend fun signInWithMicrosoft(activity: Activity): Result<FirebaseUser> {
+        _isLoading.value = true
+        return try {
+            val provider = OAuthProvider.newBuilder(MICROSOFT_PROVIDER_ID)
+                .setScopes(MICROSOFT_SCOPES)
+                .build()
+
+            val authResult = auth.startActivityForSignInWithProvider(activity, provider).await()
+            val user = authResult.user
+                ?: throw Exception("Firebase user is null after Microsoft sign in.")
+            _currentUser.value = user
+            Result.success(user)
+        } catch (e: Exception) {
+            Log.e(TAG, "Microsoft Sign-In failed", e)
             Result.failure(e)
         } finally {
             _isLoading.value = false
