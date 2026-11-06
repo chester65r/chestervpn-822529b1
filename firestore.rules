@@ -44,19 +44,23 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
-    match /users/{userId}/relay_servers/{serverId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId)
-        && isValidId(serverId)
-        && isValidRelayServer(request.resource.data)
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time;
-      allow update: if isOwner(userId)
-        && isValidId(serverId)
-        && isValidRelayServer(request.resource.data)
-        && (request.resource.data.createdAt == resource.data.createdAt || request.resource.data.createdAt == request.time)
-        && request.resource.data.updatedAt == request.time;
-      allow delete: if isOwner(userId);
+    match /users/{userId} {
+      allow get, list: if isOwner(userId);
+
+      match /relay_servers/{serverId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && isValidId(serverId)
+          && isValidRelayServer(request.resource.data)
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time;
+        allow update: if isOwner(userId)
+          && isValidId(serverId)
+          && isValidRelayServer(request.resource.data)
+          && (request.resource.data.createdAt == resource.data.createdAt || request.resource.data.createdAt == request.time)
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if isOwner(userId);
+      }
     }
 
     // Default deny catch-all rule

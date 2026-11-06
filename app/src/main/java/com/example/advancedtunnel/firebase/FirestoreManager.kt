@@ -85,9 +85,19 @@ class FirestoreManager(
 
     fun observeRelayServers(userId: String): Flow<List<RelayServer>> = callbackFlow {
         val db = firestore
-        if (db == null) {
+        val authUser = try {
+            FirebaseAuth.getInstance().currentUser
+        } catch (_: Exception) {
+            null
+        }
+        if (db == null || authUser == null || authUser.uid != userId) {
             awaitClose { }
             return@callbackFlow
+        }
+        try {
+            authUser.getIdToken(false).await()
+        } catch (e: Exception) {
+            Log.w("FirestoreManager", "Token refresh check before listener: ${e.message}")
         }
         val path = "users/$userId/relay_servers"
         val collection = db.collection("users").document(userId).collection("relay_servers")

@@ -2,10 +2,11 @@ package com.example.advancedtunnel.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,13 +14,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Dns
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -41,27 +42,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.advancedtunnel.ui.components.ConnectionStatusIndicator
-import com.example.advancedtunnel.ui.screens.BlueprintScreen
 import com.example.advancedtunnel.ui.screens.ConfigScreen
 import com.example.advancedtunnel.ui.screens.HomeScreen
 import com.example.advancedtunnel.ui.screens.ServersScreen
-import com.example.advancedtunnel.ui.screens.ShareScreen
-import com.example.advancedtunnel.ui.theme.AccentOrange
 import com.example.advancedtunnel.ui.theme.BackgroundDark
+import com.example.advancedtunnel.ui.theme.BorderDark
 import com.example.advancedtunnel.ui.theme.CardBackground
 import com.example.advancedtunnel.ui.theme.CyanPrimary
-import com.example.advancedtunnel.ui.theme.DestructiveRed
 import com.example.advancedtunnel.ui.theme.SurfaceDark
 import com.example.advancedtunnel.ui.theme.TextMuted
 import com.example.advancedtunnel.ui.theme.TextPrimary
 import com.example.advancedtunnel.viewmodel.TunnelViewModel
 
 enum class NavTab(val title: String, val icon: ImageVector) {
-    HOME("Home", Icons.Default.Home),
+    HOME("Connect", Icons.Default.PowerSettingsNew),
     CONFIG("Configure", Icons.Default.Tune),
-    SERVERS("Servers", Icons.Default.Dns),
-    SHARE("Share", Icons.Default.Share),
-    BLUEPRINT("Blueprint", Icons.Default.Code)
+    SERVERS("Nodes & Vault", Icons.Default.Dns)
 }
 
 @Composable
@@ -72,6 +68,7 @@ fun TunnelApp(
 ) {
     var currentTab by remember { mutableStateOf(NavTab.HOME) }
     val status by viewModel.status.collectAsState()
+    val tlsConfig by viewModel.tlsFragmentConfig.collectAsState()
 
     if (currentTab != NavTab.HOME) {
         BackHandler {
@@ -90,65 +87,90 @@ fun TunnelApp(
                     .fillMaxWidth()
                     .background(BackgroundDark)
                     .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Tunnel Console",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary,
-                            letterSpacing = (-0.5).sp
-                        )
-                        Text(
-                            text = "Native Android VPN Engine",
-                            fontSize = 11.sp,
-                            color = TextMuted
-                        )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(CardBackground)
+                                .border(1.dp, CyanPrimary.copy(alpha = 0.4f), RoundedCornerShape(10.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Shield,
+                                contentDescription = null,
+                                tint = CyanPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = "Tunnel Console",
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary,
+                                letterSpacing = (-0.3).sp
+                            )
+                            Text(
+                                text = if (tlsConfig.enabled) "Anti-DPI ${tlsConfig.normalizedMinChunk()}–${tlsConfig.normalizedMaxChunk()}B • JA4 Active" else "Standard TLS Tunnel",
+                                fontSize = 11.sp,
+                                color = TextMuted
+                            )
+                        }
                     }
 
-                    // Visual Real-Time Connection Status Indicator
                     ConnectionStatusIndicator(status = status)
                 }
+                HorizontalDivider(color = BorderDark.copy(alpha = 0.5f), thickness = 0.5.dp)
             }
         },
         bottomBar = {
-            NavigationBar(
-                containerColor = CardBackground,
-                tonalElevation = 8.dp,
-                modifier = Modifier.testTag("bottom_nav_bar")
-            ) {
-                NavTab.entries.forEach { tab ->
-                    val selected = currentTab == tab
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = { currentTab = tab },
-                        icon = {
-                            Icon(
-                                imageVector = tab.icon,
-                                contentDescription = tab.title
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = tab.title,
-                                fontSize = 11.sp,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = SurfaceDark,
-                            selectedTextColor = CyanPrimary,
-                            indicatorColor = CyanPrimary,
-                            unselectedIconColor = TextMuted,
-                            unselectedTextColor = TextMuted
-                        ),
-                        modifier = Modifier.testTag("nav_tab_${tab.name.lowercase()}")
-                    )
+            Column {
+                HorizontalDivider(color = BorderDark.copy(alpha = 0.6f), thickness = 0.5.dp)
+                NavigationBar(
+                    containerColor = CardBackground,
+                    tonalElevation = 0.dp,
+                    modifier = Modifier.testTag("bottom_nav_bar")
+                ) {
+                    NavTab.entries.forEach { tab ->
+                        val selected = currentTab == tab
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = { currentTab = tab },
+                            icon = {
+                                Icon(
+                                    imageVector = tab.icon,
+                                    contentDescription = tab.title
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = tab.title,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = SurfaceDark,
+                                selectedTextColor = CyanPrimary,
+                                indicatorColor = CyanPrimary,
+                                unselectedIconColor = TextMuted,
+                                unselectedTextColor = TextMuted
+                            ),
+                            modifier = Modifier.testTag("nav_tab_${tab.name.lowercase()}")
+                        )
+                    }
                 }
             }
         }
@@ -162,18 +184,14 @@ fun TunnelApp(
                 NavTab.HOME -> HomeScreen(
                     viewModel = viewModel,
                     onRequestVpnPermission = onRequestVpnPermission,
-                    onNavigateToConfig = { currentTab = NavTab.CONFIG }
+                    onNavigateToConfig = { currentTab = NavTab.CONFIG },
+                    onNavigateToServers = { currentTab = NavTab.SERVERS }
                 )
                 NavTab.CONFIG -> ConfigScreen(viewModel = viewModel)
                 NavTab.SERVERS -> ServersScreen(
                     viewModel = viewModel,
-                    onServerApplied = { currentTab = NavTab.CONFIG }
+                    onServerApplied = { currentTab = NavTab.HOME }
                 )
-                NavTab.SHARE -> ShareScreen(
-                    viewModel = viewModel,
-                    onNavigateToConfig = { currentTab = NavTab.CONFIG }
-                )
-                NavTab.BLUEPRINT -> BlueprintScreen()
             }
         }
     }

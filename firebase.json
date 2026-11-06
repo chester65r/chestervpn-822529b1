@@ -1,17 +1,21 @@
 {
-  "firestore": {
-    "database": "ai-studio-android-chesterv-a2b24701-825e-4cf3-a56d-551d2df122f9",
-    "rules": "firestore.rules"
-  },
+  "firestore": [
+    {
+      "database": "ai-studio-android-chesterv-a2b24701-825e-4cf3-a56d-551d2df122f9",
+      "rules": "firestore.rules"
+    }
+  ],
   "emulators": {
-    "auth": {
-      "host": "127.0.0.1",
-      "port": 9099
-    },
     "firestore": {
       "host": "127.0.0.1",
       "port": 8085
     },
-    "singleProjectMode": true
+    "auth": {
+      "host": "127.0.0.1",
+      "port": 9099
+    },
+    "ui": {
+      "enabled": false
+    }
   }
 }

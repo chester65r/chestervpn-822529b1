@@ -17,6 +17,8 @@ import com.example.advancedtunnel.model.TunnelProfile
 import com.example.advancedtunnel.model.TunnelStatus
 import com.example.advancedtunnel.model.TunnelUtils
 import com.example.advancedtunnel.security.ConfigVault
+import com.example.advancedtunnel.vpn.EdgeHunterEngine
+import com.example.advancedtunnel.vpn.EdgeProbeResult
 import com.example.advancedtunnel.vpn.FragmentDispatchStats
 import com.example.advancedtunnel.vpn.NodeBenchmarkMetric
 import com.example.advancedtunnel.vpn.NodeHealthTier
@@ -130,6 +132,12 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
     private val _lastDesyncSimStats = MutableStateFlow<FragmentDispatchStats?>(null)
     val lastDesyncSimStats: StateFlow<FragmentDispatchStats?> = _lastDesyncSimStats.asStateFlow()
 
+    private val _edgeProbeResults = MutableStateFlow<List<EdgeProbeResult>>(emptyList())
+    val edgeProbeResults: StateFlow<List<EdgeProbeResult>> = _edgeProbeResults.asStateFlow()
+
+    private val _isScanningEdges = MutableStateFlow(false)
+    val isScanningEdges: StateFlow<Boolean> = _isScanningEdges.asStateFlow()
+
     private var firestoreSyncJob: Job? = null
 
     init {
@@ -219,7 +227,15 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
         _presetId.value = id
         val preset = ROUTE_PRESETS.find { it.id == id }
         if (preset != null && preset.sni.isNotEmpty()) {
-            val updated = _profile.value.copy(sni = preset.sni)
+            val presetPayload = when (id.lowercase()) {
+                "stc" -> "GET http://[host]/ HTTP/1.1[crlf]Host: [host][crlf]X-Online-Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]"
+                "mobily" -> "CONNECT [host_port] HTTP/1.1[crlf]Host: [host][crlf]Proxy-Connection: Keep-Alive[crlf]Connection: Keep-Alive[crlf]"
+                else -> _profile.value.payload
+            }
+            val updated = _profile.value.copy(
+                sni = preset.sni,
+                payload = presetPayload
+            )
             _profile.value = updated
             _errors.value = emptyMap()
             repository.saveActiveProfile(updated, id)
@@ -445,6 +461,54 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
                 _isBenchmarkingNodes.value = false
             }
         }
+    }
+
+    fun runEdgeHunterScan(requestMethod: String = "HEAD") {
+        if (_isScanningEdges.value) return
+        _isScanningEdges.value = true
+        viewModelScope.launch {
+            try {
+                val customHost = _profile.value.sni.ifBlank { "" }
+                val results = EdgeHunterEngine.scanEndpointsConcurrently(
+                    candidates = EdgeHunterEngine.DEFAULT_EDGE_CANDIDATES,
+                    requestMethod = requestMethod,
+                    customHostHeader = customHost
+                )
+                _edgeProbeResults.value = results
+                val reachable = results.count { it.reachable }
+                val best = results.firstOrNull { it.reachable }
+                if (best != null) {
+                    VpnManager.appendTelemetryLog(
+                        "PROBE",
+                        "EdgeHunter scanned ${results.size} endpoints ($reachable open) • Best: ${best.hostOrIp}:${best.port} (${best.totalRttMs}ms, HTTP ${best.httpStatusCode})"
+                    )
+                } else {
+                    VpnManager.appendTelemetryLog(
+                        "WARN",
+                        "EdgeHunter scanned ${results.size} endpoints; no responsive edge port detected."
+                    )
+                }
+            } finally {
+                _isScanningEdges.value = false
+            }
+        }
+    }
+
+    fun applyEdgeProbeResult(probe: EdgeProbeResult) {
+        val currentSni = _profile.value.sni.ifBlank { probe.sniHostname }
+        val updated = _profile.value.copy(
+            ip = probe.hostOrIp,
+            port = probe.port.toString(),
+            sni = currentSni
+        )
+        _profile.value = updated
+        _presetId.value = "custom"
+        _errors.value = emptyMap()
+        repository.saveActiveProfile(updated, "custom")
+        VpnManager.appendTelemetryLog(
+            "INFO",
+            "Applied EdgeHunter endpoint ${probe.hostOrIp}:${probe.port} (${probe.label}, ${probe.totalRttMs}ms RTT)"
+        )
     }
 
     private fun triggerAutoFailoverEvaluation() {

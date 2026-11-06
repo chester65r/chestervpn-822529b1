@@ -1,5 +1,6 @@
 package com.example.advancedtunnel.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,12 +21,24 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Route
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SuggestionChip
@@ -34,6 +47,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -46,13 +60,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
-import androidx.compose.material3.IconButton
 import androidx.compose.ui.window.Dialog
 import com.example.advancedtunnel.model.DEFAULT_PAYLOAD_TEMPLATE
 import com.example.advancedtunnel.model.PayloadGeneratorConfig
@@ -84,6 +91,7 @@ fun ConfigScreen(
     val status by viewModel.status.collectAsState()
 
     val isLocked = status != TunnelStatus.DISCONNECTED
+    var selectedSection by remember { mutableIntStateOf(0) } // 0 = Endpoint, 1 = Anti-DPI & JA3, 2 = Routing & Split
     var dropdownExpanded by remember { mutableStateOf(false) }
     var showPayloadGenerator by remember { mutableStateOf(false) }
 
@@ -97,7 +105,7 @@ fun ConfigScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         if (isLocked) {
             Row(
@@ -116,337 +124,346 @@ fun ConfigScreen(
                     tint = CyanPrimary
                 )
                 Text(
-                    text = "Disconnect tunnel to edit parameters.",
+                    text = "Disconnect tunnel to edit configuration.",
                     color = TextSecondary,
                     fontSize = 12.sp
                 )
             }
         }
 
-        // Preset Selector
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = CardBackground),
-            shape = RoundedCornerShape(16.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark)
+        // Clean 3-Section Switcher Bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(CardBackground)
+                .border(1.dp, BorderDark, RoundedCornerShape(14.dp))
+                .padding(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Text(
-                    text = "ROUTE PRESET",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextMuted,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.padding(bottom = 6.dp)
+            val sections = listOf(
+                Triple(0, "Endpoint", Icons.Default.Tune),
+                Triple(1, "Anti-DPI & TLS", Icons.Default.Security),
+                Triple(2, "Routing & Apps", Icons.Default.Route)
+            )
+            sections.forEach { (idx, label, icon) ->
+                val isSelected = selectedSection == idx
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { selectedSection = idx },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = label,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = CyanPrimary,
+                        selectedLabelColor = SurfaceDark,
+                        selectedLeadingIconColor = SurfaceDark,
+                        containerColor = SurfaceDark,
+                        labelColor = TextSecondary,
+                        iconColor = TextMuted
+                    ),
+                    border = null,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("config_section_tab_$idx")
                 )
+            }
+        }
 
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(SurfaceDark)
-                            .border(1.dp, BorderDark, RoundedCornerShape(10.dp))
-                            .clickable(enabled = !isLocked) { dropdownExpanded = true }
-                            .padding(horizontal = 14.dp, vertical = 12.dp)
-                            .testTag("preset_dropdown_trigger"),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+        when (selectedSection) {
+            0 -> {
+                // SECTION 0: ENDPOINT, SNI & PAYLOAD
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = CardBackground),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, BorderDark)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = activePreset.label,
-                            color = if (isLocked) TextMuted else TextPrimary,
-                            fontSize = 13.sp
+                            text = "GATEWAY & SNI ENDPOINT",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CyanPrimary,
+                            letterSpacing = 0.8.sp
                         )
-                        Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = "Expand presets",
-                            tint = TextMuted
+
+                        // Preset Selector
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(SurfaceDark)
+                                    .border(1.dp, BorderDark, RoundedCornerShape(10.dp))
+                                    .clickable(enabled = !isLocked) { dropdownExpanded = true }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                                    .testTag("preset_dropdown_trigger"),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "Route Preset",
+                                        color = TextMuted,
+                                        fontSize = 10.sp
+                                    )
+                                    Text(
+                                        text = activePreset.label,
+                                        color = if (isLocked) TextMuted else TextPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = "Expand presets",
+                                    tint = CyanPrimary
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = dropdownExpanded,
+                                onDismissRequest = { dropdownExpanded = false },
+                                modifier = Modifier.background(SurfaceVariantDark)
+                            ) {
+                                ROUTE_PRESETS.forEach { p ->
+                                    DropdownMenuItem(
+                                        text = { Text(p.label, color = TextPrimary, fontSize = 13.sp) },
+                                        onClick = {
+                                            viewModel.selectPreset(p.id)
+                                            dropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // IP and Port
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = profile.ip,
+                                onValueChange = { viewModel.updateProfile(ip = it) },
+                                enabled = !isLocked,
+                                label = { Text("SERVER IP / HOST", fontSize = 10.sp) },
+                                placeholder = { Text("e.g. fsn1.hetzner.com") },
+                                isError = errors.containsKey("ip"),
+                                supportingText = errors["ip"]?.let { { Text(it, color = DestructiveRed, fontSize = 11.sp) } },
+                                modifier = Modifier
+                                    .weight(0.68f)
+                                    .testTag("server_ip_input"),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = CyanPrimary,
+                                    unfocusedBorderColor = BorderDark,
+                                    focusedContainerColor = SurfaceDark,
+                                    unfocusedContainerColor = SurfaceDark,
+                                    disabledContainerColor = SurfaceDark.copy(alpha = 0.5f)
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                value = profile.port,
+                                onValueChange = { viewModel.updateProfile(port = it) },
+                                enabled = !isLocked,
+                                label = { Text("PORT", fontSize = 10.sp) },
+                                placeholder = { Text("443") },
+                                isError = errors.containsKey("port"),
+                                supportingText = errors["port"]?.let { { Text(it, color = DestructiveRed, fontSize = 11.sp) } },
+                                modifier = Modifier
+                                    .weight(0.32f)
+                                    .testTag("server_port_input"),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = CyanPrimary,
+                                    unfocusedBorderColor = BorderDark,
+                                    focusedContainerColor = SurfaceDark,
+                                    unfocusedContainerColor = SurfaceDark,
+                                    disabledContainerColor = SurfaceDark.copy(alpha = 0.5f)
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                        }
+
+                        // Server SNI
+                        OutlinedTextField(
+                            value = profile.sni,
+                            onValueChange = { viewModel.updateProfile(sni = it) },
+                            enabled = !isLocked,
+                            label = { Text("SERVER NAME INDICATION (SNI)", fontSize = 10.sp) },
+                            placeholder = { Text("cloud.google.com") },
+                            isError = errors.containsKey("sni"),
+                            supportingText = errors["sni"]?.let { { Text(it, color = DestructiveRed, fontSize = 11.sp) } },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("server_sni_input"),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = CyanPrimary,
+                                unfocusedBorderColor = BorderDark,
+                                focusedContainerColor = SurfaceDark,
+                                unfocusedContainerColor = SurfaceDark,
+                                disabledContainerColor = SurfaceDark.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true
                         )
                     }
+                }
 
-                    DropdownMenu(
-                        expanded = dropdownExpanded,
-                        onDismissRequest = { dropdownExpanded = false },
-                        modifier = Modifier.background(SurfaceVariantDark)
-                    ) {
-                        ROUTE_PRESETS.forEach { p ->
-                            DropdownMenuItem(
-                                text = { Text(p.label, color = TextPrimary, fontSize = 13.sp) },
-                                onClick = {
-                                    viewModel.selectPreset(p.id)
-                                    dropdownExpanded = false
-                                }
+                // Handshake Payload Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = CardBackground),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, BorderDark)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "HANDSHAKE PAYLOAD & MACROS",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = CyanPrimary,
+                                    letterSpacing = 0.8.sp
+                                )
+                                Text(
+                                    text = "Custom HTTP/WS headers & socket split macros",
+                                    fontSize = 10.sp,
+                                    color = TextMuted
+                                )
+                            }
+
+                            Button(
+                                onClick = { showPayloadGenerator = true },
+                                enabled = !isLocked,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = SurfaceDark,
+                                    contentColor = CyanPrimary
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.testTag("open_payload_generator_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Builder", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = profile.payload,
+                            onValueChange = { viewModel.updateProfile(payload = it) },
+                            enabled = !isLocked,
+                            placeholder = { Text(DEFAULT_PAYLOAD_TEMPLATE, fontSize = 11.sp) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(104.dp)
+                                .testTag("payload_textarea"),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = CyanPrimary,
+                                unfocusedBorderColor = BorderDark,
+                                focusedContainerColor = SurfaceDark,
+                                unfocusedContainerColor = SurfaceDark,
+                                disabledContainerColor = SurfaceDark.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                color = TextPrimary
+                            )
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            listOf("[host]", "[crlf]", "[split]", "[sni]").forEach { macro ->
+                                SuggestionChip(
+                                    onClick = {
+                                        if (!isLocked) {
+                                            viewModel.updateProfile(payload = profile.payload + macro)
+                                        }
+                                    },
+                                    label = { Text(macro, fontFamily = FontFamily.Monospace, fontSize = 11.sp) },
+                                    colors = SuggestionChipDefaults.suggestionChipColors(
+                                        containerColor = SurfaceDark,
+                                        labelColor = CyanPrimary
+                                    ),
+                                    border = SuggestionChipDefaults.suggestionChipBorder(
+                                        enabled = true,
+                                        borderColor = BorderDark
+                                    )
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(SurfaceDark)
+                                .border(1.dp, BorderDark, RoundedCornerShape(10.dp))
+                                .padding(10.dp)
+                        ) {
+                            Text(
+                                text = parsedPreview,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                color = CyanPrimary,
+                                lineHeight = 15.sp
                             )
                         }
                     }
                 }
             }
-        }
 
-        // IP and Port
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            // IP / Domain
-            OutlinedTextField(
-                value = profile.ip,
-                onValueChange = { viewModel.updateProfile(ip = it) },
-                enabled = !isLocked,
-                label = { Text("SERVER IP / HOST", fontSize = 11.sp, letterSpacing = 1.sp) },
-                placeholder = { Text("203.0.113.10") },
-                isError = errors.containsKey("ip"),
-                supportingText = errors["ip"]?.let { { Text(it, color = DestructiveRed, fontSize = 11.sp) } },
-                modifier = Modifier
-                    .weight(0.68f)
-                    .testTag("server_ip_input"),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = CyanPrimary,
-                    unfocusedBorderColor = BorderDark,
-                    focusedContainerColor = SurfaceDark,
-                    unfocusedContainerColor = SurfaceDark,
-                    disabledContainerColor = SurfaceDark.copy(alpha = 0.5f)
-                ),
-                shape = RoundedCornerShape(12.dp),
-                singleLine = true
-            )
+            1 -> {
+                // SECTION 1: TLS RECORD FRAGMENTATION & JA3/JA4 FINGERPRINT SPOOFING
+                AntiDpiConfigCard(viewModel = viewModel)
+            }
 
-            // Port
-            OutlinedTextField(
-                value = profile.port,
-                onValueChange = { viewModel.updateProfile(port = it) },
-                enabled = !isLocked,
-                label = { Text("PORT", fontSize = 11.sp, letterSpacing = 1.sp) },
-                placeholder = { Text("443") },
-                isError = errors.containsKey("port"),
-                supportingText = errors["port"]?.let { { Text(it, color = DestructiveRed, fontSize = 11.sp) } },
-                modifier = Modifier
-                    .weight(0.32f)
-                    .testTag("server_port_input"),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = CyanPrimary,
-                    unfocusedBorderColor = BorderDark,
-                    focusedContainerColor = SurfaceDark,
-                    unfocusedContainerColor = SurfaceDark,
-                    disabledContainerColor = SurfaceDark.copy(alpha = 0.5f)
-                ),
-                shape = RoundedCornerShape(12.dp),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-        }
-
-        // Server SNI
-        OutlinedTextField(
-            value = profile.sni,
-            onValueChange = { viewModel.updateProfile(sni = it) },
-            enabled = !isLocked,
-            label = { Text("SERVER NAME (SNI)", fontSize = 11.sp, letterSpacing = 1.sp) },
-            placeholder = { Text("server.example.com") },
-            isError = errors.containsKey("sni"),
-            supportingText = errors["sni"]?.let { { Text(it, color = DestructiveRed, fontSize = 11.sp) } },
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("server_sni_input"),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = CyanPrimary,
-                unfocusedBorderColor = BorderDark,
-                focusedContainerColor = SurfaceDark,
-                unfocusedContainerColor = SurfaceDark,
-                disabledContainerColor = SurfaceDark.copy(alpha = 0.5f)
-            ),
-            shape = RoundedCornerShape(12.dp),
-            singleLine = true
-        )
-
-        // Handshake Payload
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = CardBackground),
-            shape = RoundedCornerShape(16.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark)
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "HANDSHAKE PAYLOAD",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextMuted,
-                        letterSpacing = 1.sp
-                    )
-
-                    Button(
-                        onClick = { showPayloadGenerator = true },
-                        enabled = !isLocked,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = SurfaceDark,
-                            contentColor = CyanPrimary
-                        ),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.testTag("open_payload_generator_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Payload Generator", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                OutlinedTextField(
-                    value = profile.payload,
-                    onValueChange = { viewModel.updateProfile(payload = it) },
-                    enabled = !isLocked,
-                    placeholder = { Text(DEFAULT_PAYLOAD_TEMPLATE, fontSize = 11.sp) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(110.dp)
-                        .testTag("payload_textarea"),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = CyanPrimary,
-                        unfocusedBorderColor = BorderDark,
-                        focusedContainerColor = SurfaceDark,
-                        unfocusedContainerColor = SurfaceDark,
-                        disabledContainerColor = SurfaceDark.copy(alpha = 0.5f)
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    textStyle = androidx.compose.ui.text.TextStyle(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        color = TextPrimary
-                    )
-                )
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Insert:", color = TextMuted, fontSize = 11.sp)
-                    SuggestionChip(
-                        onClick = {
-                            if (!isLocked) {
-                                viewModel.updateProfile(payload = profile.payload + "[host]")
-                            }
-                        },
-                        label = { Text("[host]", fontFamily = FontFamily.Monospace, fontSize = 11.sp) },
-                        colors = SuggestionChipDefaults.suggestionChipColors(
-                            containerColor = SurfaceDark,
-                            labelColor = CyanPrimary
-                        ),
-                        border = SuggestionChipDefaults.suggestionChipBorder(
-                            enabled = true,
-                            borderColor = BorderDark
-                        )
-                    )
-                    SuggestionChip(
-                        onClick = {
-                            if (!isLocked) {
-                                viewModel.updateProfile(payload = profile.payload + "[crlf]")
-                            }
-                        },
-                        label = { Text("[crlf]", fontFamily = FontFamily.Monospace, fontSize = 11.sp) },
-                        colors = SuggestionChipDefaults.suggestionChipColors(
-                            containerColor = SurfaceDark,
-                            labelColor = CyanPrimary
-                        ),
-                        border = SuggestionChipDefaults.suggestionChipBorder(
-                            enabled = true,
-                            borderColor = BorderDark
-                        )
-                    )
-                    SuggestionChip(
-                        onClick = {
-                            if (!isLocked) {
-                                viewModel.updateProfile(payload = profile.payload + "[split]")
-                            }
-                        },
-                        label = { Text("[split]", fontFamily = FontFamily.Monospace, fontSize = 11.sp) },
-                        colors = SuggestionChipDefaults.suggestionChipColors(
-                            containerColor = SurfaceDark,
-                            labelColor = CyanPrimary
-                        ),
-                        border = SuggestionChipDefaults.suggestionChipBorder(
-                            enabled = true,
-                            borderColor = BorderDark
-                        )
-                    )
-                    SuggestionChip(
-                        onClick = {
-                            if (!isLocked) {
-                                viewModel.updateProfile(payload = profile.payload + "[sni]")
-                            }
-                        },
-                        label = { Text("[sni]", fontFamily = FontFamily.Monospace, fontSize = 11.sp) },
-                        colors = SuggestionChipDefaults.suggestionChipColors(
-                            containerColor = SurfaceDark,
-                            labelColor = CyanPrimary
-                        ),
-                        border = SuggestionChipDefaults.suggestionChipBorder(
-                            enabled = true,
-                            borderColor = BorderDark
-                        )
-                    )
-                }
+            2 -> {
+                // SECTION 2: KILLSWITCH, SPLIT TUNNELING & NETWORK DIAGNOSTICS
+                SplitTunnelingCard(viewModel = viewModel)
+                NetworkDiagnosticsCard(viewModel = viewModel)
             }
         }
-
-        // Live Parsed Preview
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = CardBackground),
-            shape = RoundedCornerShape(16.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark)
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Text(
-                    text = "LIVE PARSED PREVIEW",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextMuted,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(SurfaceDark)
-                        .border(1.dp, BorderDark, RoundedCornerShape(10.dp))
-                        .padding(12.dp)
-                ) {
-                    Text(
-                        text = parsedPreview,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        color = CyanPrimary,
-                        lineHeight = 16.sp
-                    )
-                }
-            }
-        }
-
-        // TLS Record Fragmentation & JA3/JA4 Fingerprint Spoofing Card
-        AntiDpiConfigCard(viewModel = viewModel)
-
-        // Killswitch & Split Tunneling Card
-        SplitTunnelingCard(viewModel = viewModel)
-
-        // Target Host & MTU Diagnostic Probe Card
-        NetworkDiagnosticsCard(viewModel = viewModel)
 
         if (showPayloadGenerator) {
             PayloadGeneratorDialog(
@@ -458,7 +475,7 @@ fun ConfigScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
     }
 }
 
@@ -510,7 +527,7 @@ fun PayloadGeneratorDialog(
                 .padding(4.dp),
             colors = CardDefaults.cardColors(containerColor = CardBackground),
             shape = RoundedCornerShape(20.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, CyanPrimary)
+            border = BorderStroke(1.dp, CyanPrimary)
         ) {
             Column(
                 modifier = Modifier
@@ -534,7 +551,7 @@ fun PayloadGeneratorDialog(
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
-                            text = "PAYLOAD GENERATOR",
+                            text = "PAYLOAD BUILDER",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = CyanPrimary,
@@ -551,14 +568,6 @@ fun PayloadGeneratorDialog(
                     }
                 }
 
-                Text(
-                    text = "Construct custom HTTP tunnel headers with request methods, injection modes, and macro replacements:",
-                    fontSize = 12.sp,
-                    color = TextSecondary,
-                    lineHeight = 16.sp
-                )
-
-                // URL / Host Input
                 OutlinedTextField(
                     value = urlHost,
                     onValueChange = { urlHost = it },
@@ -576,12 +585,10 @@ fun PayloadGeneratorDialog(
                     )
                 )
 
-                // Request Method & Injection Mode Selectors
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Method
                     Box(modifier = Modifier.weight(1f)) {
                         OutlinedTextField(
                             value = requestMethod,
@@ -624,7 +631,6 @@ fun PayloadGeneratorDialog(
                         }
                     }
 
-                    // Injection Mode
                     Box(modifier = Modifier.weight(1f)) {
                         OutlinedTextField(
                             value = injectionMode,
@@ -668,15 +674,6 @@ fun PayloadGeneratorDialog(
                     }
                 }
 
-                // Checkbox Options
-                Text(
-                    text = "HEADER OPTIONS",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextMuted,
-                    letterSpacing = 1.sp
-                )
-
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -716,18 +713,6 @@ fun PayloadGeneratorDialog(
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { enableXForwardedFor = !enableXForwardedFor }
-                    ) {
-                        Checkbox(
-                            checked = enableXForwardedFor,
-                            onCheckedChange = { enableXForwardedFor = it },
-                            colors = CheckboxDefaults.colors(checkedColor = CyanPrimary)
-                        )
-                        Text("X-Forwarded-For Header", fontSize = 12.sp, color = TextPrimary)
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.clickable { enableXOnlineHost = !enableXOnlineHost }
                     ) {
                         Checkbox(
@@ -737,28 +722,7 @@ fun PayloadGeneratorDialog(
                         )
                         Text("X-Online-Host Header", fontSize = 12.sp, color = TextPrimary)
                     }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { enableReferer = !enableReferer }
-                    ) {
-                        Checkbox(
-                            checked = enableReferer,
-                            onCheckedChange = { enableReferer = it },
-                            colors = CheckboxDefaults.colors(checkedColor = CyanPrimary)
-                        )
-                        Text("Referer Header", fontSize = 12.sp, color = TextPrimary)
-                    }
                 }
-
-                // Generated Preview
-                Text(
-                    text = "GENERATED PAYLOAD PREVIEW",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextMuted,
-                    letterSpacing = 1.sp
-                )
 
                 Box(
                     modifier = Modifier
@@ -777,7 +741,6 @@ fun PayloadGeneratorDialog(
                     )
                 }
 
-                // Action Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,

@@ -315,26 +315,34 @@ class AdvancedVpnService : VpnService(), Runnable {
             Log.i(TAG, "TLS handshake successfully verified with $sniHost")
             VpnManager.appendTelemetryLog("SUCCESS", "TLS handshake verified (SNI=$effectiveSni, Cipher=${secureSocket.session?.cipherSuite ?: "AEAD"})")
 
-            // 4. Send handshake protocol payload with macro fragmentation ([split], [sni], [ua], [crlf]) if configured
+            // 4. Send chunked handshake protocol payload via CarrierTunnelOptimizer ([host], [host_port], [crlf], [split])
             if (rawPayload.isNotBlank()) {
                 val browserProfile = TlsFingerprintEngine.resolveProfile(tlsFragmentConfig.fingerprintProfileId)
-                val bytesWritten = TlsFragmentationEngine.writePayloadWithMacros(
-                    outputStream = secureSocket.outputStream,
-                    rawPayload = rawPayload,
+                val handshakeResult = com.example.advancedtunnel.vpn.CarrierTunnelOptimizer.performUpgradedHandshake(
+                    socket = secureSocket,
+                    rawTemplate = rawPayload,
                     host = serverIp,
                     port = serverPort,
                     sni = effectiveSni,
                     userAgent = browserProfile.userAgent,
-                    config = tlsFragmentConfig
+                    config = com.example.advancedtunnel.vpn.HandshakeStreamConfig(
+                        minSegmentBytes = 6,
+                        maxSegmentBytes = 12,
+                        interSegmentDelayMs = tlsFragmentConfig.normalizedMinJitter().toLong().coerceAtLeast(2L),
+                        expectHttpUpgradeResponse = false
+                    )
                 )
-                Log.d(TAG, "Handshake protocol payload transmitted ($bytesWritten bytes).")
-                VpnManager.appendTelemetryLog("INFO", "Transmitted HTTP/WS upgrade payload ($bytesWritten bytes)")
+                Log.d(TAG, "Handshake payload transmitted (${handshakeResult.bytesTransmitted} bytes in ${handshakeResult.segmentsFlushed} chunks).")
+                VpnManager.appendTelemetryLog(
+                    "INFO",
+                    "CarrierTunnelOptimizer flushed ${handshakeResult.bytesTransmitted}B across ${handshakeResult.segmentsFlushed} segments (${handshakeResult.statusLine})"
+                )
             }
 
             val serverIn = secureSocket.inputStream
             val serverOut = secureSocket.outputStream
 
-            // 4. Remote connection succeeded! NOW establish the OS TUN interface
+            // 5. Remote connection succeeded! NOW establish the OS TUN interface
             val builder = Builder()
                 .setSession("Tunnel Console")
                 .setMtu(1500)
@@ -362,6 +370,11 @@ class AdvancedVpnService : VpnService(), Runnable {
                         Log.w(TAG, "Killswitch setBlocking skipped: ${e.message}")
                     }
                 }
+            }
+
+            try {
+                builder.addDisallowedApplication(packageName)
+            } catch (_: Exception) {
             }
 
             disallowedApps.forEach { pkg ->
