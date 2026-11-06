@@ -40,7 +40,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.advancedtunnel.model.TunnelStatus
+import com.example.advancedtunnel.ui.components.ConnectionStatusIndicator
 import com.example.advancedtunnel.ui.screens.BlueprintScreen
 import com.example.advancedtunnel.ui.screens.ConfigScreen
 import com.example.advancedtunnel.ui.screens.HomeScreen
@@ -111,20 +111,8 @@ fun TunnelApp(
                         )
                     }
 
-                    // Live Status Dot
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .clip(CircleShape)
-                            .background(
-                                when (status) {
-                                    TunnelStatus.CONNECTED -> CyanPrimary
-                                    TunnelStatus.CONNECTING -> AccentOrange
-                                    TunnelStatus.DISCONNECTED -> DestructiveRed
-                                }
-                            )
-                            .testTag("status_indicator_dot")
-                    )
+                    // Visual Real-Time Connection Status Indicator
+                    ConnectionStatusIndicator(status = status)
                 }
             }
         },
