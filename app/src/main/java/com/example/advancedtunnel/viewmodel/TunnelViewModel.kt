@@ -457,4 +457,59 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
             _isAnalyzingAi.value = false
         }
     }
+
+    private val _diagnosticResult = MutableStateFlow<DiagnosticResult?>(null)
+    val diagnosticResult: StateFlow<DiagnosticResult?> = _diagnosticResult.asStateFlow()
+
+    private val _isDiagnosing = MutableStateFlow(false)
+    val isDiagnosing: StateFlow<Boolean> = _isDiagnosing.asStateFlow()
+
+    fun runNetworkDiagnostics(targetHost: String, targetPort: Int = 443) {
+        if (targetHost.isBlank()) return
+        _isDiagnosing.value = true
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val startTime = System.currentTimeMillis()
+            var reachable = false
+            var latency = 0L
+            var detail = ""
+            var mtu = 1420
+
+            try {
+                val socket = java.net.Socket()
+                val address = java.net.InetSocketAddress(targetHost, targetPort)
+                socket.connect(address, 3000)
+                latency = System.currentTimeMillis() - startTime
+                reachable = true
+                socket.close()
+
+                mtu = when {
+                    latency > 250 -> 1280
+                    latency > 120 -> 1360
+                    else -> 1420
+                }
+                detail = "TCP handshake successful on port $targetPort in ${latency}ms. Recommended MTU: $mtu."
+            } catch (e: Exception) {
+                reachable = false
+                latency = -1L
+                detail = "Target reachability check failed ($targetHost:$targetPort): ${e.localizedMessage ?: "Connection timed out"}"
+            }
+
+            _diagnosticResult.value = DiagnosticResult(
+                host = targetHost,
+                isReachable = reachable,
+                latencyMs = latency,
+                recommendedMtu = mtu,
+                details = detail
+            )
+            _isDiagnosing.value = false
+        }
+    }
 }
+
+data class DiagnosticResult(
+    val host: String,
+    val isReachable: Boolean,
+    val latencyMs: Long,
+    val recommendedMtu: Int,
+    val details: String
+)

@@ -59,6 +59,7 @@ import com.example.advancedtunnel.model.PayloadGeneratorConfig
 import com.example.advancedtunnel.model.ROUTE_PRESETS
 import com.example.advancedtunnel.model.TunnelStatus
 import com.example.advancedtunnel.model.TunnelUtils
+import com.example.advancedtunnel.ui.components.NetworkDiagnosticsCard
 import com.example.advancedtunnel.ui.components.SplitTunnelingCard
 import com.example.advancedtunnel.ui.theme.BorderDark
 import com.example.advancedtunnel.ui.theme.CardBackground
@@ -407,6 +408,9 @@ fun ConfigScreen(
 
         // Killswitch & Split Tunneling Card
         SplitTunnelingCard(viewModel = viewModel)
+
+        // Target Host & MTU Diagnostic Probe Card
+        NetworkDiagnosticsCard(viewModel = viewModel)
 
         if (showPayloadGenerator) {
             PayloadGeneratorDialog(

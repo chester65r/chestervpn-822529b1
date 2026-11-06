@@ -193,13 +193,18 @@ object TunnelUtils {
     }
 
     fun exportProfile(p: TunnelProfile): String {
-        val json = JSONObject().apply {
-            put("ip", p.ip.trim())
-            put("port", p.port.trim().toIntOrNull() ?: 443)
-            put("sni", p.sni.trim())
-            put("payload", p.payload)
+        val ipEsc = p.ip.trim().replace("\\", "\\\\").replace("\"", "\\\"")
+        val portEsc = p.port.trim().replace("\\", "\\\\").replace("\"", "\\\"")
+        val sniEsc = p.sni.trim().replace("\\", "\\\\").replace("\"", "\\\"")
+        val payloadEsc = p.payload.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
+
+        val jsonString = "{\"ip\":\"$ipEsc\",\"port\":\"$portEsc\",\"sni\":\"$sniEsc\",\"payload\":\"$payloadEsc\"}"
+        val jsonBytes = jsonString.toByteArray(Charsets.UTF_8)
+        val encoded = try {
+            java.util.Base64.getEncoder().encodeToString(jsonBytes)
+        } catch (_: Throwable) {
+            Base64.encodeToString(jsonBytes, Base64.NO_WRAP)
         }
-        val encoded = Base64.encodeToString(json.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         return PROFILE_PREFIX + encoded
     }
 
@@ -208,14 +213,35 @@ object TunnelUtils {
         if (!trimmed.startsWith(PROFILE_PREFIX)) return null
         return try {
             val b64 = trimmed.substring(PROFILE_PREFIX.length)
-            val jsonStr = String(Base64.decode(b64, Base64.DEFAULT), Charsets.UTF_8)
-            val json = JSONObject(jsonStr)
-            val profile = TunnelProfile(
-                ip = json.optString("ip", ""),
-                port = json.opt("port")?.toString() ?: "443",
-                sni = json.optString("sni", ""),
-                payload = json.optString("payload", "")
-            )
+            val jsonBytes = try {
+                java.util.Base64.getDecoder().decode(b64)
+            } catch (_: Throwable) {
+                Base64.decode(b64, Base64.DEFAULT)
+            }
+            val jsonStr = String(jsonBytes, Charsets.UTF_8)
+
+            fun extractValue(key: String): String {
+                val keyIndex = jsonStr.indexOf("\"$key\"")
+                if (keyIndex == -1) return ""
+                val colonIndex = jsonStr.indexOf(":", keyIndex)
+                if (colonIndex == -1) return ""
+                val firstQuote = jsonStr.indexOf("\"", colonIndex)
+                if (firstQuote == -1) return ""
+                val endQuote = jsonStr.indexOf("\"", firstQuote + 1)
+                if (endQuote == -1) return ""
+                return jsonStr.substring(firstQuote + 1, endQuote)
+            }
+
+            val ip = extractValue("ip")
+            val port = extractValue("port").ifBlank { "443" }
+            val sni = extractValue("sni")
+            val payload = extractValue("payload")
+                .replace("\\n", "\n")
+                .replace("\\r", "\r")
+                .replace("\\\"", "\"")
+                .replace("\\\\", "\\")
+
+            val profile = TunnelProfile(ip = ip, port = port, sni = sni, payload = payload)
             if (validateProfile(profile).isEmpty()) profile else null
         } catch (_: Exception) {
             null
