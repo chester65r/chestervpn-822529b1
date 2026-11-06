@@ -103,8 +103,11 @@ fun HomeScreen(
     val aiText by viewModel.aiHelperText.collectAsState()
     val isAnalyzingAi by viewModel.isAnalyzingAi.collectAsState()
 
+    var gcpIpInput by remember(profile.ip) { mutableStateOf(profile.ip) }
+    var gcpPortInput by remember(profile.port) { mutableStateOf(profile.port.ifEmpty { "443" }) }
     var hetznerIpInput by remember(profile.ip) { mutableStateOf(profile.ip) }
     var hetznerPortInput by remember(profile.port) { mutableStateOf(profile.port.ifEmpty { "443" }) }
+    var selectedCloudProvider by remember { mutableStateOf("GCP") }
     var showSetupScript by remember { mutableStateOf(false) }
 
     val isConnected = status == TunnelStatus.CONNECTED
@@ -459,6 +462,209 @@ fun HomeScreen(
                                 fontSize = 12.sp,
                                 modifier = Modifier.padding(top = 2.dp)
                             )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Google Cloud Compute Engine Quick Connect Card
+        if (!isConnected) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("gcp_quick_connect_card"),
+                colors = CardDefaults.cardColors(containerColor = CardBackground),
+                shape = RoundedCornerShape(18.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (gcpIpInput.isNotBlank()) CyanPrimary.copy(alpha = 0.5f) else BorderDark
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Cloud,
+                                contentDescription = "Google Cloud",
+                                tint = CyanPrimary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Text(
+                                text = "GOOGLE CLOUD COMPUTE ENGINE",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp,
+                                color = CyanPrimary
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(SurfaceDark)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "UK / US / Asia",
+                                fontSize = 10.sp,
+                                color = TextMuted
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "Connect directly to your Google Cloud VM instance (GCP Compute Engine). Enter your instance external IP or domain:",
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        lineHeight = 16.sp
+                    )
+
+                    // GCP Datacenter quick preset chips
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            Triple("LDN", "europe-west2", "europe-west2.gcp.cloud"),
+                            Triple("IOW", "us-central1", "us-central1.gcp.cloud"),
+                            Triple("TYO", "asia-northeast1", "asia-northeast1.gcp.cloud")
+                        ).forEach { (code, region, host) ->
+                            Button(
+                                onClick = {
+                                    gcpIpInput = host
+                                    viewModel.updateProfile(ip = host, sni = "cloud.google.com")
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (gcpIpInput == host) CyanPrimary else SurfaceDark,
+                                    contentColor = if (gcpIpInput == host) SurfaceDark else TextSecondary
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(32.dp)
+                            ) {
+                                Text("$code ($region)", fontSize = 10.sp, maxLines = 1)
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = gcpIpInput,
+                            onValueChange = {
+                                gcpIpInput = it
+                                viewModel.updateProfile(ip = it, sni = if (it.contains(".")) it else "cloud.google.com")
+                            },
+                            label = { Text("Google Cloud IP / Host") },
+                            placeholder = { Text("e.g. 35.246.128.1") },
+                            singleLine = true,
+                            modifier = Modifier
+                                .weight(2f)
+                                .testTag("gcp_ip_input"),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = CyanPrimary,
+                                unfocusedBorderColor = BorderDark,
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary
+                            )
+                        )
+
+                        OutlinedTextField(
+                            value = gcpPortInput,
+                            onValueChange = {
+                                gcpPortInput = it
+                                viewModel.updateProfile(port = it)
+                            },
+                            label = { Text("Port") },
+                            placeholder = { Text("443") },
+                            singleLine = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("gcp_port_input"),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = CyanPrimary,
+                                unfocusedBorderColor = BorderDark,
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary
+                            )
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = {
+                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clip = ClipData.newPlainText(
+                                    "Google Cloud Setup Script",
+                                    "curl -fsSL https://raw.githubusercontent.com/chester65r/chestervpn-822529b1/main/docs/setup-server.sh | bash"
+                                )
+                                cm.setPrimaryClip(clip)
+                                Toast.makeText(context, "Copied Google Cloud installer script to clipboard", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = SurfaceDark,
+                                contentColor = TextSecondary
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .height(36.dp)
+                                .testTag("copy_gcp_script_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("GCP Setup Script", fontSize = 11.sp)
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.connectGcpServer(
+                                    ip = gcpIpInput,
+                                    port = gcpPortInput,
+                                    sni = if (gcpIpInput.contains(".")) gcpIpInput else "cloud.google.com",
+                                    context = context,
+                                    onRequestPermission = onRequestVpnPermission
+                                )
+                            },
+                            enabled = gcpIpInput.isNotBlank() && !isConnecting,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = CyanPrimary,
+                                contentColor = SurfaceDark
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .height(36.dp)
+                                .testTag("connect_gcp_now_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Cloud,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Connect Google Cloud", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

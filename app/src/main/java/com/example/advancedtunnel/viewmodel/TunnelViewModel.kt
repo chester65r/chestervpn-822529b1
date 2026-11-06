@@ -169,6 +169,30 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun connectGcpServer(
+        ip: String,
+        port: String = "443",
+        sni: String = "cloud.google.com",
+        context: Context,
+        onRequestPermission: () -> Unit
+    ) {
+        val trimmedIp = ip.trim()
+        val trimmedPort = port.trim().ifEmpty { "443" }
+        val trimmedSni = sni.trim().ifEmpty { trimmedIp }
+        
+        val updated = _profile.value.copy(
+            ip = trimmedIp,
+            port = trimmedPort,
+            sni = trimmedSni
+        )
+        _profile.value = updated
+        _presetId.value = "gcp"
+        _errors.value = emptyMap()
+        repository.saveActiveProfile(updated, "gcp")
+        
+        requestConnectVpn(context, onRequestPermission)
+    }
+
     fun connectHetznerServer(
         ip: String,
         port: String = "443",

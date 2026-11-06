@@ -24,6 +24,9 @@ data class RoutePreset(
 )
 
 val ROUTE_PRESETS = listOf(
+    RoutePreset("stc", "STC Enterprise Gateway (Saudi Telecom)", "stc.com.sa"),
+    RoutePreset("mobily", "Mobily Corporate Gateway (Saudi Arabia)", "mobily.com.sa"),
+    RoutePreset("gcp", "Google Cloud Compute Engine (GCP Node)", "cloud.google.com"),
     RoutePreset("hetzner", "Hetzner Cloud VPS (Dedicated Node)", "hetzner.com"),
     RoutePreset("alpha", "Route Preset Alpha (TLS Virtualization)", "alpha.example.com"),
     RoutePreset("beta", "Route Preset Beta (Edge CDN Routing)", "beta.example.com"),
@@ -54,6 +57,9 @@ data class RelayServer(
 )
 
 val SAMPLE_VPS_SERVERS = listOf(
+    RelayServer("gcp-london", "Google Cloud (London - europe-west2)", "europe-west2.gcp.cloud", 443, "TLS", "GCP Compute Engine europe-west2 datacenter"),
+    RelayServer("gcp-iowa", "Google Cloud (US Central - us-central1)", "us-central1.gcp.cloud", 443, "TLS", "GCP Compute Engine us-central1 datacenter"),
+    RelayServer("gcp-tokyo", "Google Cloud (Asia - asia-northeast1)", "asia-northeast1.gcp.cloud", 443, "WebSocket", "GCP Compute Engine asia-northeast1 datacenter"),
     RelayServer("hetzner-fsn", "Hetzner Cloud (Germany - Falkenstein)", "fsn1.hetzner.com", 443, "TLS", "Hetzner Falkenstein FSN1 datacenter"),
     RelayServer("hetzner-hel", "Hetzner Cloud (Finland - Helsinki)", "hel1.hetzner.com", 443, "WebSocket", "Hetzner Helsinki HEL1 datacenter"),
     RelayServer("hetzner-ash", "Hetzner Cloud (US East - Ashburn)", "ash.hetzner.com", 443, "TLS", "Hetzner Ashburn ASH datacenter"),
