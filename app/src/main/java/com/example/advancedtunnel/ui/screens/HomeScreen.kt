@@ -108,8 +108,6 @@ fun HomeScreen(
     var gcpPortInput by remember(profile.port) { mutableStateOf(profile.port.ifEmpty { "443" }) }
     var hetznerIpInput by remember(profile.ip) { mutableStateOf(profile.ip) }
     var hetznerPortInput by remember(profile.port) { mutableStateOf(profile.port.ifEmpty { "443" }) }
-    var selectedCloudProvider by remember { mutableStateOf("GCP") }
-    var showSetupScript by remember { mutableStateOf(false) }
 
     val isConnected = status == TunnelStatus.CONNECTED
     val isConnecting = status == TunnelStatus.CONNECTING
@@ -472,410 +470,97 @@ fun HomeScreen(
             }
         }
 
-        // Google Cloud Compute Engine Quick Connect Card
+        // Google Cloud & Hetzner Cloud Quick Connect Cards (Deduplicated)
         if (!isConnected) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("gcp_quick_connect_card"),
-                colors = CardDefaults.cardColors(containerColor = CardBackground),
-                shape = RoundedCornerShape(18.dp),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    if (gcpIpInput.isNotBlank()) CyanPrimary.copy(alpha = 0.5f) else BorderDark
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Cloud,
-                                contentDescription = "Google Cloud",
-                                tint = CyanPrimary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Text(
-                                text = "GOOGLE CLOUD COMPUTE ENGINE",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp,
-                                color = CyanPrimary
-                            )
-                        }
-
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(SurfaceDark)
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "UK / US / Asia",
-                                fontSize = 10.sp,
-                                color = TextMuted
-                            )
-                        }
-                    }
-
-                    Text(
-                        text = "Connect directly to your Google Cloud VM instance (GCP Compute Engine). Enter your instance external IP or domain:",
-                        fontSize = 12.sp,
-                        color = TextSecondary,
-                        lineHeight = 16.sp
+            CloudProviderQuickConnectCard(
+                cardTestTag = "gcp_quick_connect_card",
+                title = "GOOGLE CLOUD COMPUTE ENGINE",
+                regionsBadge = "UK / US / Asia",
+                description = "Connect directly to your Google Cloud VM instance (GCP Compute Engine). Enter your instance external IP or domain:",
+                presets = listOf(
+                    Triple("LDN", "europe-west2", "europe-west2.gcp.cloud"),
+                    Triple("IOW", "us-central1", "us-central1.gcp.cloud"),
+                    Triple("TYO", "asia-northeast1", "asia-northeast1.gcp.cloud")
+                ),
+                ipInput = gcpIpInput,
+                onIpChange = {
+                    gcpIpInput = it
+                    viewModel.updateProfile(ip = it, sni = if (it.contains(".")) it else "cloud.google.com")
+                },
+                onPresetSelected = { host ->
+                    gcpIpInput = host
+                    viewModel.updateProfile(ip = host, sni = "cloud.google.com")
+                },
+                portInput = gcpPortInput,
+                onPortChange = {
+                    gcpPortInput = it
+                    viewModel.updateProfile(port = it)
+                },
+                ipLabel = "Google Cloud IP / Host",
+                ipPlaceholder = "e.g. 35.246.128.1",
+                ipTestTag = "gcp_ip_input",
+                portTestTag = "gcp_port_input",
+                copyButtonText = "GCP Setup Script",
+                copyButtonTestTag = "copy_gcp_script_button",
+                copyToastMessage = "Copied Google Cloud installer script to clipboard",
+                connectButtonText = "Connect Google Cloud",
+                connectButtonTestTag = "connect_gcp_now_button",
+                isConnecting = isConnecting,
+                onConnect = {
+                    viewModel.connectGcpServer(
+                        ip = gcpIpInput,
+                        port = gcpPortInput,
+                        sni = if (gcpIpInput.contains(".")) gcpIpInput else "cloud.google.com",
+                        context = context,
+                        onRequestPermission = onRequestVpnPermission
                     )
-
-                    // GCP Datacenter quick preset chips
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(
-                            Triple("LDN", "europe-west2", "europe-west2.gcp.cloud"),
-                            Triple("IOW", "us-central1", "us-central1.gcp.cloud"),
-                            Triple("TYO", "asia-northeast1", "asia-northeast1.gcp.cloud")
-                        ).forEach { (code, region, host) ->
-                            Button(
-                                onClick = {
-                                    gcpIpInput = host
-                                    viewModel.updateProfile(ip = host, sni = "cloud.google.com")
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (gcpIpInput == host) CyanPrimary else SurfaceDark,
-                                    contentColor = if (gcpIpInput == host) SurfaceDark else TextSecondary
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(32.dp)
-                            ) {
-                                Text("$code ($region)", fontSize = 10.sp, maxLines = 1)
-                            }
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = gcpIpInput,
-                            onValueChange = {
-                                gcpIpInput = it
-                                viewModel.updateProfile(ip = it, sni = if (it.contains(".")) it else "cloud.google.com")
-                            },
-                            label = { Text("Google Cloud IP / Host") },
-                            placeholder = { Text("e.g. 35.246.128.1") },
-                            singleLine = true,
-                            modifier = Modifier
-                                .weight(2f)
-                                .testTag("gcp_ip_input"),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = CyanPrimary,
-                                unfocusedBorderColor = BorderDark,
-                                focusedTextColor = TextPrimary,
-                                unfocusedTextColor = TextPrimary
-                            )
-                        )
-
-                        OutlinedTextField(
-                            value = gcpPortInput,
-                            onValueChange = {
-                                gcpPortInput = it
-                                viewModel.updateProfile(port = it)
-                            },
-                            label = { Text("Port") },
-                            placeholder = { Text("443") },
-                            singleLine = true,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("gcp_port_input"),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = CyanPrimary,
-                                unfocusedBorderColor = BorderDark,
-                                focusedTextColor = TextPrimary,
-                                unfocusedTextColor = TextPrimary
-                            )
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Button(
-                            onClick = {
-                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = ClipData.newPlainText(
-                                    "Google Cloud Setup Script",
-                                    "curl -fsSL https://raw.githubusercontent.com/chester65r/chestervpn-822529b1/main/docs/setup-server.sh | bash"
-                                )
-                                cm.setPrimaryClip(clip)
-                                Toast.makeText(context, "Copied Google Cloud installer script to clipboard", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = SurfaceDark,
-                                contentColor = TextSecondary
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .height(36.dp)
-                                .testTag("copy_gcp_script_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("GCP Setup Script", fontSize = 11.sp)
-                        }
-
-                        Button(
-                            onClick = {
-                                viewModel.connectGcpServer(
-                                    ip = gcpIpInput,
-                                    port = gcpPortInput,
-                                    sni = if (gcpIpInput.contains(".")) gcpIpInput else "cloud.google.com",
-                                    context = context,
-                                    onRequestPermission = onRequestVpnPermission
-                                )
-                            },
-                            enabled = gcpIpInput.isNotBlank() && !isConnecting,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = CyanPrimary,
-                                contentColor = SurfaceDark
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .height(36.dp)
-                                .testTag("connect_gcp_now_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Cloud,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Connect Google Cloud", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
                 }
-            }
-        }
+            )
 
-        // Hetzner Cloud VPS Quick Connect Card
-        if (!isConnected) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("hetzner_quick_connect_card"),
-                colors = CardDefaults.cardColors(containerColor = CardBackground),
-                shape = RoundedCornerShape(18.dp),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    if (hetznerIpInput.isNotBlank()) CyanPrimary.copy(alpha = 0.5f) else BorderDark
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Cloud,
-                                contentDescription = "Hetzner Cloud",
-                                tint = CyanPrimary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Text(
-                                text = "HETZNER CLOUD VPS",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp,
-                                color = CyanPrimary
-                            )
-                        }
-
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(SurfaceDark)
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Germany / Finland / US",
-                                fontSize = 10.sp,
-                                color = TextMuted
-                            )
-                        }
-                    }
-
-                    Text(
-                        text = "Connect directly to your Hetzner Cloud VPS instance. Enter your server IPv4 or select a datacenter preset:",
-                        fontSize = 12.sp,
-                        color = TextSecondary,
-                        lineHeight = 16.sp
+            CloudProviderQuickConnectCard(
+                cardTestTag = "hetzner_quick_connect_card",
+                title = "HETZNER CLOUD VPS",
+                regionsBadge = "Germany / Finland / US",
+                description = "Connect directly to your Hetzner Cloud VPS instance. Enter your server IPv4 or select a datacenter preset:",
+                presets = listOf(
+                    Triple("FSN1", "Falkenstein", "fsn1.hetzner.com"),
+                    Triple("HEL1", "Helsinki", "hel1.hetzner.com"),
+                    Triple("ASH", "Ashburn", "ash.hetzner.com")
+                ),
+                ipInput = hetznerIpInput,
+                onIpChange = {
+                    hetznerIpInput = it
+                    viewModel.updateProfile(ip = it, sni = if (it.contains(".")) it else profile.sni)
+                },
+                onPresetSelected = { host ->
+                    hetznerIpInput = host
+                    viewModel.updateProfile(ip = host, sni = host)
+                },
+                portInput = hetznerPortInput,
+                onPortChange = {
+                    hetznerPortInput = it
+                    viewModel.updateProfile(port = it)
+                },
+                ipLabel = "Hetzner IP / Domain",
+                ipPlaceholder = "e.g. 159.69.10.20",
+                ipTestTag = "hetzner_ip_input",
+                portTestTag = "hetzner_port_input",
+                copyButtonText = "VPS Setup Script",
+                copyButtonTestTag = "copy_setup_command_button",
+                copyToastMessage = "Copied Hetzner VPS installer script to clipboard",
+                connectButtonText = "Connect Hetzner",
+                connectButtonTestTag = "connect_hetzner_now_button",
+                isConnecting = isConnecting,
+                onConnect = {
+                    viewModel.connectHetznerServer(
+                        ip = hetznerIpInput,
+                        port = hetznerPortInput,
+                        sni = if (hetznerIpInput.contains(".")) hetznerIpInput else "hetzner.cloud",
+                        context = context,
+                        onRequestPermission = onRequestVpnPermission
                     )
-
-                    // Datacenter quick preset chips
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(
-                            Triple("FSN1", "Falkenstein", "fsn1.hetzner.com"),
-                            Triple("HEL1", "Helsinki", "hel1.hetzner.com"),
-                            Triple("ASH", "Ashburn", "ash.hetzner.com")
-                        ).forEach { (code, city, host) ->
-                            Button(
-                                onClick = {
-                                    hetznerIpInput = host
-                                    viewModel.updateProfile(ip = host, sni = host)
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (hetznerIpInput == host) CyanPrimary else SurfaceDark,
-                                    contentColor = if (hetznerIpInput == host) SurfaceDark else TextSecondary
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(32.dp)
-                            ) {
-                                Text("$code ($city)", fontSize = 10.sp, maxLines = 1)
-                            }
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = hetznerIpInput,
-                            onValueChange = {
-                                hetznerIpInput = it
-                                viewModel.updateProfile(ip = it, sni = if (it.contains(".")) it else profile.sni)
-                            },
-                            label = { Text("Hetzner IP / Domain") },
-                            placeholder = { Text("e.g. 159.69.10.20") },
-                            singleLine = true,
-                            modifier = Modifier
-                                .weight(2f)
-                                .testTag("hetzner_ip_input"),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = CyanPrimary,
-                                unfocusedBorderColor = BorderDark,
-                                focusedTextColor = TextPrimary,
-                                unfocusedTextColor = TextPrimary
-                            )
-                        )
-
-                        OutlinedTextField(
-                            value = hetznerPortInput,
-                            onValueChange = {
-                                hetznerPortInput = it
-                                viewModel.updateProfile(port = it)
-                            },
-                            label = { Text("Port") },
-                            placeholder = { Text("443") },
-                            singleLine = true,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("hetzner_port_input"),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = CyanPrimary,
-                                unfocusedBorderColor = BorderDark,
-                                focusedTextColor = TextPrimary,
-                                unfocusedTextColor = TextPrimary
-                            )
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Button(
-                            onClick = {
-                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = ClipData.newPlainText(
-                                    "Hetzner Setup Script",
-                                    "curl -fsSL https://raw.githubusercontent.com/chester65r/chestervpn-822529b1/main/docs/setup-server.sh | bash"
-                                )
-                                cm.setPrimaryClip(clip)
-                                Toast.makeText(context, "Copied Hetzner VPS installer script to clipboard", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = SurfaceDark,
-                                contentColor = TextSecondary
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .height(36.dp)
-                                .testTag("copy_setup_command_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("VPS Setup Script", fontSize = 11.sp)
-                        }
-
-                        Button(
-                            onClick = {
-                                viewModel.connectHetznerServer(
-                                    ip = hetznerIpInput,
-                                    port = hetznerPortInput,
-                                    sni = if (hetznerIpInput.contains(".")) hetznerIpInput else "hetzner.cloud",
-                                    context = context,
-                                    onRequestPermission = onRequestVpnPermission
-                                )
-                            },
-                            enabled = hetznerIpInput.isNotBlank() && !isConnecting,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = CyanPrimary,
-                                contentColor = SurfaceDark
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .height(36.dp)
-                                .testTag("connect_hetzner_now_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Cloud,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Connect Hetzner", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
                 }
-            }
+            )
         }
 
         // Action Connect / Disconnect Button (Genuine VPNService)
@@ -1011,6 +696,358 @@ fun HomeScreen(
             }
         }
 
+        // Real-Time Connection Telemetry & Exportable Diagnostics Card
+        val peakDown by viewModel.peakDownSpeed.collectAsState()
+        val peakUp by viewModel.peakUpSpeed.collectAsState()
+        val telemetryLogs by viewModel.telemetryLogs.collectAsState()
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("realtime_telemetry_diagnostics_card"),
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
+            shape = RoundedCornerShape(16.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark)
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "REAL-TIME TELEMETRY & DIAGNOSTICS",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CyanPrimary,
+                            letterSpacing = 1.sp
+                        )
+                        Text(
+                            text = "Quick Settings Tile & Always-On VPN Ready • MTU 1500 • DNS 1.1.1.1",
+                            fontSize = 10.sp,
+                            color = TextMuted
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(
+                            onClick = { viewModel.clearTelemetryLogs() },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = SurfaceDark,
+                                contentColor = TextMuted
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.height(30.dp)
+                        ) {
+                            Text("Clear", fontSize = 10.sp)
+                        }
+
+                        Button(
+                            onClick = {
+                                val report = viewModel.exportSanitizedDiagnostics()
+                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                cm.setPrimaryClip(ClipData.newPlainText("Tunnel Diagnostics", report))
+                                Toast.makeText(context, "Sanitized diagnostics report copied", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = CyanPrimary,
+                                contentColor = SurfaceDark
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .height(30.dp)
+                                .testTag("export_diagnostics_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Export Logs", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                // Peak Speeds & Session Metrics Summary Row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(SurfaceDark)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("PEAK DOWN", fontSize = 9.sp, color = TextMuted)
+                        Text(
+                            text = TunnelUtils.formatSpeed(peakDown),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CyanPrimary
+                        )
+                    }
+                    Column {
+                        Text("PEAK UP", fontSize = 9.sp, color = TextMuted)
+                        Text(
+                            text = TunnelUtils.formatSpeed(peakUp),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AccentOrange
+                        )
+                    }
+                    Column {
+                        Text("QS TILE / ALWAYS-ON", fontSize = 9.sp, color = TextMuted)
+                        Text(
+                            text = "ACTIVE",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CyanPrimary
+                        )
+                    }
+                }
+
+                // Live Telemetry Event Console
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(SurfaceDark)
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    val timeFormatter = remember { java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US) }
+                    telemetryLogs.take(8).forEach { entry ->
+                        val badgeColor = when (entry.level) {
+                            "ERROR", "WARN" -> DestructiveRed
+                            "SUCCESS", "PROBE" -> CyanPrimary
+                            else -> TextSecondary
+                        }
+                        Text(
+                            text = "[${timeFormatter.format(java.util.Date(entry.timestampMillis))}] [${entry.level}] ${entry.message}",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            color = badgeColor,
+                            lineHeight = 14.sp
+                        )
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
     }
 }
+
+@Composable
+private fun CloudProviderQuickConnectCard(
+    cardTestTag: String,
+    title: String,
+    regionsBadge: String,
+    description: String,
+    presets: List<Triple<String, String, String>>,
+    ipInput: String,
+    onIpChange: (String) -> Unit,
+    onPresetSelected: (String) -> Unit,
+    portInput: String,
+    onPortChange: (String) -> Unit,
+    ipLabel: String,
+    ipPlaceholder: String,
+    ipTestTag: String,
+    portTestTag: String,
+    copyButtonText: String,
+    copyButtonTestTag: String,
+    copyToastMessage: String,
+    connectButtonText: String,
+    connectButtonTestTag: String,
+    isConnecting: Boolean,
+    onConnect: () -> Unit
+) {
+    val context = LocalContext.current
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(cardTestTag),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+        shape = RoundedCornerShape(18.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (ipInput.isNotBlank()) CyanPrimary.copy(alpha = 0.5f) else BorderDark
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Cloud,
+                        contentDescription = title,
+                        tint = CyanPrimary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Text(
+                        text = title,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        color = CyanPrimary
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(SurfaceDark)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = regionsBadge,
+                        fontSize = 10.sp,
+                        color = TextMuted
+                    )
+                }
+            }
+
+            Text(
+                text = description,
+                fontSize = 12.sp,
+                color = TextSecondary,
+                lineHeight = 16.sp
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                presets.forEach { (code, label, host) ->
+                    Button(
+                        onClick = { onPresetSelected(host) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (ipInput == host) CyanPrimary else SurfaceDark,
+                            contentColor = if (ipInput == host) SurfaceDark else TextSecondary
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(32.dp)
+                    ) {
+                        Text("$code ($label)", fontSize = 10.sp, maxLines = 1)
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = ipInput,
+                    onValueChange = onIpChange,
+                    label = { Text(ipLabel) },
+                    placeholder = { Text(ipPlaceholder) },
+                    singleLine = true,
+                    modifier = Modifier
+                        .weight(2f)
+                        .testTag(ipTestTag),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = CyanPrimary,
+                        unfocusedBorderColor = BorderDark,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    )
+                )
+
+                OutlinedTextField(
+                    value = portInput,
+                    onValueChange = onPortChange,
+                    label = { Text("Port") },
+                    placeholder = { Text("443") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag(portTestTag),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = CyanPrimary,
+                        unfocusedBorderColor = BorderDark,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    )
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = {
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText(
+                            copyButtonText,
+                            "curl -fsSL https://raw.githubusercontent.com/chester65r/chestervpn-822529b1/main/docs/setup-server.sh | bash"
+                        )
+                        cm.setPrimaryClip(clip)
+                        Toast.makeText(context, copyToastMessage, Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = SurfaceDark,
+                        contentColor = TextSecondary
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .height(36.dp)
+                        .testTag(copyButtonTestTag)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(copyButtonText, fontSize = 11.sp)
+                }
+
+                Button(
+                    onClick = onConnect,
+                    enabled = ipInput.isNotBlank() && !isConnecting,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CyanPrimary,
+                        contentColor = SurfaceDark
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .height(36.dp)
+                        .testTag(connectButtonTestTag)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Cloud,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(connectButtonText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+

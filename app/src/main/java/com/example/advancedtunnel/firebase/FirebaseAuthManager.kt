@@ -27,17 +27,25 @@ private val MICROSOFT_SCOPES = listOf("openid", "profile", "email")
 
 class FirebaseAuthManager(private val context: Context) {
 
-    private val auth = FirebaseAuth.getInstance()
-    private val credentialManager = CredentialManager.create(context)
+    private val auth: FirebaseAuth? = runCatching {
+        if (com.google.firebase.FirebaseApp.getApps(context).isEmpty()) {
+            com.google.firebase.FirebaseApp.initializeApp(context)
+        }
+        FirebaseAuth.getInstance()
+    }.onFailure {
+        Log.e(TAG, "FirebaseAuth initialization warning: ${it.message}")
+    }.getOrNull()
 
-    private val _currentUser = MutableStateFlow<FirebaseUser?>(auth.currentUser)
+    private val credentialManager by lazy { CredentialManager.create(context) }
+
+    private val _currentUser = MutableStateFlow<FirebaseUser?>(auth?.currentUser)
     val currentUser: StateFlow<FirebaseUser?> = _currentUser.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     init {
-        auth.addAuthStateListener { firebaseAuth ->
+        auth?.addAuthStateListener { firebaseAuth ->
             _currentUser.value = firebaseAuth.currentUser
         }
     }
@@ -46,8 +54,9 @@ class FirebaseAuthManager(private val context: Context) {
      * Attempts silent auto-sign-in for returning users using GetGoogleIdOption.
      */
     suspend fun attemptAutoSignIn(activityContext: Context = context): Result<FirebaseUser> {
-        if (auth.currentUser != null) {
-            return Result.success(auth.currentUser!!)
+        val firebaseAuth = auth ?: return Result.failure(IllegalStateException("Firebase Auth not initialized"))
+        if (firebaseAuth.currentUser != null) {
+            return Result.success(firebaseAuth.currentUser!!)
         }
         return try {
             val clientId = activityContext.getString(R.string.default_web_client_id)
@@ -101,13 +110,14 @@ class FirebaseAuthManager(private val context: Context) {
     }
 
     private suspend fun handleSignInResult(credential: androidx.credentials.Credential): Result<FirebaseUser> {
+        val firebaseAuth = auth ?: throw IllegalStateException("Firebase Auth not initialized")
         if (credential is CustomCredential &&
             credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
         ) {
             val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
             val idToken = googleIdTokenCredential.idToken
             val authCredential = GoogleAuthProvider.getCredential(idToken, null)
-            val authResult = auth.signInWithCredential(authCredential).await()
+            val authResult = firebaseAuth.signInWithCredential(authCredential).await()
             val user = authResult.user ?: throw Exception("Firebase user is null after sign in.")
             _currentUser.value = user
             return Result.success(user)
@@ -121,13 +131,14 @@ class FirebaseAuthManager(private val context: Context) {
      * flow.
      */
     suspend fun signInWithMicrosoft(activity: Activity): Result<FirebaseUser> {
+        val firebaseAuth = auth ?: return Result.failure(IllegalStateException("Firebase Auth not initialized"))
         _isLoading.value = true
         return try {
             val provider = OAuthProvider.newBuilder(MICROSOFT_PROVIDER_ID)
                 .setScopes(MICROSOFT_SCOPES)
                 .build()
 
-            val authResult = auth.startActivityForSignInWithProvider(activity, provider).await()
+            val authResult = firebaseAuth.startActivityForSignInWithProvider(activity, provider).await()
             val user = authResult.user
                 ?: throw Exception("Firebase user is null after Microsoft sign in.")
             _currentUser.value = user
@@ -141,7 +152,7 @@ class FirebaseAuthManager(private val context: Context) {
     }
 
     suspend fun signOut() {
-        auth.signOut()
+        auth?.signOut()
         try {
             credentialManager.clearCredentialState(ClearCredentialStateRequest())
         } catch (e: Exception) {

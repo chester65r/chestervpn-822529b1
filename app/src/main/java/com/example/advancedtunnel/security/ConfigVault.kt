@@ -277,4 +277,76 @@ class ConfigVault(private val context: Context) {
             presets = presets
         )
     }
+
+    /**
+     * Builds a plaintext JSON string from the active TunnelProfile and RelayServer list,
+     * persists a copy into the hardware-backed Android Keystore, and returns a `TCFG://`
+     * Base64-wrapped AES-256-GCM encrypted envelope protected by the user's passphrase.
+     */
+    fun exportEncryptedTcfgCode(
+        activeIp: String,
+        activePort: Int,
+        activeSni: String,
+        activePayload: String,
+        serversJsonArray: JSONArray,
+        passphrase: String
+    ): String {
+        val root = JSONObject().apply {
+            put("version", 2)
+            put("revisionTimestamp", System.currentTimeMillis())
+            put("nodes", serversJsonArray)
+            put(
+                "presets",
+                JSONArray().apply {
+                    put(
+                        JSONObject().apply {
+                            put("id", "active")
+                            put("name", "$activeIp:$activePort")
+                            put("sni", activeSni)
+                            put("template", activePayload)
+                        }
+                    )
+                }
+            )
+        }
+        val plaintext = root.toString()
+        persistToKeystoreVault(plaintext)
+        val envelopeJson = encryptRemoteEnvelope(
+            plaintextJson = plaintext,
+            passphrase = passphrase.toCharArray()
+        )
+        val encoded = Base64.encodeToString(
+            envelopeJson.toByteArray(StandardCharsets.UTF_8),
+            Base64.NO_WRAP
+        )
+        return "TCFG://$encoded"
+    }
+
+    /**
+     * Accepts either a `TCFG://` Base64-wrapped envelope or a raw JSON envelope string,
+     * decrypts it with the provided passphrase, and persists it in Android Keystore.
+     */
+    fun importEncryptedTcfgCode(
+        rawCode: String,
+        passphrase: String
+    ): Result<DecryptedVaultBundle> {
+        return try {
+            val trimmed = rawCode.trim()
+            val envelopeJson = if (trimmed.startsWith("TCFG://", ignoreCase = true)) {
+                val b64 = trimmed.substring(7).trim()
+                String(Base64.decode(b64, Base64.DEFAULT), StandardCharsets.UTF_8)
+            } else {
+                trimmed
+            }
+            decryptAndPersistRemoteEnvelope(envelopeJson, passphrase.toCharArray())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun hasKeystoreBackup(): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.contains(PREF_KEY_CIPHERTEXT) && prefs.contains(PREF_KEY_IV)
+    }
 }
+

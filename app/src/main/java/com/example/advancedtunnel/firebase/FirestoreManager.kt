@@ -64,17 +64,33 @@ fun handleFirestoreError(
 }
 
 class FirestoreManager(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore?
 ) {
-    constructor(context: Context) : this(
-        FirebaseFirestore.getInstance(
-            context.applicationContext.getString(R.string.firestore_database_id)
-        )
-    )
+    constructor(context: Context) : this(createFirestore(context))
+
+    companion object {
+        private fun createFirestore(context: Context): FirebaseFirestore? = try {
+            val appContext = context.applicationContext
+            if (com.google.firebase.FirebaseApp.getApps(appContext).isEmpty()) {
+                com.google.firebase.FirebaseApp.initializeApp(appContext)
+            }
+            FirebaseFirestore.getInstance(
+                appContext.getString(R.string.firestore_database_id)
+            )
+        } catch (e: Throwable) {
+            Log.e("FirestoreManager", "Firestore init warning: ${e.message}")
+            null
+        }
+    }
 
     fun observeRelayServers(userId: String): Flow<List<RelayServer>> = callbackFlow {
+        val db = firestore
+        if (db == null) {
+            awaitClose { }
+            return@callbackFlow
+        }
         val path = "users/$userId/relay_servers"
-        val collection = firestore.collection("users").document(userId).collection("relay_servers")
+        val collection = db.collection("users").document(userId).collection("relay_servers")
         val listener = collection.addSnapshotListener { snapshot, error ->
             if (error != null) {
                 handleFirestoreError(error, OperationType.LIST, path)
@@ -83,12 +99,6 @@ class FirestoreManager(
             if (snapshot != null) {
                 val servers = snapshot.documents.mapNotNull { doc ->
                     try {
-                        val rawCreatedAt = doc.get("createdAt") ?: doc.get("updatedAt")
-                        val _createdMs = when (rawCreatedAt) {
-                            is Timestamp -> rawCreatedAt.toDate().time
-                            is Number -> rawCreatedAt.toLong()
-                            else -> System.currentTimeMillis()
-                        }
                         RelayServer(
                             id = doc.id,
                             name = doc.getString("name") ?: "",
@@ -108,9 +118,10 @@ class FirestoreManager(
     }
 
     suspend fun saveRelayServer(userId: String, server: RelayServer): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firestore not initialized"))
         val path = "users/$userId/relay_servers/${server.id}"
         return try {
-            val doc = firestore.collection("users").document(userId).collection("relay_servers").document(server.id)
+            val doc = db.collection("users").document(userId).collection("relay_servers").document(server.id)
             val data = mapOf(
                 "name" to server.name,
                 "host" to server.host,
@@ -129,9 +140,10 @@ class FirestoreManager(
     }
 
     suspend fun deleteRelayServer(userId: String, serverId: String): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firestore not initialized"))
         val path = "users/$userId/relay_servers/$serverId"
         return try {
-            firestore.collection("users").document(userId).collection("relay_servers").document(serverId).delete().await()
+            db.collection("users").document(userId).collection("relay_servers").document(serverId).delete().await()
             Result.success(Unit)
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.DELETE, path)

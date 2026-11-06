@@ -4,6 +4,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -26,8 +28,13 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -48,12 +55,29 @@ import androidx.compose.ui.window.Dialog
 import com.example.advancedtunnel.ui.theme.BorderDark
 import com.example.advancedtunnel.ui.theme.CardBackground
 import com.example.advancedtunnel.ui.theme.CyanPrimary
+import com.example.advancedtunnel.ui.theme.DestructiveRed
 import com.example.advancedtunnel.ui.theme.SurfaceDark
-import com.example.advancedtunnel.ui.theme.SurfaceVariantDark
 import com.example.advancedtunnel.ui.theme.TextMuted
 import com.example.advancedtunnel.ui.theme.TextPrimary
 import com.example.advancedtunnel.ui.theme.TextSecondary
 import com.example.advancedtunnel.viewmodel.TunnelViewModel
+
+private data class AppEntry(
+    val label: String,
+    val packageName: String,
+    val category: String,
+    val isSystem: Boolean
+)
+
+private fun inferCategory(pkg: String, label: String): String {
+    val combined = "${pkg.lowercase()} ${label.lowercase()}"
+    return when {
+        combined.contains("chrome") || combined.contains("browser") || combined.contains("firefox") || combined.contains("opera") || combined.contains("brave") -> "Browsers"
+        combined.contains("whatsapp") || combined.contains("telegram") || combined.contains("messenger") || combined.contains("signal") || combined.contains("discord") || combined.contains("chat") -> "Messaging"
+        combined.contains("youtube") || combined.contains("spotify") || combined.contains("netflix") || combined.contains("music") || combined.contains("video") || combined.contains("media") -> "Media"
+        else -> "General"
+    }
+}
 
 @Composable
 fun SplitTunnelingCard(
@@ -189,13 +213,62 @@ fun SplitTunnelingCard(
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Select Apps to Bypass VPN (${disallowedApps.size})", fontSize = 12.sp)
+                    Text("Search & Filter Bypassed Apps (${disallowedApps.size})", fontSize = 12.sp)
                 }
             }
         }
     }
 
     if (showAppPicker) {
+        var searchQuery by remember { mutableStateOf("") }
+        var selectedCategory by remember { mutableStateOf("All") }
+        var showSystemApps by remember { mutableStateOf(false) }
+
+        val allApps = remember(context) {
+            val defaults = listOf(
+                AppEntry("Google Chrome", "com.android.chrome", "Browsers", false),
+                AppEntry("Firefox Browser", "org.mozilla.firefox", "Browsers", false),
+                AppEntry("WhatsApp", "com.whatsapp", "Messaging", false),
+                AppEntry("Telegram", "org.telegram.messenger", "Messaging", false),
+                AppEntry("YouTube", "com.google.android.youtube", "Media", false),
+                AppEntry("Spotify", "com.spotify.music", "Media", false)
+            )
+            try {
+                val pm = context.packageManager
+                val installed = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                    .map { info ->
+                        val label = try {
+                            pm.getApplicationLabel(info).toString()
+                        } catch (_: Exception) {
+                            info.packageName
+                        }
+                        val isSys = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                        AppEntry(
+                            label = label,
+                            packageName = info.packageName,
+                            category = inferCategory(info.packageName, label),
+                            isSystem = isSys
+                        )
+                    }
+                    .sortedBy { it.label.lowercase() }
+                if (installed.isEmpty()) defaults else (defaults + installed).distinctBy { it.packageName }
+            } catch (_: Exception) {
+                defaults
+            }
+        }
+
+        val filteredApps = remember(allApps, searchQuery, selectedCategory, showSystemApps) {
+            allApps.filter { app ->
+                val matchesSystem = showSystemApps || !app.isSystem || app.category != "General"
+                val matchesCategory = selectedCategory == "All" || app.category.equals(selectedCategory, ignoreCase = true)
+                val q = searchQuery.trim().lowercase()
+                val matchesSearch = q.isEmpty() ||
+                    app.label.lowercase().contains(q) ||
+                    app.packageName.lowercase().contains(q)
+                matchesSystem && matchesCategory && matchesSearch
+            }
+        }
+
         Dialog(onDismissRequest = { showAppPicker = false }) {
             Card(
                 modifier = Modifier
@@ -217,7 +290,7 @@ fun SplitTunnelingCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "EXCLUDED APPS (SPLIT TUNNELING)",
+                            text = "PER-APP SPLIT TUNNELING PICKER",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = CyanPrimary,
@@ -233,76 +306,139 @@ fun SplitTunnelingCard(
                     }
 
                     Text(
-                        text = "Checked applications will bypass the VPN tunnel and connect directly through your physical Wi-Fi/Cellular interface:",
+                        text = "Checked apps bypass the VPN tunnel (addDisallowedApplication) and route directly over Wi-Fi/Cellular:",
                         fontSize = 11.sp,
                         color = TextSecondary,
                         lineHeight = 15.sp
                     )
 
-                    val installedApps = remember(context) {
-                        try {
-                            val pm = context.packageManager
-                            pm.getInstalledApplications(PackageManager.GET_META_DATA)
-                                .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 || it.packageName.contains("chrome") || it.packageName.contains("browser") }
-                                .sortedBy { pm.getApplicationLabel(it).toString().lowercase() }
-                        } catch (_: Exception) {
-                            emptyList()
+                    // Search Bar
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Search app name or package…", fontSize = 11.sp) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search",
+                                tint = CyanPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("split_tunnel_search_input"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = CyanPrimary,
+                            unfocusedBorderColor = BorderDark,
+                            focusedContainerColor = SurfaceDark,
+                            unfocusedContainerColor = SurfaceDark,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    // Category Filter Chips + System App Toggle
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        listOf("All", "Browsers", "Messaging", "Media").forEach { cat ->
+                            val selected = selectedCategory == cat
+                            FilterChip(
+                                selected = selected,
+                                onClick = { selectedCategory = cat },
+                                label = { Text(cat, fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = CyanPrimary,
+                                    selectedLabelColor = SurfaceDark,
+                                    containerColor = SurfaceDark,
+                                    labelColor = TextSecondary
+                                )
+                            )
+                        }
+                        FilterChip(
+                            selected = showSystemApps,
+                            onClick = { showSystemApps = !showSystemApps },
+                            label = { Text("System Apps", fontSize = 11.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = CyanPrimary.copy(alpha = 0.25f),
+                                selectedLabelColor = CyanPrimary,
+                                containerColor = SurfaceDark,
+                                labelColor = TextMuted
+                            )
+                        )
+                    }
+
+                    // Bulk Actions Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.setDisallowedAppsBulk(filteredApps.map { it.packageName }.toSet())
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, CyanPrimary)
+                        ) {
+                            Text("Exclude Visible (${filteredApps.size})", fontSize = 10.sp, color = CyanPrimary)
+                        }
+
+                        if (disallowedApps.isNotEmpty()) {
+                            OutlinedButton(
+                                onClick = { viewModel.clearDisallowedApps() },
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, DestructiveRed)
+                            ) {
+                                Text("Clear All (${disallowedApps.size})", fontSize = 10.sp, color = DestructiveRed)
+                            }
                         }
                     }
 
-                    if (installedApps.isEmpty()) {
-                        listOf(
-                            Triple("Google Chrome", "com.android.chrome", "Browser"),
-                            Triple("YouTube", "com.google.android.youtube", "Video"),
-                            Triple("Spotify", "com.spotify.music", "Audio"),
-                            Triple("WhatsApp", "com.whatsapp", "Messaging")
-                        ).forEach { (appName, pkg, category) ->
-                            val isChecked = disallowedApps.contains(pkg)
+                    // Filtered App List
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        filteredApps.take(40).forEach { app ->
+                            val isChecked = disallowedApps.contains(app.packageName)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { viewModel.toggleDisallowedApp(pkg) }
+                                    .clickable { viewModel.toggleDisallowedApp(app.packageName) }
                                     .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Checkbox(
                                     checked = isChecked,
-                                    onCheckedChange = { viewModel.toggleDisallowedApp(pkg) },
+                                    onCheckedChange = { viewModel.toggleDisallowedApp(app.packageName) },
                                     colors = CheckboxDefaults.colors(checkedColor = CyanPrimary)
                                 )
                                 Column(modifier = Modifier.padding(start = 8.dp)) {
-                                    Text(appName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                    Text("$pkg • $category", fontSize = 11.sp, color = TextMuted)
-                                }
-                            }
-                        }
-                    } else {
-                        installedApps.forEach { appInfo ->
-                            val pkg = appInfo.packageName
-                            val label = try { context.packageManager.getApplicationLabel(appInfo).toString() } catch (_: Exception) { pkg }
-                            val isChecked = disallowedApps.contains(pkg)
-
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { viewModel.toggleDisallowedApp(pkg) }
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Checkbox(
-                                    checked = isChecked,
-                                    onCheckedChange = { viewModel.toggleDisallowedApp(pkg) },
-                                    colors = CheckboxDefaults.colors(checkedColor = CyanPrimary)
-                                )
-                                Column(modifier = Modifier.padding(start = 8.dp)) {
-                                    Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                    Text(pkg, fontSize = 11.sp, color = TextMuted)
+                                    Text(
+                                        text = app.label,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = TextPrimary
+                                    )
+                                    Text(
+                                        text = "${app.packageName} • ${app.category}",
+                                        fontSize = 11.sp,
+                                        color = TextMuted
+                                    )
                                 }
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     Button(
                         onClick = { showAppPicker = false },
@@ -310,7 +446,7 @@ fun SplitTunnelingCard(
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Done", fontWeight = FontWeight.Bold)
+                        Text("Apply Split Tunneling (${disallowedApps.size} Excluded)", fontWeight = FontWeight.Bold)
                     }
                 }
             }

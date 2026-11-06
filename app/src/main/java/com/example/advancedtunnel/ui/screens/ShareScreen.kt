@@ -82,11 +82,17 @@ fun ShareScreen(
     val context = LocalContext.current
     val savedProfiles by viewModel.savedProfiles.collectAsState()
     val exportedCode by viewModel.exportedCode.collectAsState()
+    val exportedVaultCode by viewModel.exportedVaultCode.collectAsState()
+    val hasKeystoreVaultBackup by viewModel.hasKeystoreVaultBackup.collectAsState()
 
     var profileName by remember { mutableStateOf("") }
     var importCodeText by remember { mutableStateOf("") }
     var importError by remember { mutableStateOf<String?>(null) }
     var showQrScannerDialog by remember { mutableStateOf(false) }
+
+    var vaultPassphrase by remember { mutableStateOf("") }
+    var vaultImportInput by remember { mutableStateOf("") }
+    var vaultStatusMessage by remember { mutableStateOf<String?>(null) }
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -115,6 +121,198 @@ fun ShareScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Encrypted Configuration Vault (AES-256-GCM + Android Keystore)
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("encrypted_vault_card"),
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
+            shape = RoundedCornerShape(16.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, CyanPrimary.copy(alpha = 0.6f))
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "ENCRYPTED VAULT (AES-256-GCM + KEYSTORE)",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = CyanPrimary,
+                        letterSpacing = 1.sp
+                    )
+                    Text(
+                        text = if (hasKeystoreVaultBackup) "KEYSTORE BACKED" else "READY",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = CyanPrimary
+                    )
+                }
+
+                Text(
+                    text = "Export or import password-protected TCFG:// configuration bundles using PBKDF2-HMAC-SHA256 (120,000 iterations) + AES-256-GCM and hardware-backed AndroidKeyStore wrapping.",
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                    lineHeight = 16.sp
+                )
+
+                OutlinedTextField(
+                    value = vaultPassphrase,
+                    onValueChange = {
+                        vaultPassphrase = it
+                        vaultStatusMessage = null
+                    },
+                    placeholder = { Text("Vault passphrase (min 4 chars)", fontSize = 12.sp) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("vault_passphrase_input"),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = CyanPrimary,
+                        unfocusedBorderColor = BorderDark,
+                        focusedContainerColor = SurfaceDark,
+                        unfocusedContainerColor = SurfaceDark,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    singleLine = true
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            val code = viewModel.exportEncryptedVault(vaultPassphrase)
+                            if (code != null) {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Encrypted TCFG Vault", code))
+                                vaultStatusMessage = "Encrypted TCFG:// bundle copied & saved to Keystore."
+                                Toast.makeText(context, "Encrypted TCFG:// bundle copied", Toast.LENGTH_SHORT).show()
+                            } else {
+                                vaultStatusMessage = "Enter a passphrase of at least 4 characters."
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .testTag("export_encrypted_vault_button"),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = CyanPrimary,
+                            contentColor = SurfaceDark
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Encrypt & Copy TCFG", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    if (hasKeystoreVaultBackup) {
+                        OutlinedButton(
+                            onClick = {
+                                val res = viewModel.restoreFromKeystoreVault()
+                                vaultStatusMessage = res.getOrElse { "Keystore restore failed: ${it.localizedMessage}" }
+                                if (res.isSuccess) {
+                                    Toast.makeText(context, "Restored from Android Keystore", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier
+                                .height(44.dp)
+                                .testTag("restore_keystore_vault_button"),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, CyanPrimary),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("Restore Keystore", fontSize = 11.sp, color = CyanPrimary)
+                        }
+                    }
+                }
+
+                if (exportedVaultCode != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(SurfaceDark)
+                            .border(1.dp, BorderDark, RoundedCornerShape(10.dp))
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = exportedVaultCode!!,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            color = CyanPrimary,
+                            maxLines = 4
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = vaultImportInput,
+                    onValueChange = {
+                        vaultImportInput = it
+                        vaultStatusMessage = null
+                    },
+                    placeholder = { Text("Paste TCFG://... or encrypted JSON envelope", fontSize = 11.sp) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(74.dp)
+                        .testTag("import_vault_code_input"),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = CyanPrimary,
+                        unfocusedBorderColor = BorderDark,
+                        focusedContainerColor = SurfaceDark,
+                        unfocusedContainerColor = SurfaceDark
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        color = TextPrimary
+                    )
+                )
+
+                Button(
+                    onClick = {
+                        val res = viewModel.importEncryptedVault(vaultImportInput, vaultPassphrase)
+                        if (res.isSuccess) {
+                            vaultStatusMessage = res.getOrNull()
+                            vaultImportInput = ""
+                            Toast.makeText(context, "Encrypted Vault imported!", Toast.LENGTH_SHORT).show()
+                            onNavigateToConfig()
+                        } else {
+                            vaultStatusMessage = "Decryption failed: ${res.exceptionOrNull()?.localizedMessage ?: "Invalid passphrase or envelope"}"
+                        }
+                    },
+                    enabled = vaultImportInput.isNotBlank() && vaultPassphrase.isNotBlank(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .testTag("decrypt_import_vault_button"),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = SurfaceVariantDark,
+                        contentColor = TextPrimary
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Decrypt & Apply TCFG Bundle", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+
+                if (vaultStatusMessage != null) {
+                    Text(
+                        text = vaultStatusMessage!!,
+                        fontSize = 11.sp,
+                        color = if (vaultStatusMessage!!.startsWith("Decryption failed") || vaultStatusMessage!!.startsWith("Enter")) DestructiveRed else CyanPrimary
+                    )
+                }
+            }
+        }
+
         // Saved Profiles Section
         Card(
             modifier = Modifier.fillMaxWidth(),

@@ -6,22 +6,45 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.example.advancedtunnel.vpn.DesyncSocketWrapper
+import com.example.advancedtunnel.vpn.KeepAliveManager
+import com.example.advancedtunnel.vpn.TlsFingerprintEngine
+import com.example.advancedtunnel.vpn.TlsFragmentConfig
+import com.example.advancedtunnel.vpn.TlsFragmentMode
+import com.example.advancedtunnel.vpn.TlsFragmentationEngine
 import com.example.advancedtunnel.vpn.VpnManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import javax.net.ssl.SNIHostName
-import javax.net.ssl.SSLParameters
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 
+/**
+ * Unified Foreground VpnService (`AdvancedVpnService`) managing:
+ * - Virtual TUN interface (`tun0`, MTU 1500, IPv4 `10.0.0.2/24`, IPv6 `fd00:1234:5678::2/64`)
+ * - Full-tunnel routing (`0.0.0.0/0`, `::/0`) with `addDisallowedApplication` & Killswitch (`setBlocking`)
+ * - Outbound TLS + custom SNI + TLS Record Fragmentation (`DesyncSocketWrapper`) + JA3/JA4 Fingerprint Spoofing (`TlsFingerprintEngine`)
+ * - `KeepAliveManager` (`PARTIAL_WAKE_LOCK`, `WIFI_MODE_FULL_LOW_LATENCY`, adaptive TCP/UDP heartbeats)
+ * - Android 14+ (`UPSIDE_DOWN_CAKE`) `FOREGROUND_SERVICE_TYPE_SPECIAL_USE` compliance
+ */
 class AdvancedVpnService : VpnService(), Runnable {
 
     companion object {
@@ -30,6 +53,8 @@ class AdvancedVpnService : VpnService(), Runnable {
         private const val NOTIFICATION_ID = 1001
         private const val BUFFER_SIZE = 32768
     }
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile
     private var vpnInterface: ParcelFileDescriptor? = null
@@ -40,17 +65,33 @@ class AdvancedVpnService : VpnService(), Runnable {
     private var tunnelThread: Thread? = null
     private val isRunning = AtomicBoolean(false)
     private val sessionIdGenerator = AtomicLong(0L)
+    private var keepAliveManager: KeepAliveManager? = null
 
     private var serverIp = ""
     private var serverPort = 443
     private var sniHost = ""
     private var rawPayload = ""
     private var protocol = "tls"
+    private var socksHost = ""
+    private var socksPort = 10808
     private var killswitchEnabled = false
     private var disallowedApps = ArrayList<String>()
+    private var tlsFragmentConfig = TlsFragmentConfig()
 
     private var totalBytesSent: Long = 0
     private var totalBytesReceived: Long = 0
+
+    override fun onCreate() {
+        super.onCreate()
+        keepAliveManager = KeepAliveManager(
+            context = applicationContext,
+            scope = serviceScope,
+            onReconnectRequired = { reason ->
+                VpnManager.appendTelemetryLog("WARN", "KeepAlive recovery triggered: $reason")
+                false
+            }
+        )
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "ACTION_STOP") {
@@ -63,8 +104,49 @@ class AdvancedVpnService : VpnService(), Runnable {
         sniHost = intent?.getStringExtra("SNI_HOST") ?: ""
         rawPayload = intent?.getStringExtra("PAYLOAD") ?: ""
         protocol = intent?.getStringExtra("PROTOCOL") ?: "tls"
+        socksHost = intent?.getStringExtra("SOCKS_HOST") ?: ""
+        socksPort = intent?.getIntExtra("SOCKS_PORT", 10808) ?: 10808
         killswitchEnabled = intent?.getBooleanExtra("KILLSWITCH_ENABLED", false) ?: false
         disallowedApps = intent?.getStringArrayListExtra("DISALLOWED_APPS") ?: ArrayList()
+
+        val fragEnabled = intent?.getBooleanExtra("TLS_FRAG_ENABLED", true) ?: true
+        val fragModeId = intent?.getStringExtra("TLS_FRAG_MODE") ?: TlsFragmentMode.TLS_RECORD_AND_TCP.id
+        val minChunk = intent?.getIntExtra("TLS_FRAG_MIN_CHUNK", 5) ?: 5
+        val maxChunk = intent?.getIntExtra("TLS_FRAG_MAX_CHUNK", 15) ?: 15
+        val minJitter = intent?.getIntExtra("TLS_FRAG_MIN_JITTER", 3) ?: 3
+        val maxJitter = intent?.getIntExtra("TLS_FRAG_MAX_JITTER", 12) ?: 12
+        val ja3ProfileId = intent?.getStringExtra("TLS_JA3_PROFILE_ID") ?: "chrome_128_android"
+        val alpnEnabled = intent?.getBooleanExtra("TLS_ALPN_ENABLED", true) ?: true
+
+        tlsFragmentConfig = TlsFragmentConfig(
+            enabled = fragEnabled,
+            mode = TlsFragmentMode.fromId(fragModeId),
+            minChunkBytes = minChunk,
+            maxChunkBytes = maxChunk,
+            minJitterMs = minJitter,
+            maxJitterMs = maxJitter,
+            fingerprintProfileId = ja3ProfileId,
+            alpnEnabled = alpnEnabled
+        )
+
+        // Always-On VPN support: if started by Android OS without extras, load persisted profile
+        if (serverIp.isBlank()) {
+            val repo = com.example.advancedtunnel.data.TunnelRepository(applicationContext)
+            val (savedProfile, _) = repo.loadActiveProfile()
+            serverIp = savedProfile.ip
+            serverPort = savedProfile.port.toIntOrNull() ?: 443
+            sniHost = savedProfile.sni
+            rawPayload = savedProfile.payload
+            killswitchEnabled = repo.loadKillswitchEnabled()
+            tlsFragmentConfig = repo.loadTlsFragmentConfig()
+            if (repo.loadSplitTunnelingEnabled()) {
+                disallowedApps = ArrayList(repo.loadDisallowedApps())
+            }
+            VpnManager.appendTelemetryLog(
+                "INFO",
+                "Always-On VPN start triggered using stored profile ($serverIp:$serverPort)"
+            )
+        }
 
         if (serverIp.isBlank()) {
             Log.e(TAG, "No server IP provided")
@@ -82,15 +164,88 @@ class AdvancedVpnService : VpnService(), Runnable {
         totalBytesSent = 0
         totalBytesReceived = 0
         isRunning.set(true)
+        keepAliveManager?.acquireLocks()
         val currentSession = sessionIdGenerator.incrementAndGet()
         showForegroundNotification("Connecting to $serverIp:$serverPort...")
-        tunnelThread = Thread({ runSession(currentSession) }, "RealVpnTunnelThread-$currentSession").apply { start() }
+        tunnelThread = Thread({ runSession(currentSession) }, "RealVpnTunnelThread-$currentSession").apply {
+            start()
+        }
 
         return START_STICKY
     }
 
     override fun run() {
         runSession(sessionIdGenerator.get())
+    }
+
+    /**
+     * Performs an RFC 1928 SOCKS5 handshake + CONNECT command over a protected socket when
+     * `protocol == "socks5"`.
+     */
+    @Throws(IOException::class)
+    private fun connectSocks5Channel(
+        proxyHost: String,
+        proxyPort: Int,
+        targetHost: String,
+        targetPort: Int,
+        timeoutMs: Int = 7000
+    ): Socket {
+        val socket = Socket()
+        if (!protect(socket)) {
+            Log.w(TAG, "VpnService.protect(socket) returned false for SOCKS5 socket")
+        }
+        socket.tcpNoDelay = true
+        socket.keepAlive = true
+        socket.soTimeout = 20_000
+        socket.connect(InetSocketAddress(proxyHost, proxyPort), timeoutMs)
+
+        val input = DataInputStream(BufferedInputStream(socket.getInputStream()))
+        val output = DataOutputStream(BufferedOutputStream(socket.getOutputStream()))
+
+        output.write(byteArrayOf(0x05, 0x01, 0x00))
+        output.flush()
+
+        val version = input.readByte()
+        val method = input.readByte()
+        if (version != 0x05.toByte() || method != 0x00.toByte()) {
+            socket.close()
+            throw IOException("SOCKS5 negotiation failed (ver=$version, method=$method)")
+        }
+
+        val hostBytes = targetHost.toByteArray(Charsets.US_ASCII)
+        val reqBuf = ByteBuffer.allocate(4 + 1 + hostBytes.size + 2)
+        reqBuf.put(0x05.toByte())
+        reqBuf.put(0x01.toByte())
+        reqBuf.put(0x00.toByte())
+        reqBuf.put(0x03.toByte())
+        reqBuf.put(hostBytes.size.toByte())
+        reqBuf.put(hostBytes)
+        reqBuf.putShort(targetPort.toShort())
+
+        output.write(reqBuf.array())
+        output.flush()
+
+        val repVer = input.readByte()
+        val repStatus = input.readByte()
+        input.readByte()
+        val atyp = input.readByte().toInt() and 0xFF
+
+        if (repVer != 0x05.toByte() || repStatus != 0x00.toByte()) {
+            socket.close()
+            throw IOException("SOCKS5 CONNECT rejected with status=0x${repStatus.toString(16)}")
+        }
+
+        when (atyp) {
+            0x01 -> input.skipBytes(4 + 2)
+            0x03 -> {
+                val len = input.readByte().toInt() and 0xFF
+                input.skipBytes(len + 2)
+            }
+            0x04 -> input.skipBytes(16 + 2)
+            else -> throw IOException("Unsupported SOCKS5 ATYP: $atyp")
+        }
+
+        return socket
     }
 
     private fun runSession(mySessionId: Long) {
@@ -105,42 +260,75 @@ class AdvancedVpnService : VpnService(), Runnable {
             showForegroundNotification("Connecting to $serverIp:$serverPort…")
 
             // 1. Create and protect the outbound socket FIRST to avoid establishing TUN on failure
-            rawSocket = Socket()
-            activeRawSocket = rawSocket
-            val protected = protect(rawSocket)
-            if (!protected) {
-                Log.w(TAG, "Warning: Could not protect raw socket from VPN routing table.")
+            if (protocol.equals("socks5", ignoreCase = true) && socksHost.isNotBlank()) {
+                rawSocket = connectSocks5Channel(socksHost, socksPort, serverIp, serverPort, 7000)
+                activeRawSocket = rawSocket
+            } else {
+                rawSocket = Socket()
+                activeRawSocket = rawSocket
+                val protected = protect(rawSocket)
+                if (!protected) {
+                    Log.w(TAG, "Warning: Could not protect raw socket from VPN routing table.")
+                }
+
+                rawSocket.soTimeout = 20000
+                rawSocket.keepAlive = true
+                rawSocket.tcpNoDelay = true
+
+                // Connect to server with a 7-second timeout for responsive feedback
+                rawSocket.connect(InetSocketAddress(serverIp, serverPort), 7000)
             }
 
-            rawSocket.soTimeout = 20000
-            rawSocket.keepAlive = true
-            rawSocket.tcpNoDelay = true
+            // 2. Wrap underlying TCP socket with DesyncSocketWrapper for TLS Record Fragmentation
+            val effectiveSni = sniHost.ifBlank { serverIp }
+            val desyncSocket = DesyncSocketWrapper(
+                delegate = rawSocket,
+                sniHost = effectiveSni,
+                config = tlsFragmentConfig,
+                onStatsRecorded = { stats ->
+                    VpnManager.appendTelemetryLog(
+                        "DESYNC",
+                        "ClientHello desynchronized: ${stats.originalBytes}B -> ${stats.tlsRecordCount} TLS records, ${stats.tcpWriteChunks} TCP chunks (SNI split @ +${stats.sniSplitOffset}B, jitter ${stats.totalJitterDelayMs}ms)"
+                    )
+                }
+            )
 
-            // Connect to server with a 7-second timeout for responsive feedback
-            rawSocket.connect(InetSocketAddress(serverIp, serverPort), 7000)
-
-            // 2. Establish TLS with SNI
+            // 3. Establish TLS with JA3/JA4 Fingerprint Spoofing & SNI
             val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
-            secureSocket = factory.createSocket(rawSocket, serverIp, serverPort, true) as SSLSocket
+            secureSocket = factory.createSocket(desyncSocket, serverIp, serverPort, true) as SSLSocket
             activeSecureSocket = secureSocket
-            val params = SSLParameters()
-            if (sniHost.isNotBlank()) {
-                params.serverNames = listOf(SNIHostName(sniHost))
-            }
-            secureSocket.sslParameters = params
+
+            val appliedFp = TlsFingerprintEngine.applyFingerprintToSocket(
+                sslSocket = secureSocket,
+                profileId = tlsFragmentConfig.fingerprintProfileId,
+                sniHost = sniHost,
+                alpnEnabled = tlsFragmentConfig.alpnEnabled
+            )
+            VpnManager.appendTelemetryLog(
+                "JA3/JA4",
+                "Applied ${appliedFp.profileName} • JA4=${appliedFp.ja4String} • JA3=${appliedFp.ja3HashMd5.take(12)}…"
+            )
+
             secureSocket.startHandshake()
+            desyncSocket.markHandshakeCompleted()
 
             Log.i(TAG, "TLS handshake successfully verified with $sniHost")
+            VpnManager.appendTelemetryLog("SUCCESS", "TLS handshake verified (SNI=$effectiveSni, Cipher=${secureSocket.session?.cipherSuite ?: "AEAD"})")
 
-            // 3. Send handshake protocol payload if configured
+            // 4. Send handshake protocol payload with macro fragmentation ([split], [sni], [ua], [crlf]) if configured
             if (rawPayload.isNotBlank()) {
-                val parsed = rawPayload
-                    .replace("[host]", sniHost.ifBlank { serverIp })
-                    .replace("[crlf]", "\r\n")
-                    .replace("\\r\\n", "\r\n")
-                secureSocket.outputStream.write(parsed.toByteArray(Charsets.UTF_8))
-                secureSocket.outputStream.flush()
-                Log.d(TAG, "Handshake protocol payload transmitted.")
+                val browserProfile = TlsFingerprintEngine.resolveProfile(tlsFragmentConfig.fingerprintProfileId)
+                val bytesWritten = TlsFragmentationEngine.writePayloadWithMacros(
+                    outputStream = secureSocket.outputStream,
+                    rawPayload = rawPayload,
+                    host = serverIp,
+                    port = serverPort,
+                    sni = effectiveSni,
+                    userAgent = browserProfile.userAgent,
+                    config = tlsFragmentConfig
+                )
+                Log.d(TAG, "Handshake protocol payload transmitted ($bytesWritten bytes).")
+                VpnManager.appendTelemetryLog("INFO", "Transmitted HTTP/WS upgrade payload ($bytesWritten bytes)")
             }
 
             val serverIn = secureSocket.inputStream
@@ -197,6 +385,11 @@ class AdvancedVpnService : VpnService(), Runnable {
             // Update state: genuinely CONNECTED only now!
             VpnManager.onServiceConnected("$serverIp:$serverPort")
             showForegroundNotification("Connected to $serverIp:$serverPort")
+            keepAliveManager?.startMonitoring(
+                socketProvider = { activeSecureSocket ?: activeRawSocket },
+                probeTargetHost = serverIp,
+                probeTargetPort = serverPort
+            )
 
             // 5. Downstream thread (Server -> TUN)
             val downThread = Thread({
@@ -208,6 +401,7 @@ class AdvancedVpnService : VpnService(), Runnable {
                             vpnOutput.write(buf, 0, n)
                             vpnOutput.flush()
                             totalBytesReceived += n
+                            keepAliveManager?.recordTrafficActivity()
                             VpnManager.updateTelemetry(totalBytesReceived, totalBytesSent)
                         } else if (n < 0) {
                             Log.i(TAG, "Server closed downstream connection.")
@@ -230,6 +424,7 @@ class AdvancedVpnService : VpnService(), Runnable {
                     serverOut.write(upBuf, 0, n)
                     serverOut.flush()
                     totalBytesSent += n
+                    keepAliveManager?.recordTrafficActivity()
                     VpnManager.updateTelemetry(totalBytesReceived, totalBytesSent)
                 } else if (n < 0) {
                     break
@@ -239,11 +434,11 @@ class AdvancedVpnService : VpnService(), Runnable {
             downThread.join(1000)
 
         } catch (e: java.net.UnknownHostException) {
-            val msg = "Cannot resolve '$serverIp'. Enter your Hetzner Cloud IP or valid domain."
+            val msg = "Cannot resolve '$serverIp'. Enter a valid server IP or domain."
             Log.e(TAG, "DNS resolution failed: $msg", e)
             if (sessionIdGenerator.get() == mySessionId) VpnManager.onServiceStopped(msg)
         } catch (e: java.net.SocketTimeoutException) {
-            val msg = "Connection to $serverIp:$serverPort timed out after 7s. Check Hetzner firewall rules."
+            val msg = "Connection to $serverIp:$serverPort timed out after 7s. Check firewall rules."
             Log.e(TAG, "Connection timeout: $msg", e)
             if (sessionIdGenerator.get() == mySessionId) VpnManager.onServiceStopped(msg)
         } catch (e: java.net.ConnectException) {
@@ -319,11 +514,20 @@ class AdvancedVpnService : VpnService(), Runnable {
             .setOngoing(true)
             .build()
 
-        startForeground(NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
     }
 
     private fun stopTunnel(reason: String? = null, stopService: Boolean = true) {
         val wasRunning = isRunning.getAndSet(false)
+        keepAliveManager?.stopMonitoringAndReleaseLocks()
         closeActiveResources()
         tunnelThread?.interrupt()
         tunnelThread = null
@@ -343,6 +547,7 @@ class AdvancedVpnService : VpnService(), Runnable {
 
     override fun onDestroy() {
         stopTunnel("Service destroyed", stopService = false)
+        serviceScope.cancel()
         super.onDestroy()
     }
 }

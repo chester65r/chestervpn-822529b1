@@ -6,6 +6,8 @@ import com.example.advancedtunnel.model.RelayServer
 import com.example.advancedtunnel.model.SAMPLE_VPS_SERVERS
 import com.example.advancedtunnel.model.SavedProfile
 import com.example.advancedtunnel.model.TunnelProfile
+import com.example.advancedtunnel.vpn.TlsFragmentConfig
+import com.example.advancedtunnel.vpn.TlsFragmentMode
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -25,6 +27,15 @@ class TunnelRepository(context: Context) {
         private const val KEY_DISALLOWED_APPS = "disallowed_apps_set"
         private const val KEY_SAVED_PROFILES = "saved_profiles_json"
         private const val KEY_CUSTOM_SERVERS = "custom_servers_json"
+
+        private const val KEY_FRAG_ENABLED = "tls_frag_enabled"
+        private const val KEY_FRAG_MODE = "tls_frag_mode"
+        private const val KEY_FRAG_MIN_CHUNK = "tls_frag_min_chunk"
+        private const val KEY_FRAG_MAX_CHUNK = "tls_frag_max_chunk"
+        private const val KEY_FRAG_MIN_JITTER = "tls_frag_min_jitter"
+        private const val KEY_FRAG_MAX_JITTER = "tls_frag_max_jitter"
+        private const val KEY_JA3_PROFILE_ID = "tls_ja3_profile_id"
+        private const val KEY_ALPN_ENABLED = "tls_alpn_enabled"
     }
 
     fun loadKillswitchEnabled(): Boolean = prefs.getBoolean(KEY_KILLSWITCH, false)
@@ -35,6 +46,41 @@ class TunnelRepository(context: Context) {
 
     fun loadDisallowedApps(): Set<String> = prefs.getStringSet(KEY_DISALLOWED_APPS, emptySet()) ?: emptySet()
     fun saveDisallowedApps(apps: Set<String>) = prefs.edit().putStringSet(KEY_DISALLOWED_APPS, apps).apply()
+
+    fun loadTlsFragmentConfig(): TlsFragmentConfig {
+        val enabled = prefs.getBoolean(KEY_FRAG_ENABLED, true)
+        val modeId = prefs.getString(KEY_FRAG_MODE, TlsFragmentMode.TLS_RECORD_AND_TCP.id)
+            ?: TlsFragmentMode.TLS_RECORD_AND_TCP.id
+        val minChunk = prefs.getInt(KEY_FRAG_MIN_CHUNK, 5)
+        val maxChunk = prefs.getInt(KEY_FRAG_MAX_CHUNK, 15)
+        val minJitter = prefs.getInt(KEY_FRAG_MIN_JITTER, 3)
+        val maxJitter = prefs.getInt(KEY_FRAG_MAX_JITTER, 12)
+        val profileId = prefs.getString(KEY_JA3_PROFILE_ID, "chrome_128_android") ?: "chrome_128_android"
+        val alpn = prefs.getBoolean(KEY_ALPN_ENABLED, true)
+        return TlsFragmentConfig(
+            enabled = enabled,
+            mode = TlsFragmentMode.fromId(modeId),
+            minChunkBytes = minChunk,
+            maxChunkBytes = maxChunk,
+            minJitterMs = minJitter,
+            maxJitterMs = maxJitter,
+            fingerprintProfileId = profileId,
+            alpnEnabled = alpn
+        )
+    }
+
+    fun saveTlsFragmentConfig(config: TlsFragmentConfig) {
+        prefs.edit()
+            .putBoolean(KEY_FRAG_ENABLED, config.enabled)
+            .putString(KEY_FRAG_MODE, config.mode.id)
+            .putInt(KEY_FRAG_MIN_CHUNK, config.normalizedMinChunk())
+            .putInt(KEY_FRAG_MAX_CHUNK, config.normalizedMaxChunk())
+            .putInt(KEY_FRAG_MIN_JITTER, config.normalizedMinJitter())
+            .putInt(KEY_FRAG_MAX_JITTER, config.normalizedMaxJitter())
+            .putString(KEY_JA3_PROFILE_ID, config.fingerprintProfileId)
+            .putBoolean(KEY_ALPN_ENABLED, config.alpnEnabled)
+            .apply()
+    }
 
     fun loadActiveProfile(): Pair<TunnelProfile, String> {
         var ip = prefs.getString(KEY_ACTIVE_PROFILE_IP, "") ?: ""

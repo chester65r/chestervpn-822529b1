@@ -59,6 +59,7 @@ import com.example.advancedtunnel.model.PayloadGeneratorConfig
 import com.example.advancedtunnel.model.ROUTE_PRESETS
 import com.example.advancedtunnel.model.TunnelStatus
 import com.example.advancedtunnel.model.TunnelUtils
+import com.example.advancedtunnel.ui.components.AntiDpiConfigCard
 import com.example.advancedtunnel.ui.components.NetworkDiagnosticsCard
 import com.example.advancedtunnel.ui.components.SplitTunnelingCard
 import com.example.advancedtunnel.ui.theme.BorderDark
@@ -366,6 +367,38 @@ fun ConfigScreen(
                             borderColor = BorderDark
                         )
                     )
+                    SuggestionChip(
+                        onClick = {
+                            if (!isLocked) {
+                                viewModel.updateProfile(payload = profile.payload + "[split]")
+                            }
+                        },
+                        label = { Text("[split]", fontFamily = FontFamily.Monospace, fontSize = 11.sp) },
+                        colors = SuggestionChipDefaults.suggestionChipColors(
+                            containerColor = SurfaceDark,
+                            labelColor = CyanPrimary
+                        ),
+                        border = SuggestionChipDefaults.suggestionChipBorder(
+                            enabled = true,
+                            borderColor = BorderDark
+                        )
+                    )
+                    SuggestionChip(
+                        onClick = {
+                            if (!isLocked) {
+                                viewModel.updateProfile(payload = profile.payload + "[sni]")
+                            }
+                        },
+                        label = { Text("[sni]", fontFamily = FontFamily.Monospace, fontSize = 11.sp) },
+                        colors = SuggestionChipDefaults.suggestionChipColors(
+                            containerColor = SurfaceDark,
+                            labelColor = CyanPrimary
+                        ),
+                        border = SuggestionChipDefaults.suggestionChipBorder(
+                            enabled = true,
+                            borderColor = BorderDark
+                        )
+                    )
                 }
             }
         }
@@ -405,6 +438,9 @@ fun ConfigScreen(
                 }
             }
         }
+
+        // TLS Record Fragmentation & JA3/JA4 Fingerprint Spoofing Card
+        AntiDpiConfigCard(viewModel = viewModel)
 
         // Killswitch & Split Tunneling Card
         SplitTunnelingCard(viewModel = viewModel)
