@@ -600,6 +600,4 @@ export {
   payloadBuilder,
   connectionTester,
   DEFAULT_PORTS,
-  validateTunnelConfig,
-  createDefaultConfig,
 };

@@ -245,9 +245,9 @@ export class WireGuardConfigGenerator {
             result.presharedKey = value;
             break;
           case "Endpoint":
-            const [host, port] = value.split(":");
+            const [host = "", port = "0"] = value.split(":");
             result.endpointHost = host;
-            result.endpointPort = parseInt(port);
+            result.endpointPort = parseInt(port, 10) || 0;
             break;
           case "AllowedIPs":
             result.allowedIps = value.split(",").map((s) => s.trim());
@@ -411,8 +411,11 @@ export class WireGuardProfileManager {
    * Import profile from config
    */
   importProfile(name: string, config: string): WireGuardProfile | null {
-    const client = wireguardGenerator.parseConfig(config);
-    if (!client) return null;
+    const parsed = wireguardGenerator.parseConfig(config);
+    if (!parsed) return null;
+    // Only a client config can become a profile; a server config carries no server public key.
+    if (!("serverPublicKey" in parsed)) return null;
+    const client: WireGuardClient = parsed;
     
     // For imported configs, we can't generate the server config
     // So we'll create a minimal server placeholder
@@ -531,16 +534,3 @@ export class WireGuardConnectionManager {
 }
 
 export const wireguardConnectionManager = new WireGuardConnectionManager();
-
-// ============================================================================
-// Export Summary
-// ============================================================================
-
-export {
-  generateWireGuardKeyPair,
-  generatePresharedKey,
-  isValidWireGuardKey,
-  wireguardGenerator,
-  wireguardProfileManager,
-  wireguardConnectionManager,
-};

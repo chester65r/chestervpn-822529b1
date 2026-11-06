@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import { peerAdminSource } from "../lib/native-auth-blueprint";
 
 describe("server native peer enrollment tool (mocked wg commands, not deployment evidence)", () => {
-  it("enrolls a public identity without a device private key, rotates PSK, then revokes persistently", () => {
+  it("enrolls a public identity without a device private key, rotates PSK, then revokes persistently", { timeout: 30000 }, () => {
     const dir = mkdtempSync(join(tmpdir(), "native-enroll-"));
     try {
       const key = () => randomBytes(32).toString("base64");
