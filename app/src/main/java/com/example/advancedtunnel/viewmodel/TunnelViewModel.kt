@@ -1,6 +1,5 @@
 package com.example.advancedtunnel.viewmodel
 
-import android.app.Activity
 import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
@@ -16,19 +15,7 @@ import com.example.advancedtunnel.model.SavedProfile
 import com.example.advancedtunnel.model.TunnelProfile
 import com.example.advancedtunnel.model.TunnelStatus
 import com.example.advancedtunnel.model.TunnelUtils
-import com.example.advancedtunnel.security.ConfigVault
-import com.example.advancedtunnel.vpn.EdgeHunterEngine
-import com.example.advancedtunnel.vpn.EdgeProbeResult
-import com.example.advancedtunnel.vpn.FragmentDispatchStats
-import com.example.advancedtunnel.vpn.NodeBenchmarkMetric
-import com.example.advancedtunnel.vpn.NodeHealthTier
 import com.example.advancedtunnel.vpn.RealVpnState
-import com.example.advancedtunnel.vpn.ServerHealthMonitor
-import com.example.advancedtunnel.vpn.TelemetryLogEntry
-import com.example.advancedtunnel.vpn.TlsFingerprintEngine
-import com.example.advancedtunnel.vpn.TlsFragmentConfig
-import com.example.advancedtunnel.vpn.TlsFragmentMode
-import com.example.advancedtunnel.vpn.TlsFragmentationEngine
 import com.example.advancedtunnel.vpn.VpnManager
 import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.Job
@@ -36,13 +23,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import org.json.JSONArray
-import org.json.JSONObject
 
 class TunnelViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = TunnelRepository(application)
-    private val configVault = ConfigVault(application)
     val authManager = FirebaseAuthManager(application)
     private val firestoreManager = FirestoreManager(application)
     private val geminiService = GeminiAiService()
@@ -52,11 +36,8 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
     val realTxBytes: StateFlow<Long> = VpnManager.txBytes
     val realDownSpeed: StateFlow<Double> = VpnManager.rxSpeed
     val realUpSpeed: StateFlow<Double> = VpnManager.txSpeed
-    val peakDownSpeed: StateFlow<Double> = VpnManager.peakRxSpeed
-    val peakUpSpeed: StateFlow<Double> = VpnManager.peakTxSpeed
     val uptimeSeconds: StateFlow<Long> = VpnManager.uptimeSeconds
     val serverLatencyMs: StateFlow<Long?> = VpnManager.serverLatencyMs
-    val telemetryLogs: StateFlow<List<TelemetryLogEntry>> = VpnManager.telemetryLogs
 
     // Unified TunnelStatus derived directly from RealVpnState (NEVER fake or simulated)
     private val _status = MutableStateFlow(TunnelStatus.DISCONNECTED)
@@ -87,12 +68,6 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
     private val _exportedCode = MutableStateFlow<String?>(null)
     val exportedCode: StateFlow<String?> = _exportedCode.asStateFlow()
 
-    private val _exportedVaultCode = MutableStateFlow<String?>(null)
-    val exportedVaultCode: StateFlow<String?> = _exportedVaultCode.asStateFlow()
-
-    private val _hasKeystoreVaultBackup = MutableStateFlow(false)
-    val hasKeystoreVaultBackup: StateFlow<Boolean> = _hasKeystoreVaultBackup.asStateFlow()
-
     private val _aiHelperText = MutableStateFlow<String?>(null)
     val aiHelperText: StateFlow<String?> = _aiHelperText.asStateFlow()
 
@@ -117,27 +92,6 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
     private val _serverLatencies = MutableStateFlow<Map<String, Long>>(emptyMap())
     val serverLatencies: StateFlow<Map<String, Long>> = _serverLatencies.asStateFlow()
 
-    private val _nodeBenchmarks = MutableStateFlow<Map<String, NodeBenchmarkMetric>>(emptyMap())
-    val nodeBenchmarks: StateFlow<Map<String, NodeBenchmarkMetric>> = _nodeBenchmarks.asStateFlow()
-
-    private val _isBenchmarkingNodes = MutableStateFlow(false)
-    val isBenchmarkingNodes: StateFlow<Boolean> = _isBenchmarkingNodes.asStateFlow()
-
-    private val _autoFailoverEnabled = MutableStateFlow(true)
-    val autoFailoverEnabled: StateFlow<Boolean> = _autoFailoverEnabled.asStateFlow()
-
-    private val _tlsFragmentConfig = MutableStateFlow(repository.loadTlsFragmentConfig())
-    val tlsFragmentConfig: StateFlow<TlsFragmentConfig> = _tlsFragmentConfig.asStateFlow()
-
-    private val _lastDesyncSimStats = MutableStateFlow<FragmentDispatchStats?>(null)
-    val lastDesyncSimStats: StateFlow<FragmentDispatchStats?> = _lastDesyncSimStats.asStateFlow()
-
-    private val _edgeProbeResults = MutableStateFlow<List<EdgeProbeResult>>(emptyList())
-    val edgeProbeResults: StateFlow<List<EdgeProbeResult>> = _edgeProbeResults.asStateFlow()
-
-    private val _isScanningEdges = MutableStateFlow(false)
-    val isScanningEdges: StateFlow<Boolean> = _isScanningEdges.asStateFlow()
-
     private var firestoreSyncJob: Job? = null
 
     init {
@@ -145,7 +99,6 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
         _profile.value = loadedProfile
         _presetId.value = loadedPreset
         _savedProfiles.value = repository.loadSavedProfiles()
-        _hasKeystoreVaultBackup.value = configVault.hasKeystoreBackup()
         val localServers = repository.loadServers()
         if (localServers.isNotEmpty()) {
             _servers.value = localServers
@@ -158,9 +111,6 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
                     is RealVpnState.Connected -> TunnelStatus.CONNECTED
                     is RealVpnState.Connecting, is RealVpnState.Reconnecting -> TunnelStatus.CONNECTING
                     is RealVpnState.Disconnected, is RealVpnState.Failed -> TunnelStatus.DISCONNECTED
-                }
-                if (state is RealVpnState.Failed && _autoFailoverEnabled.value) {
-                    triggerAutoFailoverEvaluation()
                 }
             }
         }
@@ -227,15 +177,7 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
         _presetId.value = id
         val preset = ROUTE_PRESETS.find { it.id == id }
         if (preset != null && preset.sni.isNotEmpty()) {
-            val presetPayload = when (id.lowercase()) {
-                "stc" -> "GET http://[host]/ HTTP/1.1[crlf]Host: [host][crlf]X-Online-Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]"
-                "mobily" -> "CONNECT [host_port] HTTP/1.1[crlf]Host: [host][crlf]Proxy-Connection: Keep-Alive[crlf]Connection: Keep-Alive[crlf]"
-                else -> _profile.value.payload
-            }
-            val updated = _profile.value.copy(
-                sni = preset.sni,
-                payload = presetPayload
-            )
+            val updated = _profile.value.copy(sni = preset.sni)
             _profile.value = updated
             _errors.value = emptyMap()
             repository.saveActiveProfile(updated, id)
@@ -297,80 +239,29 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
+        val isSplit = _splitTunnelingEnabled.value
+        val disallowed = if (isSplit) _disallowedApps.value.toList() else emptyList()
+
         if (VpnManager.isVpnPrepared(context)) {
-            onVpnPermissionGranted(context)
+            VpnManager.startVpn(
+                context = context,
+                profile = _profile.value,
+                killswitchEnabled = _killswitchEnabled.value,
+                disallowedApps = disallowed
+            )
         } else {
             onRequestPermission()
         }
     }
 
-    fun onVpnPermissionGranted(context: Context) {
-        val isSplit = _splitTunnelingEnabled.value
-        val disallowed = if (isSplit) _disallowedApps.value.toList() else emptyList()
-        VpnManager.startVpn(
-            context = context,
-            profile = _profile.value,
-            killswitchEnabled = _killswitchEnabled.value,
-            disallowedApps = disallowed,
-            tlsFragmentConfig = _tlsFragmentConfig.value
-        )
-    }
-
-    fun updateTlsFragmentConfig(
-        enabled: Boolean? = null,
-        mode: TlsFragmentMode? = null,
-        minChunkBytes: Int? = null,
-        maxChunkBytes: Int? = null,
-        minJitterMs: Int? = null,
-        maxJitterMs: Int? = null,
-        fingerprintProfileId: String? = null,
-        alpnEnabled: Boolean? = null
-    ) {
-        val cur = _tlsFragmentConfig.value
-        val updated = cur.copy(
-            enabled = enabled ?: cur.enabled,
-            mode = mode ?: cur.mode,
-            minChunkBytes = (minChunkBytes ?: cur.minChunkBytes).coerceIn(1, 256),
-            maxChunkBytes = (maxChunkBytes ?: cur.maxChunkBytes).coerceIn(1, 512),
-            minJitterMs = (minJitterMs ?: cur.minJitterMs).coerceIn(0, 100),
-            maxJitterMs = (maxJitterMs ?: cur.maxJitterMs).coerceIn(0, 250),
-            fingerprintProfileId = fingerprintProfileId ?: cur.fingerprintProfileId,
-            alpnEnabled = alpnEnabled ?: cur.alpnEnabled
-        )
-        _tlsFragmentConfig.value = updated
-        repository.saveTlsFragmentConfig(updated)
-        val fp = TlsFingerprintEngine.computeFingerprint(
-            profileId = updated.fingerprintProfileId,
-            sniHost = _profile.value.sni.ifBlank { "cloud.google.com" },
-            alpnEnabled = updated.alpnEnabled
-        )
-        VpnManager.appendTelemetryLog(
-            "JA3/JA4",
-            "Updated Anti-DPI config: Mode=${if (updated.enabled) updated.mode.id else "OFF"} (${updated.normalizedMinChunk()}-${updated.normalizedMaxChunk()}B, ${updated.normalizedMinJitter()}-${updated.normalizedMaxJitter()}ms) • JA4=${fp.ja4String}"
-        )
-    }
-
-    fun runClientHelloDesyncSimulation() {
-        val sni = _profile.value.sni.ifBlank { _profile.value.ip.ifBlank { "cloud.google.com" } }
-        val cfg = _tlsFragmentConfig.value
-        val stats = TlsFragmentationEngine.simulateClientHelloDesync(sni, cfg)
-        _lastDesyncSimStats.value = stats
-        VpnManager.appendTelemetryLog(
-            "DESYNC",
-            "Dry-run ClientHello desync ($sni): ${stats.originalBytes}B -> ${stats.tlsRecordCount} records / ${stats.tcpWriteChunks} TCP chunks (SNI split @ +${stats.sniSplitOffset}B, total jitter ${stats.totalJitterDelayMs}ms)"
-        )
-    }
-
     fun toggleKillswitch(enabled: Boolean) {
         _killswitchEnabled.value = enabled
         repository.saveKillswitchEnabled(enabled)
-        VpnManager.appendTelemetryLog("INFO", "Always-On Killswitch set to $enabled")
     }
 
     fun toggleSplitTunneling(enabled: Boolean) {
         _splitTunnelingEnabled.value = enabled
         repository.saveSplitTunnelingEnabled(enabled)
-        VpnManager.appendTelemetryLog("INFO", "Per-App Split Tunneling set to $enabled (${_disallowedApps.value.size} excluded)")
     }
 
     fun toggleDisallowedApp(pkgName: String) {
@@ -382,22 +273,6 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
         }
         _disallowedApps.value = current
         repository.saveDisallowedApps(current)
-    }
-
-    fun setDisallowedAppsBulk(packages: Set<String>) {
-        val updated = _disallowedApps.value.toMutableSet().apply { addAll(packages) }
-        _disallowedApps.value = updated
-        repository.saveDisallowedApps(updated)
-    }
-
-    fun clearDisallowedApps() {
-        _disallowedApps.value = emptySet()
-        repository.saveDisallowedApps(emptySet())
-    }
-
-    fun toggleAutoFailover(enabled: Boolean) {
-        _autoFailoverEnabled.value = enabled
-        VpnManager.appendTelemetryLog("INFO", "Multi-Endpoint Auto-Failover set to $enabled")
     }
 
     fun selectServerNode(server: RelayServer) {
@@ -414,213 +289,15 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun probeAllServerLatencies() {
-        benchmarkAndRankAllServers(applyBestIfAutoFailover = _autoFailoverEnabled.value)
-    }
-
-    fun benchmarkAndRankAllServers(applyBestIfAutoFailover: Boolean = false) {
-        if (_isBenchmarkingNodes.value) return
-        _isBenchmarkingNodes.value = true
         viewModelScope.launch {
-            try {
-                val results = ServerHealthMonitor.benchmarkAllNodes(_servers.value)
-                val benchMap = results.associateBy { it.serverId }
-                _nodeBenchmarks.value = benchMap
-
-                val latMap = _serverLatencies.value.toMutableMap()
-                results.forEach { metric ->
-                    if (metric.avgRttMs >= 0) {
-                        latMap[metric.serverId] = metric.avgRttMs
-                    }
+            val currentMap = _serverLatencies.value.toMutableMap()
+            _servers.value.forEach { server ->
+                val lat = VpnManager.checkServerReachability(server.host, server.port, 2500)
+                if (lat != null) {
+                    currentMap[server.id] = lat
                 }
-                _serverLatencies.value = latMap
-
-                // Reorder servers list so healthy lowest-latency nodes appear first
-                val rankedIds = results.map { it.serverId }
-                val sortedServers = _servers.value.sortedBy { s ->
-                    val idx = rankedIds.indexOf(s.id)
-                    if (idx >= 0) idx else Int.MAX_VALUE
-                }
-                _servers.value = sortedServers
-
-                val bestHealthy = results.firstOrNull { it.tier != NodeHealthTier.UNREACHABLE }
-                if (bestHealthy != null) {
-                    VpnManager.appendTelemetryLog(
-                        "PROBE",
-                        "Benchmarked ${results.size} nodes • Fastest: ${bestHealthy.serverName} (${bestHealthy.avgRttMs}ms, jitter ${bestHealthy.jitterMs}ms)"
-                    )
-                    if (applyBestIfAutoFailover && _status.value != TunnelStatus.CONNECTED) {
-                        val bestServer = sortedServers.find { it.id == bestHealthy.serverId }
-                        if (bestServer != null) {
-                            selectServerNode(bestServer)
-                        }
-                    }
-                } else {
-                    VpnManager.appendTelemetryLog("WARN", "Benchmark completed: all ${results.size} relay endpoints timed out.")
-                }
-            } finally {
-                _isBenchmarkingNodes.value = false
             }
-        }
-    }
-
-    fun runEdgeHunterScan(requestMethod: String = "HEAD") {
-        if (_isScanningEdges.value) return
-        _isScanningEdges.value = true
-        viewModelScope.launch {
-            try {
-                val customHost = _profile.value.sni.ifBlank { "" }
-                val results = EdgeHunterEngine.scanEndpointsConcurrently(
-                    candidates = EdgeHunterEngine.DEFAULT_EDGE_CANDIDATES,
-                    requestMethod = requestMethod,
-                    customHostHeader = customHost
-                )
-                _edgeProbeResults.value = results
-                val reachable = results.count { it.reachable }
-                val best = results.firstOrNull { it.reachable }
-                if (best != null) {
-                    VpnManager.appendTelemetryLog(
-                        "PROBE",
-                        "EdgeHunter scanned ${results.size} endpoints ($reachable open) • Best: ${best.hostOrIp}:${best.port} (${best.totalRttMs}ms, HTTP ${best.httpStatusCode})"
-                    )
-                } else {
-                    VpnManager.appendTelemetryLog(
-                        "WARN",
-                        "EdgeHunter scanned ${results.size} endpoints; no responsive edge port detected."
-                    )
-                }
-            } finally {
-                _isScanningEdges.value = false
-            }
-        }
-    }
-
-    fun applyEdgeProbeResult(probe: EdgeProbeResult) {
-        val currentSni = _profile.value.sni.ifBlank { probe.sniHostname }
-        val updated = _profile.value.copy(
-            ip = probe.hostOrIp,
-            port = probe.port.toString(),
-            sni = currentSni
-        )
-        _profile.value = updated
-        _presetId.value = "custom"
-        _errors.value = emptyMap()
-        repository.saveActiveProfile(updated, "custom")
-        VpnManager.appendTelemetryLog(
-            "INFO",
-            "Applied EdgeHunter endpoint ${probe.hostOrIp}:${probe.port} (${probe.label}, ${probe.totalRttMs}ms RTT)"
-        )
-    }
-
-    private fun triggerAutoFailoverEvaluation() {
-        viewModelScope.launch {
-            val failedHost = _profile.value.ip
-            val candidate = ServerHealthMonitor.selectBestFailoverServer(_servers.value, failedHost)
-            if (candidate != null) {
-                val (bestServer, metric) = candidate
-                selectServerNode(bestServer)
-                VpnManager.appendTelemetryLog(
-                    "INFO",
-                    "Auto-Failover selected healthy relay '${bestServer.name}' (${metric.avgRttMs}ms RTT)"
-                )
-            }
-        }
-    }
-
-    fun clearTelemetryLogs() {
-        VpnManager.clearTelemetryLogs()
-    }
-
-    fun exportSanitizedDiagnostics(): String {
-        return VpnManager.exportSanitizedDiagnosticsReport(_profile.value, _tlsFragmentConfig.value)
-    }
-
-    fun exportEncryptedVault(passphrase: String): String? {
-        if (passphrase.length < 4) return null
-        val p = _profile.value
-        val nodesArray = JSONArray()
-        _servers.value.forEach { server ->
-            nodesArray.put(
-                JSONObject().apply {
-                    put("id", server.id)
-                    put("name", server.name)
-                    put("host", server.host)
-                    put("port", server.port)
-                    put("sni", server.host)
-                    put("transport", server.transport)
-                    put("websocketPath", "/ws-tunnel")
-                }
-            )
-        }
-        val code = configVault.exportEncryptedTcfgCode(
-            activeIp = p.ip.ifBlank { "127.0.0.1" },
-            activePort = p.port.toIntOrNull() ?: 443,
-            activeSni = p.sni,
-            activePayload = p.payload,
-            serversJsonArray = nodesArray,
-            passphrase = passphrase
-        )
-        _exportedVaultCode.value = code
-        _hasKeystoreVaultBackup.value = configVault.hasKeystoreBackup()
-        VpnManager.appendTelemetryLog("INFO", "Encrypted AES-256-GCM vault bundle exported & backed up to AndroidKeyStore.")
-        return code
-    }
-
-    fun importEncryptedVault(rawCode: String, passphrase: String): Result<String> {
-        val result = configVault.importEncryptedTcfgCode(rawCode, passphrase)
-        return result.map { bundle ->
-            applyDecryptedVaultBundle(bundle)
-            _hasKeystoreVaultBackup.value = configVault.hasKeystoreBackup()
-            VpnManager.appendTelemetryLog(
-                "SUCCESS",
-                "Decrypted AES-256-GCM vault (v${bundle.version}): loaded ${bundle.nodes.size} relay nodes."
-            )
-            "Decrypted ${bundle.nodes.size} relay node(s) and active profile."
-        }
-    }
-
-    fun restoreFromKeystoreVault(): Result<String> {
-        val result = configVault.loadFromKeystoreVault()
-        return result.map { bundle ->
-            applyDecryptedVaultBundle(bundle)
-            VpnManager.appendTelemetryLog(
-                "SUCCESS",
-                "Restored configuration bundle from hardware-backed Android Keystore."
-            )
-            "Restored ${bundle.nodes.size} node(s) from Android Keystore."
-        }
-    }
-
-    private fun applyDecryptedVaultBundle(bundle: com.example.advancedtunnel.security.DecryptedVaultBundle) {
-        if (bundle.nodes.isNotEmpty()) {
-            val mappedServers = bundle.nodes.map { node ->
-                RelayServer(
-                    id = node.id,
-                    name = node.name,
-                    host = node.host,
-                    port = node.port,
-                    transport = node.transport,
-                    notes = "SNI: ${node.sni}"
-                )
-            }
-            _servers.value = mappedServers
-            repository.saveServers(mappedServers)
-        }
-        val activePreset = bundle.presets.firstOrNull()
-        val firstNode = bundle.nodes.firstOrNull()
-        if (activePreset != null || firstNode != null) {
-            val hostParts = activePreset?.name?.split(":")
-            val resolvedIp = firstNode?.host ?: hostParts?.getOrNull(0) ?: _profile.value.ip
-            val resolvedPort = firstNode?.port?.toString() ?: hostParts?.getOrNull(1) ?: _profile.value.port
-            val resolvedSni = activePreset?.sni ?: firstNode?.sni ?: _profile.value.sni
-            val resolvedPayload = activePreset?.template ?: _profile.value.payload
-            val updated = _profile.value.copy(
-                ip = resolvedIp,
-                port = resolvedPort,
-                sni = resolvedSni,
-                payload = resolvedPayload
-            )
-            _profile.value = updated
-            repository.saveActiveProfile(updated, "custom")
+            _serverLatencies.value = currentMap
         }
     }
 
@@ -741,24 +418,9 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun signInWithGoogle(activityContext: Context? = null, onResult: (Boolean, String?) -> Unit) {
+    fun signInWithGoogle(onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
-            val result = if (activityContext != null) {
-                authManager.signInWithGoogle(activityContext)
-            } else {
-                authManager.signInWithGoogle()
-            }
-            if (result.isSuccess) {
-                onResult(true, null)
-            } else {
-                onResult(false, result.exceptionOrNull()?.localizedMessage)
-            }
-        }
-    }
-
-    fun signInWithMicrosoft(activity: Activity, onResult: (Boolean, String?) -> Unit) {
-        viewModelScope.launch {
-            val result = authManager.signInWithMicrosoft(activity)
+            val result = authManager.signInWithGoogle()
             if (result.isSuccess) {
                 onResult(true, null)
             } else {
@@ -768,9 +430,7 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun signOut() {
-        viewModelScope.launch {
-            authManager.signOut()
-        }
+        authManager.signOut()
     }
 
     fun runAiDiagnostics() {
