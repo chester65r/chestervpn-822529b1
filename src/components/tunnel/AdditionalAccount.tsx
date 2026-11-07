@@ -33,6 +33,7 @@ export function AdditionalAccount() {
     }
   }
   useEffect(() => {
+    const invalidateGeneration = () => { generation.current += 1 };
     client.current = createAdditionalAccountClient();
     let active = true;
     checkAdditionalEmailVerification().then(() => {
@@ -41,7 +42,8 @@ export function AdditionalAccount() {
       if (active) setMessage('Additional email confirmation is not safely configured. Verification is paused.');
     });
     return () => {
-      active = false; generation.current++;
+      active = false;
+      invalidateGeneration();
       const previous = client.current;
       client.current = null;
       void previous?.auth.signOut({ scope: 'local' }).catch(() => {});
