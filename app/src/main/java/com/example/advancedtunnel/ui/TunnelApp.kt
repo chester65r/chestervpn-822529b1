@@ -1,6 +1,14 @@
 package com.example.advancedtunnel.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -18,7 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.PowerSettingsNew
-import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -49,15 +57,17 @@ import com.example.advancedtunnel.ui.theme.BackgroundDark
 import com.example.advancedtunnel.ui.theme.BorderDark
 import com.example.advancedtunnel.ui.theme.CardBackground
 import com.example.advancedtunnel.ui.theme.CyanPrimary
-import com.example.advancedtunnel.ui.theme.SurfaceDark
+import com.example.advancedtunnel.ui.theme.StarlinkMonoFontFamily
+import com.example.advancedtunnel.ui.theme.StarlinkSansFontFamily
 import com.example.advancedtunnel.ui.theme.TextMuted
 import com.example.advancedtunnel.ui.theme.TextPrimary
+import com.example.advancedtunnel.ui.theme.TextSecondary
 import com.example.advancedtunnel.viewmodel.TunnelViewModel
 
 enum class NavTab(val title: String, val icon: ImageVector) {
-    HOME("Connect", Icons.Default.PowerSettingsNew),
-    CONFIG("Configure", Icons.Default.Tune),
-    SERVERS("Nodes & Vault", Icons.Default.Dns)
+    HOME("TERMINAL", Icons.Default.PowerSettingsNew),
+    CONFIG("PROTOCOLS", Icons.Default.Tune),
+    SERVERS("NODES & VAULT", Icons.Default.Dns)
 }
 
 @Composable
@@ -91,24 +101,24 @@ fun TunnelApp(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 18.dp, vertical = 12.dp),
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(8.dp))
                                 .background(CardBackground)
-                                .border(1.dp, CyanPrimary.copy(alpha = 0.4f), RoundedCornerShape(10.dp)),
+                                .border(1.dp, BorderDark, RoundedCornerShape(8.dp)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Shield,
+                                imageVector = Icons.Default.Radar,
                                 contentDescription = null,
                                 tint = CyanPrimary,
                                 modifier = Modifier.size(20.dp)
@@ -117,29 +127,37 @@ fun TunnelApp(
                         Column {
                             Text(
                                 text = "Tunnel Console",
-                                fontSize = 17.sp,
+                                fontFamily = StarlinkSansFontFamily,
+                                fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary,
-                                letterSpacing = (-0.3).sp
+                                letterSpacing = (-0.5).sp
                             )
                             Text(
-                                text = if (tlsConfig.enabled) "Anti-DPI ${tlsConfig.normalizedMinChunk()}–${tlsConfig.normalizedMaxChunk()}B • JA4 Active" else "Standard TLS Tunnel",
-                                fontSize = 11.sp,
-                                color = TextMuted
+                                text = if (tlsConfig.enabled) {
+                                    "DESYNC ${tlsConfig.normalizedMinChunk()}–${tlsConfig.normalizedMaxChunk()}B • JA4 SPOOF"
+                                } else {
+                                    "DIRECT TLS TELEMETRY"
+                                },
+                                fontFamily = StarlinkMonoFontFamily,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.4.sp,
+                                color = TextSecondary
                             )
                         }
                     }
 
                     ConnectionStatusIndicator(status = status)
                 }
-                HorizontalDivider(color = BorderDark.copy(alpha = 0.5f), thickness = 0.5.dp)
+                HorizontalDivider(color = BorderDark, thickness = 1.dp)
             }
         },
         bottomBar = {
             Column {
-                HorizontalDivider(color = BorderDark.copy(alpha = 0.6f), thickness = 0.5.dp)
+                HorizontalDivider(color = BorderDark, thickness = 1.dp)
                 NavigationBar(
-                    containerColor = CardBackground,
+                    containerColor = BackgroundDark,
                     tonalElevation = 0.dp,
                     modifier = Modifier.testTag("bottom_nav_bar")
                 ) {
@@ -151,18 +169,21 @@ fun TunnelApp(
                             icon = {
                                 Icon(
                                     imageVector = tab.icon,
-                                    contentDescription = tab.title
+                                    contentDescription = tab.title,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             },
                             label = {
                                 Text(
                                     text = tab.title,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                                    fontFamily = StarlinkMonoFontFamily,
+                                    fontSize = 10.sp,
+                                    letterSpacing = 1.5.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                             },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = SurfaceDark,
+                                selectedIconColor = BackgroundDark,
                                 selectedTextColor = CyanPrimary,
                                 indicatorColor = CyanPrimary,
                                 unselectedIconColor = TextMuted,
@@ -178,20 +199,40 @@ fun TunnelApp(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .background(BackgroundDark)
                 .padding(innerPadding)
         ) {
-            when (currentTab) {
-                NavTab.HOME -> HomeScreen(
-                    viewModel = viewModel,
-                    onRequestVpnPermission = onRequestVpnPermission,
-                    onNavigateToConfig = { currentTab = NavTab.CONFIG },
-                    onNavigateToServers = { currentTab = NavTab.SERVERS }
-                )
-                NavTab.CONFIG -> ConfigScreen(viewModel = viewModel)
-                NavTab.SERVERS -> ServersScreen(
-                    viewModel = viewModel,
-                    onServerApplied = { currentTab = NavTab.HOME }
-                )
+            AnimatedContent(
+                targetState = currentTab,
+                transitionSpec = {
+                    val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+                    (fadeIn(animationSpec = tween(250, easing = FastOutSlowInEasing)) +
+                        slideInHorizontally(
+                            animationSpec = tween(250, easing = FastOutSlowInEasing),
+                            initialOffsetX = { fullWidth -> (fullWidth * 0.06f * direction).toInt() }
+                        )).togetherWith(
+                        fadeOut(animationSpec = tween(200, easing = FastOutSlowInEasing)) +
+                            slideOutHorizontally(
+                                animationSpec = tween(200, easing = FastOutSlowInEasing),
+                                targetOffsetX = { fullWidth -> (-fullWidth * 0.06f * direction).toInt() }
+                            )
+                    )
+                },
+                label = "starlinkPageTransition"
+            ) { tab ->
+                when (tab) {
+                    NavTab.HOME -> HomeScreen(
+                        viewModel = viewModel,
+                        onRequestVpnPermission = onRequestVpnPermission,
+                        onNavigateToConfig = { currentTab = NavTab.CONFIG },
+                        onNavigateToServers = { currentTab = NavTab.SERVERS }
+                    )
+                    NavTab.CONFIG -> ConfigScreen(viewModel = viewModel)
+                    NavTab.SERVERS -> ServersScreen(
+                        viewModel = viewModel,
+                        onServerApplied = { currentTab = NavTab.HOME }
+                    )
+                }
             }
         }
     }

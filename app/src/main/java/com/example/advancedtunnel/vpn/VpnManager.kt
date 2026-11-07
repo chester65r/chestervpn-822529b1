@@ -200,6 +200,39 @@ object VpnManager {
         }
     }
 
+    fun startWireGuardVpn(
+        context: Context,
+        configText: String,
+        peerEndpoint: String
+    ) {
+        if (_vpnState.value is RealVpnState.Connected || _vpnState.value is RealVpnState.Connecting) {
+            return
+        }
+
+        _vpnState.value = RealVpnState.Connecting
+        appendTelemetryLog(
+            "INFO",
+            "Starting WireGuard GoBackend session via AdvancedVpnService -> $peerEndpoint"
+        )
+
+        val intent = Intent(context, AdvancedVpnService::class.java).apply {
+            putExtra("PROTOCOL", "wireguard")
+            putExtra("WG_CONFIG_TEXT", configText)
+        }
+
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start WireGuard VPN service", e)
+            appendTelemetryLog("ERROR", "Failed to start WireGuard VPN service: ${e.localizedMessage}")
+            _vpnState.value = RealVpnState.Failed("Could not start service: ${e.localizedMessage}")
+        }
+    }
+
     fun stopVpn(context: Context) {
         appendTelemetryLog("INFO", "Stopping active VPN tunnel interface.")
         val intent = Intent(context, AdvancedVpnService::class.java).apply {

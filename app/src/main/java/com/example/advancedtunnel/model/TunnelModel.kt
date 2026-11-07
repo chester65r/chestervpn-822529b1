@@ -10,6 +10,11 @@ enum class TunnelStatus {
     CONNECTED
 }
 
+enum class ConnectionMode(val label: String, val description: String) {
+    TUNNEL("Tunnel (TLS/SOCKS)", "Custom TLS Record Fragmentation & Handshake Optimization"),
+    WIREGUARD("WireGuard", "Official GoBackend WireGuard Layer 3 Tunnel")
+}
+
 data class TunnelProfile(
     val ip: String = "",
     val port: String = "443",

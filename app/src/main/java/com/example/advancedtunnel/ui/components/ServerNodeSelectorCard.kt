@@ -1,5 +1,6 @@
 package com.example.advancedtunnel.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,14 +22,13 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -42,16 +42,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.advancedtunnel.ui.theme.AccentOrange
+import com.example.advancedtunnel.ui.theme.BackgroundDark
 import com.example.advancedtunnel.ui.theme.BorderDark
 import com.example.advancedtunnel.ui.theme.CardBackground
 import com.example.advancedtunnel.ui.theme.CyanPrimary
 import com.example.advancedtunnel.ui.theme.DestructiveRed
-import com.example.advancedtunnel.ui.theme.SurfaceDark
+import com.example.advancedtunnel.ui.theme.StarlinkMonoFontFamily
+import com.example.advancedtunnel.ui.theme.StarlinkSansFontFamily
+import com.example.advancedtunnel.ui.theme.SuccessGreen
 import com.example.advancedtunnel.ui.theme.SurfaceVariantDark
 import com.example.advancedtunnel.ui.theme.TextMuted
 import com.example.advancedtunnel.ui.theme.TextPrimary
@@ -82,11 +84,11 @@ fun ServerNodeSelectorCard(
             .fillMaxWidth()
             .testTag("server_node_selector_card"),
         colors = CardDefaults.cardColors(containerColor = CardBackground),
-        shape = RoundedCornerShape(18.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, CyanPrimary.copy(alpha = 0.5f))
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, BorderDark)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
@@ -102,27 +104,25 @@ fun ServerNodeSelectorCard(
                         imageVector = Icons.Default.Public,
                         contentDescription = "Server Node",
                         tint = CyanPrimary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = "MULTI-ENDPOINT BENCHMARK & FAILOVER",
+                        text = "GROUND STATION & FAILOVER",
+                        fontFamily = StarlinkMonoFontFamily,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp,
-                        color = CyanPrimary
+                        letterSpacing = 1.6.sp,
+                        color = TextSecondary
                     )
                 }
 
-                Button(
+                OutlinedButton(
                     onClick = { viewModel.benchmarkAndRankAllServers(applyBestIfAutoFailover = true) },
                     enabled = !isBenchmarking,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = SurfaceDark,
-                        contentColor = CyanPrimary
-                    ),
+                    border = BorderStroke(1.dp, CyanPrimary.copy(alpha = 0.6f)),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier
-                        .height(30.dp)
+                        .height(32.dp)
                         .testTag("benchmark_all_nodes_button")
                 ) {
                     if (isBenchmarking) {
@@ -131,16 +131,29 @@ fun ServerNodeSelectorCard(
                             color = CyanPrimary,
                             strokeWidth = 1.5.dp
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Probing…", fontSize = 10.sp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "PROBING…",
+                            fontFamily = StarlinkMonoFontFamily,
+                            fontSize = 10.sp,
+                            color = CyanPrimary
+                        )
                     } else {
                         Icon(
                             imageVector = Icons.Default.Speed,
                             contentDescription = "Benchmark All",
+                            tint = CyanPrimary,
                             modifier = Modifier.size(13.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Rank Nodes", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "RANK NODES",
+                            fontFamily = StarlinkMonoFontFamily,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.2.sp,
+                            color = CyanPrimary
+                        )
                     }
                 }
             }
@@ -149,11 +162,11 @@ fun ServerNodeSelectorCard(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(SurfaceDark)
-                        .border(1.dp, BorderDark, RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(BackgroundDark)
+                        .border(1.dp, BorderDark, RoundedCornerShape(8.dp))
                         .clickable { dropdownExpanded = true }
-                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
                         .testTag("server_dropdown_trigger"),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -167,27 +180,28 @@ fun ServerNodeSelectorCard(
                             imageVector = Icons.Default.Dns,
                             contentDescription = null,
                             tint = CyanPrimary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
 
                         Column {
                             Text(
-                                text = activeServer?.name ?: if (profile.ip.isNotBlank()) profile.ip else "Select VPN Node",
-                                fontSize = 13.sp,
+                                text = activeServer?.name ?: if (profile.ip.isNotBlank()) profile.ip else "Select Relay Node",
+                                fontFamily = StarlinkSansFontFamily,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
                             Text(
                                 text = if (activeServer != null) "${activeServer.host}:${activeServer.port} • ${activeServer.transport}"
-                                else if (profile.ip.isNotBlank()) "${profile.ip}:${profile.port}" else "Tap to choose region",
-                                fontFamily = FontFamily.Monospace,
+                                else if (profile.ip.isNotBlank()) "${profile.ip}:${profile.port}" else "Tap to choose station",
+                                fontFamily = StarlinkMonoFontFamily,
                                 fontSize = 11.sp,
                                 color = TextSecondary
                             )
                             if (activeMetric != null && activeMetric.avgRttMs >= 0) {
                                 Text(
-                                    text = "Jitter: ${activeMetric.jitterMs}ms • Loss: ${activeMetric.packetLossPercent}% • ${activeMetric.tier.name}",
-                                    fontFamily = FontFamily.Monospace,
+                                    text = "JITTER ${activeMetric.jitterMs}MS • LOSS ${activeMetric.packetLossPercent}% • ${activeMetric.tier.name}",
+                                    fontFamily = StarlinkMonoFontFamily,
                                     fontSize = 10.sp,
                                     color = when (activeMetric.tier) {
                                         NodeHealthTier.HEALTHY -> CyanPrimary
@@ -205,25 +219,32 @@ fun ServerNodeSelectorCard(
                     ) {
                         val lat = activeServer?.let { serverLatencies[it.id] }
                         if (lat != null) {
+                            val pingColor = when {
+                                lat < 90 -> SuccessGreen
+                                lat < 180 -> AccentOrange
+                                else -> DestructiveRed
+                            }
                             Row(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(SurfaceVariantDark)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(CardBackground)
+                                    .border(1.dp, BorderDark, RoundedCornerShape(6.dp))
                                     .padding(horizontal = 6.dp, vertical = 3.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.NetworkCheck,
                                     contentDescription = null,
-                                    tint = CyanPrimary,
-                                    modifier = Modifier.size(12.dp)
+                                    tint = pingColor,
+                                    modifier = Modifier.size(11.dp)
                                 )
                                 Spacer(modifier = Modifier.width(3.dp))
                                 Text(
-                                    text = "${lat}ms",
-                                    fontFamily = FontFamily.Monospace,
+                                    text = "${lat} ms",
+                                    fontFamily = StarlinkMonoFontFamily,
                                     fontSize = 10.sp,
-                                    color = CyanPrimary
+                                    fontWeight = FontWeight.Bold,
+                                    color = pingColor
                                 )
                             }
                         }
@@ -232,7 +253,7 @@ fun ServerNodeSelectorCard(
                             imageVector = Icons.Default.ArrowDropDown,
                             contentDescription = "Expand nodes",
                             tint = CyanPrimary,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
@@ -245,11 +266,12 @@ fun ServerNodeSelectorCard(
                         .background(SurfaceVariantDark)
                 ) {
                     Text(
-                        text = "RANKED RELAY NODES (FASTEST FIRST)",
+                        text = "RANKED RELAY STATIONS",
+                        fontFamily = StarlinkMonoFontFamily,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextMuted,
-                        letterSpacing = 1.sp,
+                        color = TextSecondary,
+                        letterSpacing = 1.6.sp,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                     )
 
@@ -266,30 +288,37 @@ fun ServerNodeSelectorCard(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = server.name,
+                                            fontFamily = StarlinkSansFontFamily,
                                             fontWeight = FontWeight.SemiBold,
                                             fontSize = 13.sp,
                                             color = TextPrimary
                                         )
                                         Text(
                                             text = "${server.host}:${server.port} • ${server.transport}",
-                                            fontFamily = FontFamily.Monospace,
+                                            fontFamily = StarlinkMonoFontFamily,
                                             fontSize = 11.sp,
                                             color = TextSecondary
                                         )
                                     }
 
                                     if (lat != null) {
+                                        val pingColor = when {
+                                            lat < 90 -> SuccessGreen
+                                            lat < 180 -> AccentOrange
+                                            else -> DestructiveRed
+                                        }
                                         Text(
                                             text = "${lat}ms" + (metric?.let { " (±${it.jitterMs}ms)" } ?: ""),
-                                            fontFamily = FontFamily.Monospace,
+                                            fontFamily = StarlinkMonoFontFamily,
                                             fontSize = 11.sp,
-                                            color = CyanPrimary,
+                                            fontWeight = FontWeight.Bold,
+                                            color = pingColor,
                                             modifier = Modifier.padding(start = 8.dp)
                                         )
                                     } else if (metric?.tier == NodeHealthTier.UNREACHABLE) {
                                         Text(
                                             text = "OFFLINE",
-                                            fontFamily = FontFamily.Monospace,
+                                            fontFamily = StarlinkMonoFontFamily,
                                             fontSize = 10.sp,
                                             color = DestructiveRed,
                                             modifier = Modifier.padding(start = 8.dp)
@@ -306,7 +335,7 @@ fun ServerNodeSelectorCard(
                                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                                     contentDescription = "Select",
                                     tint = CyanPrimary,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(15.dp)
                                 )
                             }
                         )
@@ -322,15 +351,18 @@ fun ServerNodeSelectorCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Automatic Relay Failover",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        text = "AUTOMATIC RELAY FAILOVER",
+                        fontFamily = StarlinkMonoFontFamily,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.4.sp,
                         color = TextPrimary
                     )
                     Text(
-                        text = "Automatically switch to lowest-RTT healthy node on connection drop",
+                        text = "Switch to lowest-RTT station on link degradation",
+                        fontFamily = StarlinkSansFontFamily,
                         fontSize = 11.sp,
-                        color = TextMuted
+                        color = TextSecondary
                     )
                 }
 
@@ -338,9 +370,11 @@ fun ServerNodeSelectorCard(
                     checked = autoFailoverEnabled,
                     onCheckedChange = { viewModel.toggleAutoFailover(it) },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = SurfaceDark,
+                        checkedThumbColor = BackgroundDark,
                         checkedTrackColor = CyanPrimary,
-                        uncheckedTrackColor = SurfaceDark
+                        uncheckedThumbColor = TextSecondary,
+                        uncheckedTrackColor = BackgroundDark,
+                        uncheckedBorderColor = BorderDark
                     ),
                     modifier = Modifier.testTag("auto_failover_switch")
                 )

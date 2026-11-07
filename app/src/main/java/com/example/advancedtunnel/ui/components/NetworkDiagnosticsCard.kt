@@ -1,5 +1,6 @@
 package com.example.advancedtunnel.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -37,15 +38,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.advancedtunnel.ui.theme.BackgroundDark
 import com.example.advancedtunnel.ui.theme.BorderDark
 import com.example.advancedtunnel.ui.theme.CardBackground
 import com.example.advancedtunnel.ui.theme.CyanPrimary
 import com.example.advancedtunnel.ui.theme.DestructiveRed
-import com.example.advancedtunnel.ui.theme.SurfaceDark
+import com.example.advancedtunnel.ui.theme.StarlinkMonoFontFamily
+import com.example.advancedtunnel.ui.theme.StarlinkSansFontFamily
 import com.example.advancedtunnel.ui.theme.TextMuted
 import com.example.advancedtunnel.ui.theme.TextPrimary
 import com.example.advancedtunnel.ui.theme.TextSecondary
@@ -69,11 +71,11 @@ fun NetworkDiagnosticsCard(
             .fillMaxWidth()
             .testTag("network_diagnostics_card"),
         colors = CardDefaults.cardColors(containerColor = CardBackground),
-        shape = RoundedCornerShape(18.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark)
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, BorderDark)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
@@ -89,27 +91,31 @@ fun NetworkDiagnosticsCard(
                         imageVector = Icons.Default.NetworkCheck,
                         contentDescription = "Diagnostics",
                         tint = CyanPrimary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                     Text(
                         text = "HOST & MTU DIAGNOSTIC PROBE",
-                        fontSize = 12.sp,
+                        fontFamily = StarlinkMonoFontFamily,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = CyanPrimary,
-                        letterSpacing = 1.sp
+                        letterSpacing = 1.6.sp
                     )
                 }
 
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(SurfaceDark)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(BackgroundDark)
+                        .border(1.dp, BorderDark, RoundedCornerShape(6.dp))
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "TCP Ping / MSS",
-                        fontSize = 10.sp,
+                        text = "TCP PING / MSS",
+                        fontFamily = StarlinkMonoFontFamily,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
                         color = TextMuted
                     )
                 }
@@ -117,6 +123,7 @@ fun NetworkDiagnosticsCard(
 
             Text(
                 text = "Probe socket reachability, TCP handshake delay, and optimal MTU frame size for any remote host:",
+                fontFamily = StarlinkSansFontFamily,
                 fontSize = 12.sp,
                 color = TextSecondary
             )
@@ -129,7 +136,7 @@ fun NetworkDiagnosticsCard(
                 OutlinedTextField(
                     value = testHost,
                     onValueChange = { testHost = it },
-                    label = { Text("Target Host / IP") },
+                    label = { Text("TARGET HOST / IP", fontFamily = StarlinkMonoFontFamily, fontSize = 10.sp) },
                     placeholder = { Text("1.1.1.1 or vps.example.com") },
                     singleLine = true,
                     modifier = Modifier
@@ -138,10 +145,12 @@ fun NetworkDiagnosticsCard(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = CyanPrimary,
                         unfocusedBorderColor = BorderDark,
+                        focusedContainerColor = BackgroundDark,
+                        unfocusedContainerColor = BackgroundDark,
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary
                     ),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(8.dp)
                 )
 
                 Button(
@@ -152,23 +161,29 @@ fun NetworkDiagnosticsCard(
                     enabled = testHost.isNotBlank() && !isDiagnosing,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = CyanPrimary,
-                        contentColor = SurfaceDark
+                        contentColor = BackgroundDark
                     ),
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(8.dp),
                     modifier = Modifier
-                        .height(54.dp)
+                        .height(52.dp)
                         .testTag("run_diagnostic_probe_button")
                 ) {
                     if (isDiagnosing) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
-                            color = SurfaceDark,
+                            color = BackgroundDark,
                             strokeWidth = 2.dp
                         )
                     } else {
                         Icon(imageVector = Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Probe", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "PROBE",
+                            fontFamily = StarlinkMonoFontFamily,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.2.sp
+                        )
                     }
                 }
             }
@@ -177,12 +192,12 @@ fun NetworkDiagnosticsCard(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(SurfaceDark)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(BackgroundDark)
                         .border(
                             1.dp,
                             if (res.isReachable) CyanPrimary.copy(alpha = 0.5f) else DestructiveRed.copy(alpha = 0.5f),
-                            RoundedCornerShape(12.dp)
+                            RoundedCornerShape(8.dp)
                         )
                         .padding(12.dp)
                 ) {
@@ -202,16 +217,18 @@ fun NetworkDiagnosticsCard(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = if (res.isReachable) "HOST REACHABLE" else "UNREACHABLE",
-                                    fontSize = 12.sp,
+                                    fontFamily = StarlinkMonoFontFamily,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.2.sp,
                                     color = if (res.isReachable) CyanPrimary else DestructiveRed
                                 )
                             }
 
                             if (res.isReachable) {
                                 Text(
-                                    text = "Rec. MTU: ${res.recommendedMtu}",
-                                    fontFamily = FontFamily.Monospace,
+                                    text = "REC. MTU: ${res.recommendedMtu}",
+                                    fontFamily = StarlinkMonoFontFamily,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = CyanPrimary
@@ -221,7 +238,7 @@ fun NetworkDiagnosticsCard(
 
                         Text(
                             text = res.details,
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = StarlinkMonoFontFamily,
                             fontSize = 11.sp,
                             color = TextSecondary,
                             lineHeight = 15.sp

@@ -2,6 +2,7 @@ package com.example.advancedtunnel.ui.components
 
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -52,11 +53,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.advancedtunnel.ui.theme.BackgroundDark
 import com.example.advancedtunnel.ui.theme.BorderDark
 import com.example.advancedtunnel.ui.theme.CardBackground
 import com.example.advancedtunnel.ui.theme.CyanPrimary
 import com.example.advancedtunnel.ui.theme.DestructiveRed
-import com.example.advancedtunnel.ui.theme.SurfaceDark
+import com.example.advancedtunnel.ui.theme.StarlinkMonoFontFamily
+import com.example.advancedtunnel.ui.theme.StarlinkSansFontFamily
+import com.example.advancedtunnel.ui.theme.SurfaceVariantDark
 import com.example.advancedtunnel.ui.theme.TextMuted
 import com.example.advancedtunnel.ui.theme.TextPrimary
 import com.example.advancedtunnel.ui.theme.TextSecondary
@@ -96,11 +100,11 @@ fun SplitTunnelingCard(
             .fillMaxWidth()
             .testTag("split_tunneling_card"),
         colors = CardDefaults.cardColors(containerColor = CardBackground),
-        shape = RoundedCornerShape(16.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, BorderDark)
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, BorderDark)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             // Killswitch Toggle
@@ -118,20 +122,22 @@ fun SplitTunnelingCard(
                         imageVector = Icons.Default.Shield,
                         contentDescription = "Killswitch",
                         tint = CyanPrimary,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                     Column {
                         Text(
                             text = "ALWAYS-ON KILLSWITCH",
-                            fontSize = 12.sp,
+                            fontFamily = StarlinkMonoFontFamily,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = CyanPrimary,
-                            letterSpacing = 1.sp
+                            letterSpacing = 1.6.sp
                         )
                         Text(
                             text = "Block unencrypted internet traffic if VPN drops",
+                            fontFamily = StarlinkSansFontFamily,
                             fontSize = 11.sp,
-                            color = TextMuted,
+                            color = TextSecondary,
                             lineHeight = 15.sp
                         )
                     }
@@ -141,9 +147,11 @@ fun SplitTunnelingCard(
                     checked = killswitchEnabled,
                     onCheckedChange = { viewModel.toggleKillswitch(it) },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = SurfaceDark,
+                        checkedThumbColor = BackgroundDark,
                         checkedTrackColor = CyanPrimary,
-                        uncheckedTrackColor = SurfaceDark
+                        uncheckedThumbColor = TextSecondary,
+                        uncheckedTrackColor = BackgroundDark,
+                        uncheckedBorderColor = BorderDark
                     ),
                     modifier = Modifier.testTag("killswitch_switch")
                 )
@@ -164,20 +172,22 @@ fun SplitTunnelingCard(
                         imageVector = Icons.Default.Apps,
                         contentDescription = "Split Tunneling",
                         tint = CyanPrimary,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                     Column {
                         Text(
                             text = "PER-APP SPLIT TUNNELING",
-                            fontSize = 12.sp,
+                            fontFamily = StarlinkMonoFontFamily,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = CyanPrimary,
-                            letterSpacing = 1.sp
+                            letterSpacing = 1.6.sp
                         )
                         Text(
                             text = "Select apps to bypass the VPN tunnel (${disallowedApps.size} excluded)",
+                            fontFamily = StarlinkSansFontFamily,
                             fontSize = 11.sp,
-                            color = TextMuted,
+                            color = TextSecondary,
                             lineHeight = 15.sp
                         )
                     }
@@ -187,22 +197,21 @@ fun SplitTunnelingCard(
                     checked = splitTunnelingEnabled,
                     onCheckedChange = { viewModel.toggleSplitTunneling(it) },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = SurfaceDark,
+                        checkedThumbColor = BackgroundDark,
                         checkedTrackColor = CyanPrimary,
-                        uncheckedTrackColor = SurfaceDark
+                        uncheckedThumbColor = TextSecondary,
+                        uncheckedTrackColor = BackgroundDark,
+                        uncheckedBorderColor = BorderDark
                     ),
                     modifier = Modifier.testTag("split_tunneling_switch")
                 )
             }
 
             if (splitTunnelingEnabled) {
-                Button(
+                OutlinedButton(
                     onClick = { showAppPicker = true },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = SurfaceDark,
-                        contentColor = TextPrimary
-                    ),
-                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, CyanPrimary),
+                    shape = RoundedCornerShape(8.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("manage_excluded_apps_button")
@@ -210,10 +219,17 @@ fun SplitTunnelingCard(
                     Icon(
                         imageVector = Icons.Default.Apps,
                         contentDescription = null,
+                        tint = CyanPrimary,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Search & Filter Bypassed Apps (${disallowedApps.size})", fontSize = 12.sp)
+                    Text(
+                        text = "CONFIGURE BYPASSED APPS (${disallowedApps.size})",
+                        fontFamily = StarlinkMonoFontFamily,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = CyanPrimary
+                    )
                 }
             }
         }
@@ -274,9 +290,9 @@ fun SplitTunnelingCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(4.dp),
-                colors = CardDefaults.cardColors(containerColor = CardBackground),
-                shape = RoundedCornerShape(20.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, CyanPrimary)
+                colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, CyanPrimary)
             ) {
                 Column(
                     modifier = Modifier
@@ -291,10 +307,11 @@ fun SplitTunnelingCard(
                     ) {
                         Text(
                             text = "PER-APP SPLIT TUNNELING PICKER",
-                            fontSize = 12.sp,
+                            fontFamily = StarlinkMonoFontFamily,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = CyanPrimary,
-                            letterSpacing = 1.sp
+                            letterSpacing = 1.6.sp
                         )
                         IconButton(onClick = { showAppPicker = false }) {
                             Icon(
@@ -307,6 +324,7 @@ fun SplitTunnelingCard(
 
                     Text(
                         text = "Checked apps bypass the VPN tunnel (addDisallowedApplication) and route directly over Wi-Fi/Cellular:",
+                        fontFamily = StarlinkSansFontFamily,
                         fontSize = 11.sp,
                         color = TextSecondary,
                         lineHeight = 15.sp
@@ -332,12 +350,12 @@ fun SplitTunnelingCard(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = CyanPrimary,
                             unfocusedBorderColor = BorderDark,
-                            focusedContainerColor = SurfaceDark,
-                            unfocusedContainerColor = SurfaceDark,
+                            focusedContainerColor = BackgroundDark,
+                            unfocusedContainerColor = BackgroundDark,
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary
                         ),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(8.dp)
                     )
 
                     // Category Filter Chips + System App Toggle
@@ -353,11 +371,18 @@ fun SplitTunnelingCard(
                             FilterChip(
                                 selected = selected,
                                 onClick = { selectedCategory = cat },
-                                label = { Text(cat, fontSize = 11.sp) },
+                                label = {
+                                    Text(
+                                        text = cat.uppercase(),
+                                        fontFamily = StarlinkMonoFontFamily,
+                                        fontSize = 10.sp
+                                    )
+                                },
+                                shape = RoundedCornerShape(6.dp),
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = CyanPrimary,
-                                    selectedLabelColor = SurfaceDark,
-                                    containerColor = SurfaceDark,
+                                    selectedLabelColor = BackgroundDark,
+                                    containerColor = BackgroundDark,
                                     labelColor = TextSecondary
                                 )
                             )
@@ -365,11 +390,18 @@ fun SplitTunnelingCard(
                         FilterChip(
                             selected = showSystemApps,
                             onClick = { showSystemApps = !showSystemApps },
-                            label = { Text("System Apps", fontSize = 11.sp) },
+                            label = {
+                                Text(
+                                    text = "SYSTEM APPS",
+                                    fontFamily = StarlinkMonoFontFamily,
+                                    fontSize = 10.sp
+                                )
+                            },
+                            shape = RoundedCornerShape(6.dp),
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = CyanPrimary.copy(alpha = 0.25f),
                                 selectedLabelColor = CyanPrimary,
-                                containerColor = SurfaceDark,
+                                containerColor = BackgroundDark,
                                 labelColor = TextMuted
                             )
                         )
@@ -386,18 +418,28 @@ fun SplitTunnelingCard(
                                 viewModel.setDisallowedAppsBulk(filteredApps.map { it.packageName }.toSet())
                             },
                             shape = RoundedCornerShape(8.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, CyanPrimary)
+                            border = BorderStroke(1.dp, CyanPrimary)
                         ) {
-                            Text("Exclude Visible (${filteredApps.size})", fontSize = 10.sp, color = CyanPrimary)
+                            Text(
+                                text = "EXCLUDE VISIBLE (${filteredApps.size})",
+                                fontFamily = StarlinkMonoFontFamily,
+                                fontSize = 10.sp,
+                                color = CyanPrimary
+                            )
                         }
 
                         if (disallowedApps.isNotEmpty()) {
                             OutlinedButton(
                                 onClick = { viewModel.clearDisallowedApps() },
                                 shape = RoundedCornerShape(8.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, DestructiveRed)
+                                border = BorderStroke(1.dp, DestructiveRed)
                             ) {
-                                Text("Clear All (${disallowedApps.size})", fontSize = 10.sp, color = DestructiveRed)
+                                Text(
+                                    text = "CLEAR ALL (${disallowedApps.size})",
+                                    fontFamily = StarlinkMonoFontFamily,
+                                    fontSize = 10.sp,
+                                    color = DestructiveRed
+                                )
                             }
                         }
                     }
@@ -424,14 +466,16 @@ fun SplitTunnelingCard(
                                 Column(modifier = Modifier.padding(start = 8.dp)) {
                                     Text(
                                         text = app.label,
+                                        fontFamily = StarlinkSansFontFamily,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = TextPrimary
                                     )
                                     Text(
                                         text = "${app.packageName} • ${app.category}",
-                                        fontSize = 11.sp,
-                                        color = TextMuted
+                                        fontFamily = StarlinkMonoFontFamily,
+                                        fontSize = 10.sp,
+                                        color = TextSecondary
                                     )
                                 }
                             }
@@ -442,11 +486,16 @@ fun SplitTunnelingCard(
 
                     Button(
                         onClick = { showAppPicker = false },
-                        colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = SurfaceDark),
-                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = BackgroundDark),
+                        shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Apply Split Tunneling (${disallowedApps.size} Excluded)", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "APPLY SPLIT TUNNELING (${disallowedApps.size} EXCLUDED)",
+                            fontFamily = StarlinkMonoFontFamily,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }

@@ -36,7 +36,25 @@ class TunnelRepository(context: Context) {
         private const val KEY_FRAG_MAX_JITTER = "tls_frag_max_jitter"
         private const val KEY_JA3_PROFILE_ID = "tls_ja3_profile_id"
         private const val KEY_ALPN_ENABLED = "tls_alpn_enabled"
+        private const val KEY_CONNECTION_MODE = "connection_mode"
+        private const val KEY_WIREGUARD_CONFIG = "wireguard_config_text"
     }
+
+    fun loadConnectionMode(): com.example.advancedtunnel.model.ConnectionMode {
+        val name = prefs.getString(KEY_CONNECTION_MODE, com.example.advancedtunnel.model.ConnectionMode.TUNNEL.name)
+        return try {
+            com.example.advancedtunnel.model.ConnectionMode.valueOf(name ?: com.example.advancedtunnel.model.ConnectionMode.TUNNEL.name)
+        } catch (_: Exception) {
+            com.example.advancedtunnel.model.ConnectionMode.TUNNEL
+        }
+    }
+
+    fun saveConnectionMode(mode: com.example.advancedtunnel.model.ConnectionMode) {
+        prefs.edit().putString(KEY_CONNECTION_MODE, mode.name).apply()
+    }
+
+    fun loadWireGuardConfig(): String = prefs.getString(KEY_WIREGUARD_CONFIG, "") ?: ""
+    fun saveWireGuardConfig(configText: String) = prefs.edit().putString(KEY_WIREGUARD_CONFIG, configText).apply()
 
     fun loadKillswitchEnabled(): Boolean = prefs.getBoolean(KEY_KILLSWITCH, false)
     fun saveKillswitchEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_KILLSWITCH, enabled).apply()

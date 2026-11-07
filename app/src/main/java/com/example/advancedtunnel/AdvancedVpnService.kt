@@ -17,11 +17,15 @@ import com.example.advancedtunnel.vpn.TlsFingerprintEngine
 import com.example.advancedtunnel.vpn.TlsFragmentConfig
 import com.example.advancedtunnel.vpn.TlsFragmentMode
 import com.example.advancedtunnel.vpn.TlsFragmentationEngine
+import com.example.advancedtunnel.vpn.TunPacketForwarder
 import com.example.advancedtunnel.vpn.VpnManager
+import com.example.advancedtunnel.wireguard.WireGuardManager
+import com.wireguard.android.backend.GoBackend
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.DataInputStream
@@ -42,10 +46,11 @@ import javax.net.ssl.SSLSocketFactory
  * - Virtual TUN interface (`tun0`, MTU 1500, IPv4 `10.0.0.2/24`, IPv6 `fd00:1234:5678::2/64`)
  * - Full-tunnel routing (`0.0.0.0/0`, `::/0`) with `addDisallowedApplication` & Killswitch (`setBlocking`)
  * - Outbound TLS + custom SNI + TLS Record Fragmentation (`DesyncSocketWrapper`) + JA3/JA4 Fingerprint Spoofing (`TlsFingerprintEngine`)
+ * - Official WireGuard `GoBackend.VpnService` integration for standard `wg-quick` `.conf` tunnels
  * - `KeepAliveManager` (`PARTIAL_WAKE_LOCK`, `WIFI_MODE_FULL_LOW_LATENCY`, adaptive TCP/UDP heartbeats)
  * - Android 14+ (`UPSIDE_DOWN_CAKE`) `FOREGROUND_SERVICE_TYPE_SPECIAL_USE` compliance
  */
-class AdvancedVpnService : VpnService(), Runnable {
+class AdvancedVpnService : GoBackend.VpnService(), Runnable {
 
     companion object {
         private const val TAG = "AdvancedVpnService"
@@ -99,11 +104,48 @@ class AdvancedVpnService : VpnService(), Runnable {
             return START_NOT_STICKY
         }
 
+        protocol = intent?.getStringExtra("PROTOCOL") ?: "tls"
+
+        if (protocol == "wireguard") {
+            val wgConfigText = intent?.getStringExtra("WG_CONFIG_TEXT") ?: ""
+            if (wgConfigText.isBlank()) {
+                VpnManager.onServiceStopped("WireGuard config is required")
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            if (isRunning.get()) {
+                closeActiveResources()
+                tunnelThread?.interrupt()
+                WireGuardManager.stopTunnelBlocking(applicationContext)
+            }
+            isRunning.set(true)
+            keepAliveManager?.acquireLocks()
+            showForegroundNotification("Establishing WireGuard tunnel...")
+            serviceScope.launch {
+                val parseResult = runCatching { WireGuardManager.parseConfig(wgConfigText) }
+                if (parseResult.isFailure) {
+                    val err = parseResult.exceptionOrNull()?.localizedMessage ?: "Invalid WireGuard config"
+                    stopTunnel(err, stopService = true)
+                    return@launch
+                }
+                val config = parseResult.getOrThrow()
+                val peerEndpoint = config.peers.firstOrNull()?.endpoint?.map { it.toString() }?.orElse("WireGuard Server") ?: "WireGuard Server"
+                val startResult = WireGuardManager.startTunnel(applicationContext, config)
+                if (startResult.isSuccess) {
+                    showForegroundNotification("WireGuard Connected • $peerEndpoint")
+                    VpnManager.onServiceConnected("WireGuard • $peerEndpoint")
+                } else {
+                    val err = startResult.exceptionOrNull()?.localizedMessage ?: "WireGuard GoBackend error"
+                    stopTunnel(err, stopService = true)
+                }
+            }
+            return START_STICKY
+        }
+
         serverIp = intent?.getStringExtra("SERVER_IP") ?: ""
         serverPort = intent?.getIntExtra("SERVER_PORT", 443) ?: 443
         sniHost = intent?.getStringExtra("SNI_HOST") ?: ""
         rawPayload = intent?.getStringExtra("PAYLOAD") ?: ""
-        protocol = intent?.getStringExtra("PROTOCOL") ?: "tls"
         socksHost = intent?.getStringExtra("SOCKS_HOST") ?: ""
         socksPort = intent?.getIntExtra("SOCKS_PORT", 10808) ?: 10808
         killswitchEnabled = intent?.getBooleanExtra("KILLSWITCH_ENABLED", false) ?: false
@@ -392,6 +434,7 @@ class AdvancedVpnService : VpnService(), Runnable {
                 throw IllegalStateException("VPN interface could not be established by Android OS.")
             }
 
+            // بعد نجاح إنشاء الـ localVpnInterface وبدء الاتصال الآمن:
             vpnInput = FileInputStream(localVpnInterface.fileDescriptor)
             vpnOutput = FileOutputStream(localVpnInterface.fileDescriptor)
 
@@ -404,47 +447,21 @@ class AdvancedVpnService : VpnService(), Runnable {
                 probeTargetPort = serverPort
             )
 
-            // 5. Downstream thread (Server -> TUN)
-            val downThread = Thread({
-                val buf = ByteArray(BUFFER_SIZE)
-                try {
-                    while (isRunning.get() && sessionIdGenerator.get() == mySessionId) {
-                        val n = serverIn.read(buf)
-                        if (n > 0) {
-                            vpnOutput.write(buf, 0, n)
-                            vpnOutput.flush()
-                            totalBytesReceived += n
-                            keepAliveManager?.recordTrafficActivity()
-                            VpnManager.updateTelemetry(totalBytesReceived, totalBytesSent)
-                        } else if (n < 0) {
-                            Log.i(TAG, "Server closed downstream connection.")
-                            break
-                        }
-                    }
-                } catch (e: Exception) {
-                    if (isRunning.get() && sessionIdGenerator.get() == mySessionId) {
-                        Log.e(TAG, "Downstream pipe error: ${e.message}")
+            // تشغيل جسر نقل الحزم الفعلي بين واجهة النظام والنفق المشفر
+            TunPacketForwarder.startBridging(
+                vpnInput = vpnInput,
+                vpnOutput = vpnOutput,
+                secureSocket = secureSocket,
+                isRunning = isRunning,
+                onBytesTransferred = { rx, tx ->
+                    if (sessionIdGenerator.get() == mySessionId) {
+                        totalBytesReceived = rx
+                        totalBytesSent = tx
+                        VpnManager.updateTelemetry(rx, tx)
+                        keepAliveManager?.recordTrafficActivity()
                     }
                 }
-            }, "VpnDownstream-$mySessionId")
-            downThread.start()
-
-            // 6. Upstream loop (TUN -> Server)
-            val upBuf = ByteArray(BUFFER_SIZE)
-            while (isRunning.get() && sessionIdGenerator.get() == mySessionId) {
-                val n = vpnInput.read(upBuf)
-                if (n > 0) {
-                    serverOut.write(upBuf, 0, n)
-                    serverOut.flush()
-                    totalBytesSent += n
-                    keepAliveManager?.recordTrafficActivity()
-                    VpnManager.updateTelemetry(totalBytesReceived, totalBytesSent)
-                } else if (n < 0) {
-                    break
-                }
-            }
-
-            downThread.join(1000)
+            )
 
         } catch (e: java.net.UnknownHostException) {
             val msg = "Cannot resolve '$serverIp'. Enter a valid server IP or domain."
@@ -540,6 +557,9 @@ class AdvancedVpnService : VpnService(), Runnable {
 
     private fun stopTunnel(reason: String? = null, stopService: Boolean = true) {
         val wasRunning = isRunning.getAndSet(false)
+        if (protocol == "wireguard") {
+            WireGuardManager.stopTunnelBlocking(applicationContext)
+        }
         keepAliveManager?.stopMonitoringAndReleaseLocks()
         closeActiveResources()
         tunnelThread?.interrupt()

@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,8 +26,6 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -38,6 +35,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -52,17 +50,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.advancedtunnel.model.TunnelStatus
 import com.example.advancedtunnel.ui.theme.AccentOrange
+import com.example.advancedtunnel.ui.theme.BackgroundDark
 import com.example.advancedtunnel.ui.theme.BorderDark
 import com.example.advancedtunnel.ui.theme.CardBackground
 import com.example.advancedtunnel.ui.theme.CyanPrimary
+import com.example.advancedtunnel.ui.theme.StarlinkMonoFontFamily
+import com.example.advancedtunnel.ui.theme.StarlinkSansFontFamily
 import com.example.advancedtunnel.ui.theme.SuccessGreen
-import com.example.advancedtunnel.ui.theme.SurfaceDark
 import com.example.advancedtunnel.ui.theme.SurfaceVariantDark
 import com.example.advancedtunnel.ui.theme.TextMuted
 import com.example.advancedtunnel.ui.theme.TextPrimary
@@ -99,7 +98,7 @@ fun AntiDpiConfigCard(
             .fillMaxWidth()
             .testTag("anti_dpi_config_card"),
         colors = CardDefaults.cardColors(containerColor = CardBackground),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, BorderDark)
     ) {
         Column(
@@ -126,15 +125,17 @@ fun AntiDpiConfigCard(
                     Column {
                         Text(
                             text = "TLS RECORD FRAGMENTATION & DESYNC",
+                            fontFamily = StarlinkMonoFontFamily,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = CyanPrimary,
-                            letterSpacing = 0.8.sp
+                            letterSpacing = 1.6.sp
                         )
                         Text(
                             text = "Splits outbound ClientHello & SNI across records/segments",
+                            fontFamily = StarlinkSansFontFamily,
                             fontSize = 11.sp,
-                            color = TextMuted
+                            color = TextSecondary
                         )
                     }
                 }
@@ -144,8 +145,11 @@ fun AntiDpiConfigCard(
                     onCheckedChange = { viewModel.updateTlsFragmentConfig(enabled = it) },
                     enabled = !isLocked,
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = SurfaceDark,
-                        checkedTrackColor = CyanPrimary
+                        checkedThumbColor = BackgroundDark,
+                        checkedTrackColor = CyanPrimary,
+                        uncheckedThumbColor = TextSecondary,
+                        uncheckedTrackColor = BackgroundDark,
+                        uncheckedBorderColor = BorderDark
                     ),
                     modifier = Modifier.testTag("tls_frag_enable_switch")
                 )
@@ -156,18 +160,19 @@ fun AntiDpiConfigCard(
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         text = "DESYNCHRONIZATION ENGINE MODE",
+                        fontFamily = StarlinkMonoFontFamily,
                         fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextMuted,
-                        letterSpacing = 0.8.sp
+                        fontWeight = FontWeight.Bold,
+                        color = TextSecondary,
+                        letterSpacing = 1.4.sp
                     )
                     Box(modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(SurfaceDark)
-                                .border(1.dp, BorderDark, RoundedCornerShape(10.dp))
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(BackgroundDark)
+                                .border(1.dp, BorderDark, RoundedCornerShape(8.dp))
                                 .clickable(enabled = !isLocked) { modeMenuExpanded = true }
                                 .padding(horizontal = 12.dp, vertical = 10.dp)
                                 .testTag("tls_frag_mode_dropdown"),
@@ -177,12 +182,14 @@ fun AntiDpiConfigCard(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = config.mode.label,
+                                    fontFamily = StarlinkSansFontFamily,
                                     color = TextPrimary,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
                                     text = config.mode.description,
+                                    fontFamily = StarlinkSansFontFamily,
                                     color = TextSecondary,
                                     fontSize = 10.sp
                                 )
@@ -205,13 +212,15 @@ fun AntiDpiConfigCard(
                                         Column {
                                             Text(
                                                 text = modeOption.label,
+                                                fontFamily = StarlinkSansFontFamily,
                                                 color = TextPrimary,
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.SemiBold
                                             )
                                             Text(
                                                 text = modeOption.description,
-                                                color = TextMuted,
+                                                fontFamily = StarlinkSansFontFamily,
+                                                color = TextSecondary,
                                                 fontSize = 10.sp
                                             )
                                         }
@@ -234,25 +243,26 @@ fun AntiDpiConfigCard(
                     ) {
                         Text(
                             text = "FRAGMENT CHUNK WINDOW",
+                            fontFamily = StarlinkMonoFontFamily,
                             fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextMuted,
-                            letterSpacing = 0.8.sp
+                            fontWeight = FontWeight.Bold,
+                            color = TextSecondary,
+                            letterSpacing = 1.4.sp
                         )
                         Text(
-                            text = "${config.normalizedMinChunk()}–${config.normalizedMaxChunk()} bytes",
+                            text = "${config.normalizedMinChunk()}–${config.normalizedMaxChunk()} BYTES",
                             fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = StarlinkMonoFontFamily,
                             color = CyanPrimary,
                             fontWeight = FontWeight.Bold
                         )
                     }
 
                     val chunkPresets = listOf(
-                        Triple("1–8 B (Micro)", 1, 8),
-                        Triple("5–15 B (Default)", 5, 15),
-                        Triple("8–24 B (Balanced)", 8, 24),
-                        Triple("16–48 B (Wide)", 16, 48)
+                        Triple("1–8 B (MICRO)", 1, 8),
+                        Triple("5–15 B (DEFAULT)", 5, 15),
+                        Triple("8–24 B (BALANCED)", 8, 24),
+                        Triple("16–48 B (WIDE)", 16, 48)
                     )
                     Row(
                         modifier = Modifier
@@ -272,11 +282,19 @@ fun AntiDpiConfigCard(
                                         )
                                     }
                                 },
-                                label = { Text(label, fontSize = 11.sp) },
+                                label = {
+                                    Text(
+                                        text = label,
+                                        fontFamily = StarlinkMonoFontFamily,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                },
+                                shape = RoundedCornerShape(6.dp),
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = CyanPrimary.copy(alpha = 0.18f),
+                                    selectedContainerColor = CyanPrimary.copy(alpha = 0.2f),
                                     selectedLabelColor = CyanPrimary,
-                                    containerColor = SurfaceDark,
+                                    containerColor = BackgroundDark,
                                     labelColor = TextSecondary
                                 )
                             )
@@ -292,25 +310,26 @@ fun AntiDpiConfigCard(
                     ) {
                         Text(
                             text = "INTER-PACKET JITTER DELAY",
+                            fontFamily = StarlinkMonoFontFamily,
                             fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextMuted,
-                            letterSpacing = 0.8.sp
+                            fontWeight = FontWeight.Bold,
+                            color = TextSecondary,
+                            letterSpacing = 1.4.sp
                         )
                         Text(
-                            text = "${config.normalizedMinJitter()}–${config.normalizedMaxJitter()} ms",
+                            text = "${config.normalizedMinJitter()}–${config.normalizedMaxJitter()} MS",
                             fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = SuccessGreen,
+                            fontFamily = StarlinkMonoFontFamily,
+                            color = CyanPrimary,
                             fontWeight = FontWeight.Bold
                         )
                     }
 
                     val jitterPresets = listOf(
-                        Triple("0–2 ms (Fast)", 0, 2),
-                        Triple("3–12 ms (Standard)", 3, 12),
-                        Triple("8–22 ms (Deep DPI)", 8, 22),
-                        Triple("15–40 ms (Strict)", 15, 40)
+                        Triple("0–2 MS (FAST)", 0, 2),
+                        Triple("3–12 MS (STANDARD)", 3, 12),
+                        Triple("8–22 MS (DEEP DPI)", 8, 22),
+                        Triple("15–40 MS (STRICT)", 15, 40)
                     )
                     Row(
                         modifier = Modifier
@@ -330,11 +349,19 @@ fun AntiDpiConfigCard(
                                         )
                                     }
                                 },
-                                label = { Text(label, fontSize = 11.sp) },
+                                label = {
+                                    Text(
+                                        text = label,
+                                        fontFamily = StarlinkMonoFontFamily,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                },
+                                shape = RoundedCornerShape(6.dp),
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = SuccessGreen.copy(alpha = 0.18f),
-                                    selectedLabelColor = SuccessGreen,
-                                    containerColor = SurfaceDark,
+                                    selectedContainerColor = CyanPrimary.copy(alpha = 0.2f),
+                                    selectedLabelColor = CyanPrimary,
+                                    containerColor = BackgroundDark,
                                     labelColor = TextSecondary
                                 )
                             )
@@ -343,7 +370,7 @@ fun AntiDpiConfigCard(
                 }
             }
 
-            HorizontalDivider(color = BorderDark)
+            HorizontalDivider(color = BorderDark, thickness = 1.dp)
 
             // Section 2: JA3 / JA4 TLS Fingerprint Spoofing Engine
             Row(
@@ -358,21 +385,23 @@ fun AntiDpiConfigCard(
                     Icon(
                         imageVector = Icons.Default.Fingerprint,
                         contentDescription = "JA3/JA4 Fingerprint Spoofing",
-                        tint = SuccessGreen,
+                        tint = CyanPrimary,
                         modifier = Modifier.size(18.dp)
                     )
                     Column {
                         Text(
                             text = "JA3 / JA4 TLS FINGERPRINT SPOOFING",
+                            fontFamily = StarlinkMonoFontFamily,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = SuccessGreen,
-                            letterSpacing = 0.8.sp
+                            color = CyanPrimary,
+                            letterSpacing = 1.6.sp
                         )
                         Text(
                             text = "Emulates mobile browser cipher suites, ALPN & curves",
+                            fontFamily = StarlinkSansFontFamily,
                             fontSize = 11.sp,
-                            color = TextMuted
+                            color = TextSecondary
                         )
                     }
                 }
@@ -384,11 +413,19 @@ fun AntiDpiConfigCard(
                             viewModel.updateTlsFragmentConfig(alpnEnabled = !config.alpnEnabled)
                         }
                     },
-                    label = { Text(if (config.alpnEnabled) "ALPN h2" else "ALPN Off", fontSize = 10.sp) },
+                    label = {
+                        Text(
+                            text = if (config.alpnEnabled) "ALPN H2" else "ALPN OFF",
+                            fontFamily = StarlinkMonoFontFamily,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    shape = RoundedCornerShape(6.dp),
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = SuccessGreen.copy(alpha = 0.18f),
-                        selectedLabelColor = SuccessGreen,
-                        containerColor = SurfaceDark,
+                        selectedContainerColor = CyanPrimary.copy(alpha = 0.2f),
+                        selectedLabelColor = CyanPrimary,
+                        containerColor = BackgroundDark,
                         labelColor = TextMuted
                     ),
                     modifier = Modifier.testTag("tls_alpn_toggle_chip")
@@ -401,9 +438,9 @@ fun AntiDpiConfigCard(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(SurfaceDark)
-                        .border(1.dp, BorderDark, RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(BackgroundDark)
+                        .border(1.dp, BorderDark, RoundedCornerShape(8.dp))
                         .clickable(enabled = !isLocked) { fpMenuExpanded = true }
                         .padding(horizontal = 12.dp, vertical = 10.dp)
                         .testTag("ja3_profile_dropdown"),
@@ -413,12 +450,14 @@ fun AntiDpiConfigCard(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = resolvedBrowser.displayName,
+                            fontFamily = StarlinkSansFontFamily,
                             color = TextPrimary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
                             text = "${resolvedBrowser.browserEngine} • ALPN: ${activeFp.negotiatedAlpn}",
+                            fontFamily = StarlinkMonoFontFamily,
                             color = TextSecondary,
                             fontSize = 10.sp
                         )
@@ -426,7 +465,7 @@ fun AntiDpiConfigCard(
                     Icon(
                         imageVector = Icons.Default.ArrowDropDown,
                         contentDescription = "Select JA3/JA4 browser profile",
-                        tint = SuccessGreen
+                        tint = CyanPrimary
                     )
                 }
 
@@ -441,13 +480,15 @@ fun AntiDpiConfigCard(
                                 Column {
                                     Text(
                                         text = browserProfile.displayName,
+                                        fontFamily = StarlinkSansFontFamily,
                                         color = TextPrimary,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold
                                     )
                                     Text(
                                         text = "${browserProfile.browserEngine} (${browserProfile.ja3CipherIds.size} ciphers)",
-                                        color = TextMuted,
+                                        fontFamily = StarlinkMonoFontFamily,
+                                        color = TextSecondary,
                                         fontSize = 10.sp
                                     )
                                 }
@@ -465,9 +506,9 @@ fun AntiDpiConfigCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(SurfaceDark)
-                    .border(1.dp, BorderDark, RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(BackgroundDark)
+                    .border(1.dp, BorderDark, RoundedCornerShape(8.dp))
                     .padding(10.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -479,16 +520,16 @@ fun AntiDpiConfigCard(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "JA4: ${activeFp.ja4String}",
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = StarlinkMonoFontFamily,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = SuccessGreen
+                            color = CyanPrimary
                         )
                         Text(
                             text = "JA3 MD5: ${activeFp.ja3HashMd5}",
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = StarlinkMonoFontFamily,
                             fontSize = 10.sp,
-                            color = CyanPrimary
+                            color = TextSecondary
                         )
                     }
                     IconButton(
@@ -511,8 +552,8 @@ fun AntiDpiConfigCard(
                     }
                 }
                 Text(
-                    text = "Vector: ${activeFp.ja3RawString}",
-                    fontFamily = FontFamily.Monospace,
+                    text = "VECTOR: ${activeFp.ja3RawString}",
+                    fontFamily = StarlinkMonoFontFamily,
                     fontSize = 9.sp,
                     color = TextMuted,
                     lineHeight = 13.sp
@@ -527,26 +568,30 @@ fun AntiDpiConfigCard(
             ) {
                 Text(
                     text = "Verify record framing & SNI split offset:",
+                    fontFamily = StarlinkSansFontFamily,
                     fontSize = 11.sp,
                     color = TextSecondary
                 )
-                Button(
+                OutlinedButton(
                     onClick = { viewModel.runClientHelloDesyncSimulation() },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = SurfaceDark,
-                        contentColor = CyanPrimary
-                    ),
-                    border = BorderStroke(1.dp, CyanPrimary.copy(alpha = 0.5f)),
+                    border = BorderStroke(1.dp, CyanPrimary),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.testTag("test_tls_desync_button")
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = null,
+                        tint = CyanPrimary,
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Test Desync Framing", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "TEST DESYNC FRAMING",
+                        fontFamily = StarlinkMonoFontFamily,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = CyanPrimary
+                    )
                 }
             }
 
@@ -554,30 +599,31 @@ fun AntiDpiConfigCard(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(SurfaceDark)
-                        .border(1.dp, CyanPrimary.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(BackgroundDark)
+                        .border(1.dp, CyanPrimary.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
                         .padding(10.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
                         text = "CLIENT HELLO DESYNC TRACE (${stats.originalBytes}B -> ${stats.emittedBytes}B)",
+                        fontFamily = StarlinkMonoFontFamily,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = AccentOrange,
-                        letterSpacing = 0.6.sp
+                        letterSpacing = 1.2.sp
                     )
                     Text(
                         text = "TLS 0x16 Records: ${stats.tlsRecordCount} • TCP Segments: ${stats.tcpWriteChunks} • SNI Split @ +${stats.sniSplitOffset}B • Jitter: ${stats.totalJitterDelayMs}ms",
                         fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
+                        fontFamily = StarlinkMonoFontFamily,
                         color = SuccessGreen
                     )
                     stats.chunkBreakdown.forEach { line ->
                         Text(
                             text = line,
                             fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = StarlinkMonoFontFamily,
                             color = TextSecondary
                         )
                     }
