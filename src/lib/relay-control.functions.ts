@@ -3,6 +3,15 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const HEALTH_CHECK_WINDOW_MS = 60_000;
 const HEALTH_CHECK_LIMIT = 10;
+const DEFAULT_CIRCLECI_DEPLOY_HOOK_URL =
+  "https://circleci.com/api/v3/deploy/hooks/13990af0-015d-4b37-957b-22c2650488ae/validate";
+
+export type CheckRelayServerInput = {
+  id: string;
+  host: string;
+  port: number;
+  transport: string;
+};
 
 function isBlockedHost(host: string): boolean {
   const normalized = host.trim().toLowerCase();
@@ -19,11 +28,45 @@ function isBlockedHost(host: string): boolean {
   );
 }
 
+async function notifyCircleCiDeployHook(payload: {
+  relayId: string;
+  status: "online" | "degraded" | "offline";
+  latencyMs: number | null;
+  errorCode: string | null;
+}): Promise<void> {
+  const secret = process.env["CIRCLECI_WEBHOOK_SECRET"]?.trim();
+  if (!secret || secret.startsWith("YOUR_")) return;
+
+  const hookUrl =
+    process.env["CIRCLECI_DEPLOY_HOOK_URL"]?.trim() || DEFAULT_CIRCLECI_DEPLOY_HOOK_URL;
+
+  try {
+    await fetch(hookUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        status: payload.status === "online" ? "healthy" : "unhealthy",
+        relay_id: payload.relayId,
+        relay_status: payload.status,
+        latency_ms: payload.latencyMs,
+        error_code: payload.errorCode,
+        timestamp: new Date().toISOString(),
+      }),
+      signal: AbortSignal.timeout(4_000),
+    });
+  } catch (err) {
+    console.warn("[relay-control] CircleCI deploy hook notification skipped:", err);
+  }
+}
+
 export const checkRelayServer = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context, data }) => {
-    const input = data as { id: string; host: string; port: number; transport: string };
-    if (!input.id || !input.host || !Number.isInteger(input.port) || input.port < 1 || input.port > 65535) {
+  .inputValidator((d: CheckRelayServerInput) => d)
+  .handler(async ({ context, data: input }) => {
+    if (!input?.id || !input?.host || !Number.isInteger(input.port) || input.port < 1 || input.port > 65535) {
       throw new Error("Invalid relay server input");
     }
     if (input.transport === "wireguard") {
@@ -78,6 +121,13 @@ export const checkRelayServer = createServerFn({ method: "POST" })
       entity_type: "relay_server",
       entity_id: input.id,
       metadata: { status, latencyMs, errorCode },
+    });
+
+    await notifyCircleCiDeployHook({
+      relayId: input.id,
+      status,
+      latencyMs,
+      errorCode,
     });
 
     return { status, latencyMs, errorCode };

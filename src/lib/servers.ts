@@ -92,13 +92,18 @@ export type RelayServerRow = {
   port: number;
   transport: string;
   notes: string | null;
-  status: "unknown" | "online" | "offline" | "degraded";
-  last_checked_at: string | null;
-  last_latency_ms: number | null;
+  status?: string;
+  last_checked_at?: string | null;
+  last_latency_ms?: number | null;
   created_at: string;
 };
 
 export function rowToServer(row: RelayServerRow): RelayServer {
+  const status: RelayServer["status"] =
+    row.status === "online" || row.status === "offline" || row.status === "degraded"
+      ? row.status
+      : "unknown";
+
   return {
     id: row.id,
     name: row.name,
@@ -106,9 +111,9 @@ export function rowToServer(row: RelayServerRow): RelayServer {
     port: row.port,
     transport: row.transport,
     notes: row.notes ?? "",
-    status: row.status,
+    status,
     lastCheckedAt: row.last_checked_at ? Date.parse(row.last_checked_at) : null,
-    lastLatencyMs: row.last_latency_ms,
+    lastLatencyMs: row.last_latency_ms ?? null,
     createdAt: Date.parse(row.created_at),
   };
 }

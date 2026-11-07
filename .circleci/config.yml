@@ -1,0 +1,40 @@
+version: 2.1
+
+jobs:
+  build_and_validate:
+    docker:
+      - image: cimg/node:22.14
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: npm install
+      - run:
+          name: Typecheck and lint
+          command: |
+            npx tsc --noEmit
+            npm run lint
+      - run:
+          name: Run unit tests
+          command: npm test
+      - run:
+          name: Build application
+          command: npm run build
+      - run:
+          name: Report deploy validation to CircleCI Deploy Hook
+          when: on_success
+          command: |
+            HOOK_URL="${CIRCLECI_DEPLOY_HOOK_URL:-https://circleci.com/api/v3/deploy/hooks/13990af0-015d-4b37-957b-22c2650488ae/validate}"
+            if [ -n "${CIRCLECI_WEBHOOK_SECRET:-}" ]; then
+              curl -fsSL -X POST "$HOOK_URL" \
+                -H "Authorization: Bearer ${CIRCLECI_WEBHOOK_SECRET}" \
+                -H "Content-Type: application/json" \
+                -d "{\"status\":\"healthy\",\"commit\":\"${CIRCLE_SHA1:-local}\",\"branch\":\"${CIRCLE_BRANCH:-main}\"}"
+            else
+              echo "CIRCLECI_WEBHOOK_SECRET not set; skipping deploy hook validation call."
+            fi
+
+workflows:
+  tunnel_console_ci:
+    jobs:
+      - build_and_validate
