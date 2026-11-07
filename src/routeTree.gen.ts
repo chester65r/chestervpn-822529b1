@@ -15,7 +15,6 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
-import { Route as ApiRelayProbeRouteImport } from './routes/api/relay-probe'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 import { Route as ApiPublicDatabaseBackupRouteImport } from './routes/api/public/database-backup'
 
@@ -50,11 +49,6 @@ const Char91DotwellKnownChar93OauthProtectedResourceRoute =
     path: '/.well-known/oauth-protected-resource',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiRelayProbeRoute = ApiRelayProbeRouteImport.update({
-  id: '/api/relay-probe',
-  path: '/api/relay-probe',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
   id: '/.lovable/oauth/consent',
   path: '/.lovable/oauth/consent',
@@ -73,7 +67,6 @@ export interface FileRoutesByFullPath {
   '/mcp': typeof McpRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
-  '/api/relay-probe': typeof ApiRelayProbeRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/database-backup': typeof ApiPublicDatabaseBackupRoute
 }
@@ -84,7 +77,6 @@ export interface FileRoutesByTo {
   '/mcp': typeof McpRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
-  '/api/relay-probe': typeof ApiRelayProbeRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/database-backup': typeof ApiPublicDatabaseBackupRoute
 }
@@ -96,7 +88,6 @@ export interface FileRoutesById {
   '/mcp': typeof McpRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
-  '/api/relay-probe': typeof ApiRelayProbeRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/database-backup': typeof ApiPublicDatabaseBackupRoute
 }
@@ -109,7 +100,6 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/sitemap.xml'
     | '/.well-known/oauth-protected-resource'
-    | '/api/relay-probe'
     | '/.lovable/oauth/consent'
     | '/api/public/database-backup'
   fileRoutesByTo: FileRoutesByTo
@@ -120,7 +110,6 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/sitemap.xml'
     | '/.well-known/oauth-protected-resource'
-    | '/api/relay-probe'
     | '/.lovable/oauth/consent'
     | '/api/public/database-backup'
   id:
@@ -131,7 +120,6 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/sitemap.xml'
     | '/.well-known/oauth-protected-resource'
-    | '/api/relay-probe'
     | '/.lovable/oauth/consent'
     | '/api/public/database-backup'
   fileRoutesById: FileRoutesById
@@ -143,7 +131,6 @@ export interface RootRouteChildren {
   McpRoute: typeof McpRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
-  ApiRelayProbeRoute: typeof ApiRelayProbeRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
   ApiPublicDatabaseBackupRoute: typeof ApiPublicDatabaseBackupRoute
 }
@@ -192,13 +179,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/relay-probe': {
-      id: '/api/relay-probe'
-      path: '/api/relay-probe'
-      fullPath: '/api/relay-probe'
-      preLoaderRoute: typeof ApiRelayProbeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/.lovable/oauth/consent': {
       id: '/.lovable/oauth/consent'
       path: '/.lovable/oauth/consent'
@@ -224,7 +204,6 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
-  ApiRelayProbeRoute: ApiRelayProbeRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
   ApiPublicDatabaseBackupRoute: ApiPublicDatabaseBackupRoute,
 }

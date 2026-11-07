@@ -17,7 +17,7 @@ import {
   type ServerErrors,
 } from "@/lib/servers";
 import { DEPLOYMENT_TARGETS, RELAY_DEPLOYMENT_NOTES, getRelayDeploymentCommand, type RelayDeploymentTarget } from "@/lib/server-deployment";
-import { checkRelayServer, createRelayProbeEnrollment } from "@/lib/relay-control.functions";
+import { checkRelayServer } from "@/lib/relay-control.functions";
 
 const fieldClass =
   "w-full rounded-xl border border-input bg-muted px-3.5 py-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring disabled:opacity-50";
@@ -57,11 +57,7 @@ export function ServersTab({ onUseServer }: Props) {
   const [deploymentHost, setDeploymentHost] = useState("");
   const [copiedDeployment, setCopiedDeployment] = useState(false);
   const [checkingServerId, setCheckingServerId] = useState<string | null>(null);
-  const [enrollingServerId, setEnrollingServerId] = useState<string | null>(null);
-  const [probeToken, setProbeToken] = useState<string | null>(null);
-  const [probeServerName, setProbeServerName] = useState<string | null>(null);
   const runHealthCheck = useServerFn(checkRelayServer);
-  const enrollProbe = useServerFn(createRelayProbeEnrollment);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -175,20 +171,6 @@ export function ServersTab({ onUseServer }: Props) {
     }
     toast(`Deleted "${server.name}"`);
     setServers((list) => list.filter((s) => s.id !== server.id));
-  };
-
-  const enrollServer = async (server: RelayServer) => {
-    setEnrollingServerId(server.id);
-    try {
-      const result = await enrollProbe({ data: { id: server.id } });
-      setProbeToken(result.token);
-      setProbeServerName(server.name);
-      toast.success("Probe token created", { description: "Copy it now. It will not be shown again." });
-    } catch (error) {
-      toast.error("Probe enrollment failed", { description: error instanceof Error ? error.message : "Try again later." });
-    } finally {
-      setEnrollingServerId(null);
-    }
   };
 
   const checkHealth = async (server: RelayServer) => {
@@ -357,16 +339,6 @@ export function ServersTab({ onUseServer }: Props) {
               </button>
               <button
                 type="button"
-                title="Create agent probe token"
-                aria-label={`Create agent probe token for ${s.name}`}
-                onClick={() => void enrollServer(s)}
-                disabled={enrollingServerId === s.id}
-                className="rounded-lg bg-secondary p-2 text-secondary-foreground transition-colors hover:text-primary disabled:opacity-50"
-              >
-                <ServerIcon className={`h-4 w-4 ${enrollingServerId === s.id ? "animate-pulse" : ""}`} />
-              </button>
-              <button
-                type="button"
                 title="Use in Configure"
                 aria-label={`Use ${s.name} in Configure`}
                 onClick={() => onUseServer(s.host, s.port)}
@@ -384,19 +356,6 @@ export function ServersTab({ onUseServer }: Props) {
               </button>
             </div>
           ))}
-        </div>
-      )}
-
-      {probeToken && probeServerName && (
-        <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
-          <p className="text-xs font-medium tracking-wider text-amber-500">ONE-TIME AGENT TOKEN · {probeServerName}</p>
-          <p className="text-[11px] text-muted-foreground">Store this in the relay agent environment. It cannot be recovered after leaving this screen.</p>
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-background p-2">
-            <code className="min-w-0 flex-1 break-all font-mono text-[11px] text-foreground">{probeToken}</code>
-            <button type="button" aria-label="Copy agent token" className="rounded-md p-1.5 text-muted-foreground hover:text-foreground" onClick={() => void navigator.clipboard.writeText(probeToken).then(() => toast.success("Agent token copied")).catch(() => toast.error("Copy failed"))}>
-              <Copy className="h-4 w-4" />
-            </button>
-          </div>
         </div>
       )}
 

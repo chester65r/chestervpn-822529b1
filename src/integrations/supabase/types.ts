@@ -17,7 +17,7 @@ export type Database = {
       audit_logs: {
         Row: {
           action: string
-          actor_id: string | null
+          actor_id: string
           created_at: string
           entity_id: string | null
           entity_type: string
@@ -26,7 +26,7 @@ export type Database = {
         }
         Insert: {
           action: string
-          actor_id: string | null
+          actor_id: string
           created_at?: string
           entity_id?: string | null
           entity_type: string
@@ -35,7 +35,7 @@ export type Database = {
         }
         Update: {
           action?: string
-          actor_id?: string | null
+          actor_id?: string
           created_at?: string
           entity_id?: string | null
           entity_type?: string
@@ -91,8 +91,6 @@ export type Database = {
           notes: string | null
           owner_id: string
           port: number
-          probe_token_created_at: string | null
-          probe_token_hash: string | null
           status: string
           transport: string
           updated_at: string
@@ -107,8 +105,6 @@ export type Database = {
           notes?: string | null
           owner_id: string
           port: number
-          probe_token_created_at?: string | null
-          probe_token_hash?: string | null
           status?: string
           transport?: string
           updated_at?: string
