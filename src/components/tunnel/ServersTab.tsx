@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { ArrowRight, Loader2, LogOut, Server as ServerIcon, Trash2 } from "lucide-react";
+import { ArrowRight, Check, Copy, Loader2, LogOut, Server as ServerIcon, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useWebMCP } from "use-webmcp-tool";
 import { runWebMCPTool } from "@/lib/webmcp-telemetry";
@@ -15,6 +15,7 @@ import {
   type RelayServer,
   type ServerErrors,
 } from "@/lib/servers";
+import { DEPLOYMENT_TARGETS, RELAY_DEPLOYMENT_NOTES, getRelayDeploymentCommand, type RelayDeploymentTarget } from "@/lib/server-deployment";
 
 const fieldClass =
   "w-full rounded-xl border border-input bg-muted px-3.5 py-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring disabled:opacity-50";
@@ -50,6 +51,9 @@ export function ServersTab({ onUseServer }: Props) {
   const [notes, setNotes] = useState("");
   const [errors, setErrors] = useState<ServerErrors>({});
   const [saving, setSaving] = useState(false);
+  const [deploymentTarget, setDeploymentTarget] = useState<RelayDeploymentTarget>("ubuntu");
+  const [deploymentHost, setDeploymentHost] = useState("");
+  const [copiedDeployment, setCopiedDeployment] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -355,6 +359,52 @@ export function ServersTab({ onUseServer }: Props) {
           {saving && <Loader2 className="h-4 w-4 animate-spin" />}
           Add server
         </button>
+      </div>
+
+      <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
+        <div>
+          <p className="text-xs font-medium tracking-wider text-primary">DEPLOY YOUR OWN RELAY</p>
+          <p className="mt-1 text-xs text-muted-foreground">Generate a reproducible setup command for a server you control.</p>
+        </div>
+        <Field label="PUBLIC HOSTNAME OR IP">
+          <input
+            className={fieldClass}
+            placeholder="vpn.example.com"
+            value={deploymentHost}
+            onChange={(e) => {
+              setDeploymentHost(e.target.value);
+              setCopiedDeployment(false);
+            }}
+          />
+        </Field>
+        <Field label="DEPLOYMENT TARGET">
+          <select className={fieldClass} value={deploymentTarget} onChange={(e) => setDeploymentTarget(e.target.value as RelayDeploymentTarget)}>
+            {DEPLOYMENT_TARGETS.map((target) => (
+              <option key={target.id} value={target.id}>{target.label} — {target.description}</option>
+            ))}
+          </select>
+        </Field>
+        <div className="rounded-lg border border-border bg-background p-2.5">
+          <code className="block break-words font-mono text-[11px] leading-relaxed text-muted-foreground">
+            {deploymentHost.trim() ? getRelayDeploymentCommand(deploymentTarget, deploymentHost) : "Enter the server host to generate a setup command."}
+          </code>
+        </div>
+        <button
+          type="button"
+          disabled={!deploymentHost.trim()}
+          onClick={async () => {
+            await navigator.clipboard.writeText(getRelayDeploymentCommand(deploymentTarget, deploymentHost));
+            setCopiedDeployment(true);
+            toast.success("Deployment command copied");
+          }}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+        >
+          {copiedDeployment ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+          {copiedDeployment ? "Copied" : "Copy deployment command"}
+        </button>
+        <ul className="space-y-1 text-[11px] text-muted-foreground">
+          {RELAY_DEPLOYMENT_NOTES.map((note) => <li key={note}>• {note}</li>)}
+        </ul>
       </div>
       <AwsPanel />
     </div>
