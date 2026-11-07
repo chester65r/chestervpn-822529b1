@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { createRelayProbeToken, hashRelayProbeToken } from "@/lib/relay-probe";
 
 const HEALTH_CHECK_WINDOW_MS = 60_000;
 const HEALTH_CHECK_LIMIT = 10;
@@ -18,6 +19,32 @@ function isBlockedHost(host: string): boolean {
     normalized === "0.0.0.0"
   );
 }
+
+export const createRelayProbeEnrollment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context, data }) => {
+    const input = data as { id: string };
+    if (!input.id) throw new Error("Invalid relay server input");
+
+    const token = createRelayProbeToken();
+    const tokenHash = await hashRelayProbeToken(token);
+    const { error } = await context.supabase
+      .from("relay_servers")
+      .update({ probe_token_hash: tokenHash, probe_token_created_at: new Date().toISOString() })
+      .eq("id", input.id)
+      .eq("owner_id", context.userId);
+    if (error) throw new Error("Could not create probe enrollment");
+
+    await context.supabase.from("audit_logs").insert({
+      actor_id: context.userId,
+      action: "relay.probe_enrollment_created",
+      entity_type: "relay_server",
+      entity_id: input.id,
+      metadata: { tokenIssued: true },
+    });
+
+    return { token };
+  });
 
 export const checkRelayServer = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
