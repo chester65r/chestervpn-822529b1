@@ -3,7 +3,11 @@ import listRelayServers from "./tools/list-relay-servers";
 import addRelayServer from "./tools/add-relay-server";
 import androidCompatibility from "./tools/android-compatibility";
 
-const projectRef = import.meta.env['VITE_SUPABASE_PROJECT_ID'] ?? "project-ref-unset";
+const rawProjectRef = import.meta.env['VITE_SUPABASE_PROJECT_ID'];
+const projectRef =
+  rawProjectRef && !rawProjectRef.startsWith("YOUR_")
+    ? rawProjectRef
+    : "vuxeryslquczubilasqe";
 export default defineMcp({
   name: "tunnel-guardian-compass",
   title: "Tunnel Console",

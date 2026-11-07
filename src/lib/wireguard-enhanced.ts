@@ -244,11 +244,12 @@ export class WireGuardConfigGenerator {
           case "PresharedKey":
             result.presharedKey = value;
             break;
-          case "Endpoint":
+          case "Endpoint": {
             const [host = "", port = "0"] = value.split(":");
             result.endpointHost = host;
             result.endpointPort = parseInt(port, 10) || 0;
             break;
+          }
           case "AllowedIPs":
             result.allowedIps = value.split(",").map((s) => s.trim());
             break;

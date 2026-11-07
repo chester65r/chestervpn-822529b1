@@ -82,9 +82,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { name: "google-site-verification", content: "JbzVlfuQ1ChmPJTFCE-FRuNjN7uZ_Qj6CinWP_U9Vag" },
       { title: "Tunnel Console" },
-      { name: "description", content: "Mobile-first tunnel dashboard and Android VPN blueprint." },
-            { property: "og:title", content: "Tunnel Console" },
-      { property: "og:description", content: "Mobile-first tunnel dashboard and Android VPN blueprint." },
+      {
+        name: "description",
+        content:
+          "Native Android VPN, Google Cloud and Hetzner VPS Quick Connect, real TUN interface telemetry, and HTTP Payload Generator.",
+      },
+      { property: "og:title", content: "Tunnel Console" },
+      {
+        property: "og:description",
+        content:
+          "Native Android VPN, Google Cloud and Hetzner VPS Quick Connect, real TUN interface telemetry, and HTTP Payload Generator.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],

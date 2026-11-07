@@ -3,8 +3,16 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { brokeredPreviewStorage } from './previewAuthStorage';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const rawUrl = import.meta.env.VITE_SUPABASE_URL;
+const rawKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_URL =
+  rawUrl && /^https?:\/\//i.test(rawUrl)
+    ? rawUrl
+    : 'https://vuxeryslquczubilasqe.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY =
+  rawKey && !rawKey.startsWith('YOUR_')
+    ? rawKey
+    : 'sb_publishable_QgVt-NTb6LRaaiqLOKT2ug_IJsn9Zhh';
 
 
 function isNewSupabaseApiKey(value: string): boolean {

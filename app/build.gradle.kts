@@ -79,6 +79,7 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // implementation(libs.androidx.navigation.compose)
 
     // Firebase & Gemini AI Logic

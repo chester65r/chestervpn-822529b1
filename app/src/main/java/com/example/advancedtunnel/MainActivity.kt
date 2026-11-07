@@ -1,53 +1,99 @@
 package com.example.advancedtunnel
 
-import android.app.Activity
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.VpnService
+import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.viewModels
-import com.example.advancedtunnel.firebase.configureAppCheck
-import com.example.advancedtunnel.ui.TunnelApp
-import com.example.advancedtunnel.ui.theme.TunnelTheme
-import com.example.advancedtunnel.viewmodel.TunnelViewModel
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.core.content.ContextCompat
+import com.example.advancedtunnel.model.TunnelProfile
+import com.example.advancedtunnel.ui.TunnelConsoleScreen
+import com.example.advancedtunnel.vpn.TunnelVpnService
 
 class MainActivity : ComponentActivity() {
 
-    private val viewModel: TunnelViewModel by viewModels()
+    private var pendingProfile: TunnelProfile? = null
 
-    private val vpnConsentLauncher =
+    private val vpnPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == Activity.RESULT_OK) {
-                viewModel.onVpnPermissionGranted(this)
-            } else {
-                Toast.makeText(this, "VPN permission required to create secure tunnel", Toast.LENGTH_LONG).show()
+            val profile = pendingProfile
+            pendingProfile = null
+
+            if (result.resultCode == RESULT_OK && profile != null) {
+                startVpnService(profile)
+            }
+        }
+
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                // Notification permission granted.
             }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Mandatory App Check initialization with launch intent before UI or Firebase operations
-        configureAppCheck(this, intent)
-
-        enableEdgeToEdge()
+        requestNotificationPermissionIfNeeded()
 
         setContent {
-            TunnelTheme {
-                TunnelApp(
-                    viewModel = viewModel,
-                    onRequestVpnPermission = {
-                        val prepareIntent = VpnService.prepare(this)
-                        if (prepareIntent != null) {
-                            vpnConsentLauncher.launch(prepareIntent)
-                        } else {
-                            viewModel.onVpnPermissionGranted(this)
-                        }
-                    }
+            MaterialTheme(
+                colorScheme = darkColorScheme()
+            ) {
+                TunnelConsoleScreen(
+                    onConnect = ::requestVpnPermissionAndConnect,
+                    onDisconnect = ::disconnectVpn
                 )
+            }
+        }
+    }
+
+    private fun requestVpnPermissionAndConnect(profile: TunnelProfile) {
+        pendingProfile = profile
+
+        val vpnIntent = VpnService.prepare(this)
+
+        if (vpnIntent == null) {
+            startVpnService(profile)
+        } else {
+            vpnPermissionLauncher.launch(vpnIntent)
+        }
+    }
+
+    private fun startVpnService(profile: TunnelProfile) {
+        val intent = Intent(this, TunnelVpnService::class.java).apply {
+            action = TunnelVpnService.ACTION_CONNECT
+            putExtra("tunnel_ip", profile.ip)
+            putExtra("tunnel_port", profile.port)
+            putExtra("tunnel_sni", profile.sni)
+            putExtra("tunnel_payload", profile.payload)
+        }
+
+        ContextCompat.startForegroundService(this, intent)
+    }
+
+    private fun disconnectVpn() {
+        val intent = Intent(this, TunnelVpnService::class.java).apply {
+            action = TunnelVpnService.ACTION_DISCONNECT
+        }
+
+        startService(intent)
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val permission = Manifest.permission.POST_NOTIFICATIONS
+
+            if (ContextCompat.checkSelfPermission(this, permission)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(permission)
             }
         }
     }
