@@ -268,7 +268,7 @@ function Index() {
 
   return (
     <div className="flex min-h-dvh justify-center bg-background sm:items-center sm:py-6">
-      <div className="flex h-dvh w-full max-w-[420px] flex-col overflow-hidden bg-background sm:h-[min(860px,calc(100dvh-3rem))] sm:rounded-[2rem] sm:border sm:border-border sm:shadow-card">
+      <div className="flex h-dvh w-full max-w-[420px] flex-col overflow-hidden bg-background sm:h-[min(860px,calc(100dvh-3rem))] sm:rounded-[2rem] sm:border sm:border-border sm:shadow-card md:max-w-5xl lg:max-w-6xl">
         <header className="flex items-center justify-between px-5 pb-2 pt-5">
           <div>
             <h1 className="text-lg font-bold tracking-tight">Tunnel Console</h1>

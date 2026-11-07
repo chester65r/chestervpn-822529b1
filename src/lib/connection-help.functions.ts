@@ -24,7 +24,7 @@ Using ONLY the diagnostics given, explain in plain, friendly language what is wr
 Keep it under 120 words. No markdown headings. Never suggest bypassing carrier billing, spoofing hosts, or using carrier/social hostnames.`;
 
 export const explainConnection = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => DiagnosticsSchema.parse(d))
+  .validator((d: unknown) => DiagnosticsSchema.parse(d))
   .handler(async ({ data }): Promise<{ text: string } | { error: string }> => {
     const key = process.env["LOVABLE_API_KEY"];
     if (!key) return { error: "The AI helper isn't configured yet." };

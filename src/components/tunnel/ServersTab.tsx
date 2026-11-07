@@ -78,7 +78,7 @@ export function ServersTab({ onUseServer }: Props) {
     setLoading(true);
     const { data, error } = await supabase
       .from("relay_servers")
-      .select("*")
+      .select("id,name,host,port,transport,notes,created_at")
       .order("created_at", { ascending: false });
     if (generation !== loadGeneration.current || activeUser.current !== userId) return;
     setLoading(false);
@@ -92,12 +92,13 @@ export function ServersTab({ onUseServer }: Props) {
 
   useEffect(() => {
     // Clear account-owned data immediately on any account change, then load for the new one.
-    loadGeneration.current++;
+    const invalidateGeneration = () => { loadGeneration.current += 1 };
+    invalidateGeneration();
     setServers([]);
     setLoading(false);
     if (activeUserId) void loadServers();
     return () => {
-      loadGeneration.current++;
+      invalidateGeneration();
     };
   }, [activeUserId, loadServers]);
 
@@ -105,10 +106,24 @@ export function ServersTab({ onUseServer }: Props) {
     setAuthBusy(true);
     if (mode === "signin") {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) toast.error("Sign-in failed", { description: error.message });
+      if (error) {
+        const description = /email not confirmed/i.test(error.message)
+          ? "Confirm your email before signing in."
+          : /rate limit|too many/i.test(error.message)
+            ? "Too many attempts. Try again later."
+            : "Invalid email or password.";
+        toast.error("Sign-in failed", { description });
+      }
     } else {
       const { data, error } = await supabase.auth.signUp({ email, password });
-      if (error) toast.error("Sign-up failed", { description: error.message });
+      if (error) {
+        const description = /password/i.test(error.message)
+          ? error.message
+          : /rate limit|too many/i.test(error.message)
+            ? "Too many attempts. Try again later."
+            : "We couldn't create that account. Check your details and try again.";
+        toast.error("Sign-up failed", { description });
+      }
       else if (!data.session)
         toast.success("Account created", {
           description: "Check your email to confirm your account, then sign in.",
@@ -144,6 +159,7 @@ export function ServersTab({ onUseServer }: Props) {
   };
 
   const removeServer = async (server: RelayServer) => {
+    if (!window.confirm(`Delete ${server.name}? This only removes it from your saved relay list.`)) return;
     const { error } = await supabase.from("relay_servers").delete().eq("id", server.id);
     if (error) {
       toast.error("Couldn't delete server", { description: error.message });
@@ -249,6 +265,7 @@ export function ServersTab({ onUseServer }: Props) {
             <button
               type="button"
               title="Use this sample"
+              aria-label={`Use ${sample.name}`}
               onClick={() => {
                 setName(sample.name);
                 setHost(sample.host);
@@ -286,6 +303,7 @@ export function ServersTab({ onUseServer }: Props) {
               <button
                 type="button"
                 title="Use in Configure"
+                aria-label={`Use ${s.name} in Configure`}
                 onClick={() => onUseServer(s.host, s.port)}
                 className="rounded-lg bg-secondary p-2 text-secondary-foreground transition-colors hover:text-primary"
               >
@@ -393,9 +411,13 @@ export function ServersTab({ onUseServer }: Props) {
           type="button"
           disabled={!deploymentHost.trim()}
           onClick={async () => {
-            await navigator.clipboard.writeText(getRelayDeploymentCommand(deploymentTarget, deploymentHost));
-            setCopiedDeployment(true);
-            toast.success("Deployment command copied");
+            try {
+              await navigator.clipboard.writeText(getRelayDeploymentCommand(deploymentTarget, deploymentHost));
+              setCopiedDeployment(true);
+              toast.success("Deployment command copied");
+            } catch {
+              toast.error("Couldn't access the clipboard", { description: "Select and copy the command manually." });
+            }
           }}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
         >
