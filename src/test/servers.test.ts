@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { rowToServer, validateServerInput } from "@/lib/servers";
+import { getRelayDeploymentCommand } from "@/lib/server-deployment";
 
 const valid = {
   name: "Frankfurt relay",
@@ -35,6 +36,22 @@ describe("validateServerInput", () => {
     expect(validateServerInput({ ...valid, port: "0" }).port).toBeTruthy();
     expect(validateServerInput({ ...valid, port: "70000" }).port).toBeTruthy();
     expect(validateServerInput({ ...valid, port: "abc" }).port).toBeTruthy();
+  });
+});
+
+describe("deployment commands", () => {
+  it("creates a guarded Ubuntu bootstrap command", () => {
+    const command = getRelayDeploymentCommand("ubuntu", "vpn.example.com");
+    expect(command).toContain("sudo ufw allow 51820/udp");
+    expect(command).toContain("WG_HOST=vpn.example.com");
+    expect(command).toContain("--restart unless-stopped");
+  });
+
+  it("creates a Docker command without leaking credentials", () => {
+    const command = getRelayDeploymentCommand("docker", "203.0.113.10");
+    expect(command).toContain("-p 51820:51820/udp");
+    expect(command).not.toContain("PRIVATE_KEY");
+    expect(getRelayDeploymentCommand("docker", "")).toBe("");
   });
 });
 

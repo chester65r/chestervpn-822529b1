@@ -277,6 +277,9 @@ function Index() {
           <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" asChild><Link to="/connect" aria-label="Connect your assistant" title="Connect your assistant"><Plug className="h-4 w-4" /></Link></Button>
           <span
+            role="status"
+            aria-label={`Tunnel ${sim.status}`}
+            title={`Tunnel ${sim.status}`}
             className={`h-2.5 w-2.5 rounded-full transition-colors duration-500 ${
               sim.status === "connected" ? "bg-primary" : sim.status === "connecting" ? "bg-chart-4" : "bg-destructive"
             }`}
