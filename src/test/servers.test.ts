@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { rowToServer, validateServerInput } from "@/lib/servers";
-import { getRelayDeploymentCommand } from "@/lib/server-deployment";
+import {
+  SERVER_CONTAINER_FILES,
+  SERVER_TRANSPORT_CAPABILITIES,
+  getRelayDeploymentCommand,
+} from "@/lib/server-deployment";
 
 const valid = {
   name: "Frankfurt relay",
@@ -52,6 +56,20 @@ describe("deployment commands", () => {
     expect(command).toContain("-p 51820:51820/udp");
     expect(command).not.toContain("PRIVATE_KEY");
     expect(getRelayDeploymentCommand("docker", "")).toBe("");
+  });
+
+  it("creates an all-in-one multi-transport container command and ships container files", () => {
+    const command = getRelayDeploymentCommand("multi-transport", "vpn.example.com");
+    expect(command).toContain("PUBLIC_HOST=vpn.example.com docker compose -f relay-server/docker-compose.yml up -d --build");
+    expect(command).toContain("443/tcp");
+    expect(command).toContain("1080/tcp");
+    expect(SERVER_CONTAINER_FILES.map((f) => f.name)).toEqual([
+      "Dockerfile",
+      "docker-compose.yml",
+      "entrypoint.sh",
+      "gateway.mjs",
+    ]);
+    expect(SERVER_TRANSPORT_CAPABILITIES.length).toBeGreaterThanOrEqual(6);
   });
 });
 

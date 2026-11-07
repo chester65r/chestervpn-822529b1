@@ -16,7 +16,14 @@ import {
   type RelayServer,
   type ServerErrors,
 } from "@/lib/servers";
-import { DEPLOYMENT_TARGETS, RELAY_DEPLOYMENT_NOTES, getRelayDeploymentCommand, type RelayDeploymentTarget } from "@/lib/server-deployment";
+import {
+  DEPLOYMENT_TARGETS,
+  RELAY_DEPLOYMENT_NOTES,
+  SERVER_CONTAINER_FILES,
+  SERVER_TRANSPORT_CAPABILITIES,
+  getRelayDeploymentCommand,
+  type RelayDeploymentTarget,
+} from "@/lib/server-deployment";
 import { checkRelayServer } from "@/lib/relay-control.functions";
 
 const fieldClass =
@@ -53,9 +60,11 @@ export function ServersTab({ onUseServer }: Props) {
   const [notes, setNotes] = useState("");
   const [errors, setErrors] = useState<ServerErrors>({});
   const [saving, setSaving] = useState(false);
-  const [deploymentTarget, setDeploymentTarget] = useState<RelayDeploymentTarget>("ubuntu");
+  const [deploymentTarget, setDeploymentTarget] = useState<RelayDeploymentTarget>("multi-transport");
   const [deploymentHost, setDeploymentHost] = useState("");
   const [copiedDeployment, setCopiedDeployment] = useState(false);
+  const [activeContainerFileIdx, setActiveContainerFileIdx] = useState(0);
+  const [copiedContainerFile, setCopiedContainerFile] = useState(false);
   const [checkingServerId, setCheckingServerId] = useState<string | null>(null);
   const runHealthCheck = useServerFn(checkRelayServer);
 
@@ -418,9 +427,26 @@ export function ServersTab({ onUseServer }: Props) {
 
       <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
         <div>
-          <p className="text-xs font-medium tracking-wider text-primary">DEPLOY YOUR OWN RELAY</p>
-          <p className="mt-1 text-xs text-muted-foreground">Generate a reproducible setup command for a server you control.</p>
+          <p className="text-xs font-medium tracking-wider text-primary">DEPLOY YOUR OWN RELAY CONTAINER</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Includes every internet transport and anti-DPI tool built into Tunnel Console (WireGuard, TLS+SNI, WebSocket, HTTP Custom Payload, Corridor Probe, SOCKS5, SSH, and NAT Masquerading).
+          </p>
         </div>
+
+        <div className="grid gap-1.5 sm:grid-cols-2">
+          {SERVER_TRANSPORT_CAPABILITIES.map((cap) => (
+            <div key={cap.id} className="rounded-lg border border-border bg-background/80 p-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-foreground">{cap.name}</span>
+                <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-primary">
+                  {cap.ports}
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{cap.purpose}</p>
+            </div>
+          ))}
+        </div>
+
         <Field label="PUBLIC HOSTNAME OR IP">
           <input
             className={fieldClass}
@@ -461,6 +487,70 @@ export function ServersTab({ onUseServer }: Props) {
           {copiedDeployment ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
           {copiedDeployment ? "Copied" : "Copy deployment command"}
         </button>
+
+        {(() => {
+          const activeContainerFile =
+            SERVER_CONTAINER_FILES[activeContainerFileIdx] ?? SERVER_CONTAINER_FILES[0];
+          if (!activeContainerFile) return null;
+          return (
+            <div className="space-y-2 pt-2">
+              <p className="text-xs font-medium tracking-wider text-muted-foreground">
+                SERVER CONTAINER FILES (relay-server/)
+              </p>
+              <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+                {SERVER_CONTAINER_FILES.map((file, idx) => (
+                  <button
+                    key={file.name}
+                    type="button"
+                    onClick={() => {
+                      setActiveContainerFileIdx(idx);
+                      setCopiedContainerFile(false);
+                    }}
+                    className={`shrink-0 rounded-lg px-2.5 py-1 font-mono text-[11px] transition-colors ${
+                      idx === activeContainerFileIdx
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-secondary text-secondary-foreground"
+                    }`}
+                  >
+                    {file.name}
+                  </button>
+                ))}
+              </div>
+              <div className="overflow-hidden rounded-xl border border-border bg-background">
+                <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-mono text-[11px] font-medium text-foreground">
+                      {activeContainerFile.path}
+                    </p>
+                    <p className="truncate text-[10px] text-muted-foreground">
+                      {activeContainerFile.description}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(activeContainerFile.code);
+                        setCopiedContainerFile(true);
+                        toast.success(`${activeContainerFile.name} copied`);
+                      } catch {
+                        toast.error("Couldn't access the clipboard");
+                      }
+                    }}
+                    className="flex shrink-0 items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground"
+                  >
+                    {copiedContainerFile ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copiedContainerFile ? "Copied" : "Copy"}
+                  </button>
+                </div>
+                <pre className="max-h-64 overflow-auto p-3 font-mono text-[11px] leading-relaxed text-foreground">
+                  <code>{activeContainerFile.code}</code>
+                </pre>
+              </div>
+            </div>
+          );
+        })()}
+
         <ul className="space-y-1 text-[11px] text-muted-foreground">
           {RELAY_DEPLOYMENT_NOTES.map((note) => <li key={note}>• {note}</li>)}
         </ul>

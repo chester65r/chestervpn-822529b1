@@ -1,0 +1,42 @@
+services:
+  tunnel-relay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tunnel-relay-all-in-one
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.forwarding=1
+    environment:
+      - PUBLIC_HOST=${PUBLIC_HOST:-vpn.example.com}
+      - TUN_SUBNET=10.8.0.0/24
+      - TUN_SERVER_IP=10.8.0.1/24
+      - WG_SUBNET=10.66.66.0/24
+      - WG_SERVER_IP=10.66.66.1/24
+      - WG_PORT=51820
+      - TLS_PORTS=443,8443
+      - HTTP_PORTS=80,8080
+      - SOCKS5_PORT=1080
+      - SSH_PORT=2222
+    ports:
+      - "51820:51820/udp"
+      - "443:443/tcp"
+      - "8443:8443/tcp"
+      - "80:80/tcp"
+      - "8080:8080/tcp"
+      - "1080:1080/tcp"
+      - "2222:2222/tcp"
+    volumes:
+      - tunnel-wireguard:/etc/wireguard
+      - tunnel-tls:/etc/tunnel-relay/tls
+
+volumes:
+  tunnel-wireguard:
+  tunnel-tls:

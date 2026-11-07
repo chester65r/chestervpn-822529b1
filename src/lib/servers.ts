@@ -24,8 +24,12 @@ export type ServerInput = {
 export type ServerErrors = Partial<Record<"name" | "host" | "port", string>>;
 
 export const TRANSPORTS = [
-  { id: "websocket", label: "WebSocket (ws/wss)" },
-  { id: "tls", label: "TLS socket" },
+  { id: "websocket", label: "WebSocket + TLS (ws/wss)" },
+  { id: "tls", label: "TLS + SNI Socket" },
+  { id: "http-payload", label: "HTTP Custom Payload (Anti-DPI)" },
+  { id: "socks5", label: "SOCKS5 Bridge (TCP 1080)" },
+  { id: "ssh", label: "SSH Tunnel (TCP 2222)" },
+  { id: "wireguard", label: "WireGuard VPN (UDP 51820)" },
 ];
 
 /** Sample VPS server presets for quick setup. Replace with your actual server details. */
