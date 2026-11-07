@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,14 +19,20 @@ import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 import java.net.Socket
+import java.util.concurrent.atomic.AtomicBoolean
 
 class KeepAliveManager(
     private val outputStreamProvider: () -> OutputStream,
-    private val intervalMs: Long
+    private val intervalMs: Long,
+    private val onFailure: (Throwable) -> Unit = {}
 ) {
     private val TAG = "KeepAliveManager"
+
     private var job: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private val stopped = AtomicBoolean(false)
+    private val failureReported = AtomicBoolean(false)
 
     private var context: Context? = null
     private var wakeLock: PowerManager.WakeLock? = null
@@ -40,7 +47,8 @@ class KeepAliveManager(
         onReconnectRequired: suspend (reason: String) -> Boolean
     ) : this(
         outputStreamProvider = { ByteArrayOutputStream() },
-        intervalMs = 20000L
+        intervalMs = 20000L,
+        onFailure = {}
     ) {
         this.context = context
     }
@@ -48,10 +56,13 @@ class KeepAliveManager(
     fun start() {
         if (job?.isActive == true) return
 
+        stopped.set(false)
+        failureReported.set(false)
+
         job = scope.launch {
             Log.i(TAG, "Keep-Alive engine started.")
 
-            while (isActive) {
+            while (isActive && !stopped.get()) {
                 try {
                     val heartbeat = "\r\n".toByteArray()
                     val outputStream = outputStreamProvider()
@@ -60,22 +71,32 @@ class KeepAliveManager(
                     outputStream.flush()
 
                     Log.d(TAG, "Keep-Alive heartbeat sent.")
+                } catch (cancellation: CancellationException) {
+                    Log.i(TAG, "Keep-Alive coroutine cancelled.")
+                    break
                 } catch (e: Exception) {
-                    Log.e(TAG, "Keep-Alive failed: ${e.message}")
+                    Log.e(TAG, "Keep-Alive write failed: ${e.message}", e)
+
+                    if (!stopped.get() && failureReported.compareAndSet(false, true)) {
+                        onFailure(e)
+                    }
+
                     break
                 }
 
                 delay(intervalMs)
             }
 
-            Log.i(TAG, "Keep-Alive engine stopped.")
+            Log.i(TAG, "Keep-Alive loop exited.")
         }
     }
 
     fun stop() {
+        stopped.set(true)
         job?.cancel()
         job = null
-        Log.i(TAG, "Keep-Alive engine manually stopped.")
+
+        Log.i(TAG, "Keep-Alive engine stopped.")
     }
 
     // Compatibility helpers for AdvancedVpnService

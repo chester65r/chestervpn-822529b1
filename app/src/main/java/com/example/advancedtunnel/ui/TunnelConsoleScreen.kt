@@ -42,6 +42,7 @@ fun TunnelConsoleScreen(
     onDisconnect: () -> Unit
 ) {
     val connectionState by TunnelStateHolder.connectionState.collectAsState()
+    val reconnectPhase by TunnelStateHolder.reconnectPhase.collectAsState()
     val dataTransferred by TunnelStateHolder.dataTransferred.collectAsState()
 
     var ip by remember { mutableStateOf("") }
@@ -60,7 +61,7 @@ fun TunnelConsoleScreen(
         is TunnelConnectionState.Connecting -> "Connecting..."
         is TunnelConnectionState.Authenticating -> "Authenticating..."
         is TunnelConnectionState.TunnelEstablished -> "Tunnel Established"
-        is TunnelConnectionState.Reconnecting -> "Reconnecting..."
+        is TunnelConnectionState.Reconnecting -> reconnectPhase ?: "Reconnecting..."
         is TunnelConnectionState.Error -> "Error: ${state.message}"
     }
 
