@@ -23,10 +23,14 @@ AGP 8.7 may select build-tools 34.0.0; retain downloaded SDK/tool versions in th
 
 ```sh
 bun native/android/generate-project.ts /tmp/tunnel-android
+# Fetch the pinned Xray engine and copy MIT/MPL-2.0 notices into APK assets:
+bash native/android/fetch-libxray.sh /tmp/tunnel-android/app/libs
 sdkmanager 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' 'emulator'
 sdkmanager --licenses
 # Use an independently verified Gradle 8.9 installation just to create the wrapper:
 gradle -p /tmp/tunnel-android wrapper --gradle-version 8.9 --distribution-type bin
+# The native source includes WireGuard and Xray. Xray runs in the separate :xray process;
+# do not move LibXray calls into MainActivity or combine both Go runtimes in one process.
 # The generated wrapper task pins the official Gradle 8.9 binary checksum:
 # d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab
 # Verify it matches distributionSha256Sum in gradle/wrapper/gradle-wrapper.properties.
@@ -107,3 +111,87 @@ Default status for a new API/device record is **NOT RUN**; the dated report abov
 records the executed native build and blocked emulator attempt.
 Only mark concrete checks PASS after execution. Never promote emulator PASS to physical
 PASS or generated-source checks to native evidence.
+
+## Authorized TLS endpoint diagnostic
+
+The generated Android source now includes `AuthorizedTlsProbe.kt`. It performs a real
+TCP connect, TLS handshake with SNI, normal platform trust-chain validation and HTTPS
+hostname verification, then sends a bounded HTTP GET/HEAD/OPTIONS request and captures
+up to 4 KiB of response data. It requires endpoint hostname, SNI and Host to match,
+limits timeouts to 1–60 seconds, and does not accept proxy authorization headers.
+
+This is an endpoint diagnostic/client transport only. It does **not** create a VPN,
+route other apps' traffic, or replace WireGuard. Invoke it only from a background worker
+for an endpoint you own or are authorized to test; never run network I/O on Android's
+main thread. Record the TLS version, cipher, response status and non-secret byte counts.
+Android compilation and device execution of this new source are still NOT RUN until the
+generated project is rebuilt and tested using the pinned workflow above.
+
+
+## Mobily SIM-aware automatic WireGuard connection
+
+The generated Android companion can optionally auto-start its saved WireGuard profile when
+the active data SIM is identified as Mobily (including the Etihad Etisalat operator label).
+It uses the active-data subscription on Android 11+ and falls back to the default data
+subscription on older supported versions. The SIM operator/carrier label is the identity
+signal; the currently registered network name is display-only so roaming does not cause
+a SIM to be misclassified.
+
+Enable **Auto-connect only on Mobily data SIM** in the native app. Android asks for the
+Phone permission to read subscription/operator metadata and separately asks for VPN
+consent. The app never reads account balance, phone numbers, SMS, APN settings, or billing
+state. A zero-balance SIM therefore follows the same start decision as a funded SIM; a
+WireGuard handshake and usable Internet still require a working carrier data path.
+
+The auto rule is opt-in and manages only tunnels it started itself. It does not stop a
+manually started tunnel on a different carrier. A manual stop disables the auto rule.
+After reboot, the receiver can start only if the app was opted in, a saved profile exists,
+and Android VPN consent is already granted; otherwise open the app to complete consent.
+SIM/operator values remain best-effort and must be checked on the physical handset,
+especially for dual-SIM, MVNO, roaming and OEM-specific behavior.
+
+Automatic start is based on the active Mobily data SIM and the absence of an active
+Wi-Fi/Ethernet route. A validated Wi-Fi route pauses the Mobily rule, and network capability
+callbacks trigger reevaluation when available networks change. The balance is not checked:
+when no mobile-data path is available, the app may start the tunnel but it cannot complete a
+WireGuard handshake or carry Internet traffic until the carrier provides a usable data path.
+On devices with multiple simultaneously connected networks, Android/OEM routing can differ;
+the active SIM and transport decision must therefore be confirmed on the physical phone.
+
+
+## Authorized protocol diagnostics
+
+The generated Android companion exposes a separate **Test selected protocol** action for
+endpoints the user owns or is explicitly authorized to test:
+
+- TLS/TCP: verifies a TLS handshake and reports protocol/cipher metadata.
+- WS and WSS: performs a bounded WebSocket upgrade and validates the server's
+  Sec-WebSocket-Accept response.
+- HTTP CONNECT and HTTPS CONNECT: sends a single CONNECT request to the configured
+  proxy and requires HTTP 200.
+- SOCKS5 and SOCKS5 over TLS: negotiates the no-authentication method and performs one
+  bounded CONNECT request to the explicitly entered destination.
+
+TLS adapters use the platform trust store, certificate-chain validation, endpoint
+hostname verification and SNI for the exact authorized endpoint hostname. There is no
+trust-all mode, hostname override, automatic plaintext downgrade, proxy credential field,
+or unbounded response read. Connect/read timeouts are limited to 1–60 seconds; HTTP
+response headers are capped at 16 KiB and diagnostic requests at 4 KiB.
+
+These actions are protocol diagnostics only. They close the test socket after recording
+the handshake result and do not carry Android application traffic or establish a VPN.
+SOCKS5/HTTP CONNECT/WebSocket/TLS must not be described as full-device VPN transports.
+WireGuard remains the only full-device VPN in this generated app. Real endpoint checks
+must be performed on a physical device and do not establish Mobily/STC carrier compatibility.
+
+
+## Native Xray full-device VPN
+
+The Android companion now includes a real Xray TUN engine in addition to WireGuard. See `docs/android-xray-engine.md` and `THIRD_PARTY_NOTICES.md` for supported profile types, security boundaries and upstream licensing. It accepts Xray JSON or supported VLESS/VMess/Trojan/Shadowsocks/SOCKS/Hysteria2 share links. TLS, WebSocket, gRPC and XHTTP are configured as Xray transport/security settings where supported by the selected outbound; they are not all standalone share-link formats. TLS validation remains enabled and REALITY camouflage is rejected.
+
+The build pins `XTLS/libXray v26.10.31` and verifies the Android release archive SHA-256 before extracting `libXray.aar`. The exact upstream MIT and MPL-2.0 texts are copied into the APK assets. Keep the Xray service in the dedicated `:xray` process: WireGuard and Xray each embed a Go runtime and must not load into the same Android process.
+
+The native CI compile/lint lane must pass with this AAR before considering the app buildable. A passing compile does not yet prove remote-server interoperability, leak-free IPv4/IPv6/DNS or physical SIM behavior; those require Android device tests against an authorized server. Android's **Block connections without VPN** lockdown remains a separate system setting.
+
+
+**Xray TUN scope:** IPv4/IPv6 device packets are routed to Xray; its TUN stack supports TCP/UDP and ICMP Echo only. Other ICMP types are ignored, and this is not a generic layer-3 tunnel for arbitrary IP protocols. A local core start is not proof of a remote authenticated handshake. See `docs/android-xray-engine.md`.

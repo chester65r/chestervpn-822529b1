@@ -7,20 +7,38 @@ export type BlueprintFile = { name: string; path: string; lang: string; code: st
 export const WIREGUARD_ANDROID_TUNNEL = "com.wireguard.android:tunnel:1.0.20260102";
 
 const manifest = String.raw`<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!--
-      The packet engine's VPN service, com.wireguard.android.backend.GoBackend$VpnService,
-      is declared by the WireGuard tunnel library manifest with BIND_VPN_SERVICE and
-      exported=false, and is merged automatically. Do not declare a second VpnService.
-    -->
+    <!-- WireGuard contributes its own VPN service. Xray uses a separate process because
+         the two Go-based engines must not load into the same Android process. -->
     <application
         android:allowBackup="false"
         android:label="Tunnel Console"
         android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
+
+        <!-- This is a real VpnService. It starts only after VpnService.prepare() grants
+             user consent. Android documents active, user-configured VPN apps as eligible
+             for systemExempted. Lint cannot infer that runtime eligibility from XML alone;
+             suppress only this static check and retain the required FGS permission. -->
+        <service
+            android:name=".XrayVpnService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false"
+            android:process=":xray"
+            android:foregroundServiceType="systemExempted"
+            tools:ignore="ForegroundServicePermission">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
 
         <activity
             android:name=".MainActivity"
@@ -30,6 +48,16 @@ const manifest = String.raw`<?xml version="1.0" encoding="utf-8"?>
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <receiver
+            android:name=".CarrierAutoConnectReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.SIM_STATE_CHANGED" />
+                <action android:name="android.intent.action.ACTION_DEFAULT_DATA_SUBSCRIPTION_CHANGED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>`;
 
@@ -65,6 +93,8 @@ android {
 dependencies {
     // Packet engine: official WireGuard userspace implementation (wireguard-go) + VpnService.
     implementation("${WIREGUARD_ANDROID_TUNNEL}")
+    // Xray/libXray runs in its own :xray VpnService process, isolated from WireGuard Go.
+    implementation(files("libs/libXray.aar"))
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 
     implementation("androidx.core:core-ktx:1.12.0")
@@ -76,6 +106,565 @@ dependencies {
 }`;
 
 const secureStore = secureStoreSource;
+
+const carrierAutoConnect = String.raw`package com.example.advancedtunnel
+
+import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.VpnService
+import android.os.Build
+import android.telephony.SubscriptionManager
+import android.telephony.TelephonyManager
+import androidx.core.content.ContextCompat
+
+enum class CarrierSimState {
+    MOBILY, OTHER, NO_ACTIVE_DATA_SIM, NON_CELLULAR_NETWORK, UNKNOWN, PERMISSION_REQUIRED
+}
+
+data class CarrierSimSnapshot(
+    val state: CarrierSimState,
+    val simOperatorName: String = "",
+    val carrierName: String = "",
+    val registeredNetworkName: String = ""
+)
+
+/**
+ * Opt-in SIM-aware start policy. It reads only the active data SIM's operator identity;
+ * it never reads phone numbers, balance, SMS, APN settings, or carrier billing state.
+ */
+object CarrierAutoConnect {
+    private const val PREFS = "carrier_auto_connect"
+    private const val KEY_ENABLED = "enabled"
+    private const val KEY_AUTO_STARTED = "auto_started"
+    private const val KEY_CONSENT_REQUIRED = "vpn_consent_required"
+
+    private fun prefs(context: Context) =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    fun isEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_ENABLED, false)
+
+    fun setEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_ENABLED, enabled).apply()
+    }
+
+    fun isAutoStarted(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_AUTO_STARTED, false)
+
+    fun setAutoStarted(context: Context, started: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AUTO_STARTED, started).apply()
+    }
+
+    fun isConsentRequired(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_CONSENT_REQUIRED, false)
+
+    fun setConsentRequired(context: Context, required: Boolean) {
+        prefs(context).edit().putBoolean(KEY_CONSENT_REQUIRED, required).apply()
+    }
+
+    private fun isMobilyName(value: String): Boolean =
+        value.contains("mobily", ignoreCase = true) ||
+            (value.contains("etihad", ignoreCase = true) &&
+                value.contains("etisalat", ignoreCase = true)) ||
+            value.contains("موبايلي")
+
+    /**
+     * Do not auto-connect over Wi-Fi or Ethernet. A missing/unvalidated cellular route
+     * is still allowed to attempt the tunnel: the balance is not queried, and the tunnel
+     * will remain without a handshake until Android has a usable mobile-data path.
+     */
+    private fun isMobilyRouteEligible(context: Context): Boolean {
+        val manager = context.getSystemService(ConnectivityManager::class.java) ?: return true
+        val active = manager.activeNetwork ?: return true
+        val activeCaps = manager.getNetworkCapabilities(active) ?: return true
+        if (activeCaps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) return true
+        if (activeCaps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            activeCaps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+        ) return false
+
+        if (activeCaps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+            val physical = manager.allNetworks
+                .filter { network ->
+                    manager.getNetworkCapabilities(network)
+                        ?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) != true
+                }
+                .mapNotNull(manager::getNetworkCapabilities)
+            val validatedWifi = physical.any {
+                it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+                    it.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            }
+            if (validatedWifi) return false
+            if (physical.any { it.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) }) return false
+            return true
+        }
+        return false
+    }
+
+    /**
+     * Uses the active-data subscription on API 30+, then the system default data
+     * subscription. The registered network name is display-only: roaming must not
+     * change the identity of the SIM that owns the subscription.
+     */
+    fun detect(context: Context): CarrierSimSnapshot {
+        val app = context.applicationContext
+        if (ContextCompat.checkSelfPermission(app, Manifest.permission.READ_PHONE_STATE) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return CarrierSimSnapshot(CarrierSimState.PERMISSION_REQUIRED)
+        }
+        if (!isMobilyRouteEligible(app)) {
+            return CarrierSimSnapshot(CarrierSimState.NON_CELLULAR_NETWORK)
+        }
+
+        return try {
+            val subscriptions = app.getSystemService(SubscriptionManager::class.java)
+                ?: return CarrierSimSnapshot(CarrierSimState.UNKNOWN)
+
+            val activeDataId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                SubscriptionManager.getActiveDataSubscriptionId()
+            } else {
+                SubscriptionManager.INVALID_SUBSCRIPTION_ID
+            }
+            val defaultDataId = SubscriptionManager.getDefaultDataSubscriptionId()
+            val selectedId = if (activeDataId != SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+                activeDataId
+            } else {
+                defaultDataId
+            }
+
+            val activeSubscriptions = subscriptions.activeSubscriptionInfoList.orEmpty()
+            val selected = if (selectedId != SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+                subscriptions.getActiveSubscriptionInfo(selectedId)
+            } else {
+                null
+            } ?: activeSubscriptions.singleOrNull()
+
+            if (selected == null) {
+                return CarrierSimSnapshot(CarrierSimState.NO_ACTIVE_DATA_SIM)
+            }
+
+            val telephony = app.getSystemService(TelephonyManager::class.java)
+                ?.createForSubscriptionId(selected.subscriptionId)
+                ?: return CarrierSimSnapshot(CarrierSimState.UNKNOWN)
+
+            val simOperator = telephony.simOperatorName.orEmpty().trim()
+            val carrier = selected.carrierName?.toString().orEmpty().trim()
+            val registered = telephony.networkOperatorName.orEmpty().trim()
+            val state = when {
+                isMobilyName(simOperator) || isMobilyName(carrier) -> CarrierSimState.MOBILY
+                simOperator.isNotBlank() || carrier.isNotBlank() -> CarrierSimState.OTHER
+                else -> CarrierSimState.UNKNOWN
+            }
+            CarrierSimSnapshot(state, simOperator, carrier, registered)
+        } catch (_: SecurityException) {
+            CarrierSimSnapshot(CarrierSimState.PERMISSION_REQUIRED)
+        } catch (_: Exception) {
+            CarrierSimSnapshot(CarrierSimState.UNKNOWN)
+        }
+    }
+
+    /** Boot/SIM receiver path. It never launches a consent screen from the background. */
+    fun evaluateInBackground(context: Context, finished: () -> Unit) {
+        val app = context.applicationContext
+        if (!isEnabled(app)) {
+            finished()
+            return
+        }
+
+        when (detect(app).state) {
+            CarrierSimState.MOBILY -> {
+                if (VpnService.prepare(app) != null) {
+                    setConsentRequired(app, true)
+                    finished()
+                    return
+                }
+                setConsentRequired(app, false)
+                val profile = SecureConfigStore(app).load()
+                if (profile == null || !TunnelController.isIdle()) {
+                    finished()
+                    return
+                }
+                TunnelController.up(app, profile) { error ->
+                    if (error == null) setAutoStarted(app, true)
+                    finished()
+                }
+            }
+            CarrierSimState.OTHER,
+            CarrierSimState.NO_ACTIVE_DATA_SIM,
+            CarrierSimState.NON_CELLULAR_NETWORK -> {
+                if (!isAutoStarted(app)) {
+                    finished()
+                } else if (TunnelController.isIdle()) {
+                    setAutoStarted(app, false)
+                    finished()
+                } else {
+                    TunnelController.down(app) { stopped ->
+                        if (stopped) setAutoStarted(app, false)
+                        finished()
+                    }
+                }
+            }
+            CarrierSimState.UNKNOWN, CarrierSimState.PERMISSION_REQUIRED -> finished()
+        }
+    }
+}
+
+/** Re-evaluate only after explicit system SIM/default-data or boot events. */
+class CarrierAutoConnectReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (!CarrierAutoConnect.isEnabled(context)) return
+        val pending = goAsync()
+        try {
+            CarrierAutoConnect.evaluateInBackground(context.applicationContext) {
+                pending.finish()
+            }
+        } catch (_: Exception) {
+            pending.finish()
+        }
+    }
+}`;
+
+const transportProbe = String.raw`package com.example.advancedtunnel
+
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.Base64
+import javax.net.ssl.SNIHostName
+import javax.net.ssl.SSLParameters
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
+
+/**
+ * Bounded protocol diagnostics for endpoints the user owns or is authorized to test.
+ * These probes validate a protocol handshake only; they do not create a VPN or forward
+ * Android device traffic. WireGuard remains the full-device VPN engine.
+ */
+object AuthorizedTransportProbe {
+    enum class Protocol(val usesTls: Boolean) {
+        TLS_TCP(true),
+        WS(false),
+        WSS(true),
+        HTTP_CONNECT(false),
+        HTTPS_CONNECT(true),
+        SOCKS5(false),
+        SOCKS5_TLS(true)
+    }
+
+    data class Request(
+        val protocol: Protocol,
+        val endpointHost: String,
+        val endpointPort: Int,
+        val tlsServerName: String = "",
+        val websocketPath: String = "/",
+        val destinationHost: String = "",
+        val destinationPort: Int = 443,
+        val timeoutMs: Int = 10_000
+    )
+
+    data class Result(
+        val protocol: String,
+        val summary: String,
+        val tlsVersion: String,
+        val cipherSuite: String,
+        val bytesSent: Int,
+        val bytesReceived: Int
+    )
+
+    private const val MAX_HTTP_HEADER_BYTES = 16 * 1024
+    private val DNS_HOST = Regex("(?i)^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$")
+    private val IPV4_HOST = Regex("^(25[0-5]|2[0-4]\\d|1?\\d?\\d)(\\.(25[0-5]|2[0-4]\\d|1?\\d?\\d)){3}$")
+
+    fun execute(request: Request): Result {
+        validate(request)
+        val socket = open(request)
+        try {
+            val counts = when (request.protocol) {
+                Protocol.TLS_TCP -> Pair(0, 0)
+                Protocol.WS, Protocol.WSS -> probeWebSocket(socket, request)
+                Protocol.HTTP_CONNECT, Protocol.HTTPS_CONNECT -> probeHttpConnect(socket, request)
+                Protocol.SOCKS5, Protocol.SOCKS5_TLS -> probeSocks5(socket, request)
+            }
+            val tls = socket as? SSLSocket
+            val tlsVersion = tls?.session?.protocol.orEmpty()
+            val cipher = tls?.session?.cipherSuite.orEmpty()
+            val summary = when (request.protocol) {
+                Protocol.TLS_TCP -> "TLS handshake succeeded"
+                Protocol.WS, Protocol.WSS -> "WebSocket upgrade accepted"
+                Protocol.HTTP_CONNECT, Protocol.HTTPS_CONNECT -> "HTTP CONNECT returned 200"
+                Protocol.SOCKS5, Protocol.SOCKS5_TLS -> "SOCKS5 CONNECT succeeded"
+            }
+            return Result(
+                request.protocol.name,
+                summary,
+                tlsVersion,
+                cipher,
+                counts.first,
+                counts.second
+            )
+        } finally {
+            runCatching { socket.close() }
+        }
+    }
+
+    private fun validate(request: Request) {
+        require(request.endpointPort in 1..65535) { "Endpoint port must be 1-65535" }
+        require(request.timeoutMs in 1_000..60_000) { "Timeout must be 1-60 seconds" }
+        require(DNS_HOST.matches(request.endpointHost) || IPV4_HOST.matches(request.endpointHost)) {
+            "Endpoint must be a DNS hostname or IPv4 address"
+        }
+        if (request.protocol.usesTls) {
+            require(DNS_HOST.matches(request.endpointHost)) { "TLS requires a DNS endpoint hostname" }
+            require(request.tlsServerName.equals(request.endpointHost, true)) {
+                "TLS server name must match the authorized endpoint"
+            }
+        }
+        if (request.protocol == Protocol.WS || request.protocol == Protocol.WSS) {
+            require(request.websocketPath.startsWith("/") && request.websocketPath.length <= 256) {
+                "WebSocket path must start with / and be at most 256 characters"
+            }
+            require(!request.websocketPath.contains('\r') &&
+                !request.websocketPath.contains('\n') &&
+                !request.websocketPath.contains('\u0000')) {
+                "WebSocket path contains invalid characters"
+            }
+        }
+        if (request.protocol == Protocol.HTTP_CONNECT ||
+            request.protocol == Protocol.HTTPS_CONNECT ||
+            request.protocol == Protocol.SOCKS5 ||
+            request.protocol == Protocol.SOCKS5_TLS
+        ) {
+            require(DNS_HOST.matches(request.destinationHost) || IPV4_HOST.matches(request.destinationHost)) {
+                "Proxy destination must be a DNS hostname or IPv4 address"
+            }
+            require(request.destinationPort in 1..65535) { "Destination port must be 1-65535" }
+        }
+    }
+
+    private fun open(request: Request): Socket {
+        val raw = Socket()
+        raw.connect(InetSocketAddress(request.endpointHost, request.endpointPort), request.timeoutMs)
+        raw.soTimeout = request.timeoutMs
+        if (!request.protocol.usesTls) return raw
+
+        try {
+            val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
+            val tls = factory.createSocket(raw, request.endpointHost, request.endpointPort, true) as SSLSocket
+            tls.soTimeout = request.timeoutMs
+            val parameters: SSLParameters = tls.sslParameters
+            parameters.endpointIdentificationAlgorithm = "HTTPS"
+            parameters.serverNames = listOf(SNIHostName(request.tlsServerName))
+            tls.sslParameters = parameters
+            tls.startHandshake()
+            return tls
+        } catch (error: Exception) {
+            runCatching { raw.close() }
+            throw error
+        }
+    }
+
+    private fun probeWebSocket(socket: Socket, request: Request): Pair<Int, Int> {
+        val nonce = ByteArray(16)
+        SecureRandom().nextBytes(nonce)
+        val key = Base64.getEncoder().encodeToString(nonce)
+        val authority = request.endpointHost + ":" + request.endpointPort
+        val text = "GET " + request.websocketPath + " HTTP/1.1\r\n" +
+            "Host: " + authority + "\r\n" +
+            "Upgrade: websocket\r\n" +
+            "Connection: Upgrade\r\n" +
+            "Sec-WebSocket-Key: " + key + "\r\n" +
+            "Sec-WebSocket-Version: 13\r\n\r\n"
+        val bytes = text.toByteArray(Charsets.US_ASCII)
+        require(bytes.size <= 4096) { "WebSocket request exceeds 4 KiB" }
+        socket.getOutputStream().apply { write(bytes); flush() }
+        val headers = readHttpHeaders(socket.getInputStream())
+        val lines = headers.split("\r\n")
+        require(lines.firstOrNull()?.matches(Regex("^HTTP/1\\.[01] 101(?: .*)?$")) == true) {
+            "WebSocket endpoint did not return HTTP 101"
+        }
+        val fields = lines.drop(1).mapNotNull { line ->
+            val index = line.indexOf(':')
+            if (index <= 0) null else line.substring(0, index).trim().lowercase() to line.substring(index + 1).trim()
+        }.groupBy({ it.first }, { it.second })
+        require(fields["upgrade"]?.any { it.equals("websocket", true) } == true) {
+            "WebSocket Upgrade header is missing"
+        }
+        require(fields["connection"]?.any { value -> value.split(',').any { it.trim().equals("upgrade", true) } } == true) {
+            "WebSocket Connection header is missing Upgrade"
+        }
+        val expectedAccept = Base64.getEncoder().encodeToString(
+            MessageDigest.getInstance("SHA-1")
+                .digest((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray(Charsets.US_ASCII))
+        )
+        require(fields["sec-websocket-accept"]?.singleOrNull() == expectedAccept) {
+            "WebSocket handshake response did not validate"
+        }
+        return Pair(bytes.size, headers.toByteArray(Charsets.ISO_8859_1).size)
+    }
+
+    private fun probeHttpConnect(socket: Socket, request: Request): Pair<Int, Int> {
+        val destination = request.destinationHost + ":" + request.destinationPort
+        val text = "CONNECT " + destination + " HTTP/1.1\r\n" +
+            "Host: " + destination + "\r\n\r\n"
+        val bytes = text.toByteArray(Charsets.US_ASCII)
+        require(bytes.size <= 4096) { "CONNECT request exceeds 4 KiB" }
+        socket.getOutputStream().apply { write(bytes); flush() }
+        val headers = readHttpHeaders(socket.getInputStream())
+        val status = headers.substringBefore("\r\n")
+        require(status.matches(Regex("^HTTP/1\\.[01] 200(?: .*)?$"))) {
+            "HTTP CONNECT proxy did not return 200"
+        }
+        return Pair(bytes.size, headers.toByteArray(Charsets.ISO_8859_1).size)
+    }
+
+    private fun probeSocks5(socket: Socket, request: Request): Pair<Int, Int> {
+        val input = socket.getInputStream()
+        val output = socket.getOutputStream()
+        output.write(byteArrayOf(0x05, 0x01, 0x00))
+        output.flush()
+        val method = readExact(input, 2)
+        require(method[0] == 0x05.toByte() && method[1] == 0x00.toByte()) {
+            "SOCKS5 endpoint does not offer unauthenticated method 0"
+        }
+
+        val connect = ByteArrayOutputStream()
+        connect.write(byteArrayOf(0x05, 0x01, 0x00))
+        val ipv4 = request.destinationHost.split('.')
+        if (IPV4_HOST.matches(request.destinationHost)) {
+            connect.write(0x01)
+            ipv4.forEach { connect.write(it.toInt()) }
+        } else {
+            val hostBytes = request.destinationHost.toByteArray(Charsets.UTF_8)
+            require(hostBytes.isNotEmpty() && hostBytes.size <= 255) { "SOCKS5 destination hostname is too long" }
+            connect.write(0x03)
+            connect.write(hostBytes.size)
+            connect.write(hostBytes)
+        }
+        connect.write((request.destinationPort shr 8) and 0xff)
+        connect.write(request.destinationPort and 0xff)
+        val bytes = connect.toByteArray()
+        output.write(bytes)
+        output.flush()
+
+        val response = readExact(input, 4)
+        require(response[0] == 0x05.toByte() && response[1] == 0x00.toByte() && response[2] == 0x00.toByte()) {
+            "SOCKS5 CONNECT request was rejected"
+        }
+        val addressLength = when (response[3].toInt() and 0xff) {
+            0x01 -> 4
+            0x03 -> readExact(input, 1)[0].toInt() and 0xff
+            0x04 -> 16
+            else -> throw IllegalStateException("SOCKS5 returned an unknown address type")
+        }
+        readExact(input, addressLength + 2)
+        return Pair(3 + bytes.size, 2 + 4 + addressLength + 2)
+    }
+
+    private fun readHttpHeaders(input: InputStream): String {
+        val output = ByteArrayOutputStream()
+        while (output.size() < MAX_HTTP_HEADER_BYTES) {
+            val next = input.read()
+            if (next < 0) throw IllegalStateException("Endpoint closed before response headers completed")
+            output.write(next)
+            val data = output.toByteArray()
+            val size = data.size
+            if (size >= 4 && data[size - 4] == 13.toByte() && data[size - 3] == 10.toByte() &&
+                data[size - 2] == 13.toByte() && data[size - 1] == 10.toByte()
+            ) {
+                return String(data, Charsets.ISO_8859_1)
+            }
+        }
+        throw IllegalStateException("Response headers exceed 16 KiB")
+    }
+
+    private fun readExact(input: InputStream, count: Int): ByteArray {
+        require(count in 1..1024) { "Invalid protocol response length" }
+        val result = ByteArray(count)
+        var offset = 0
+        while (offset < count) {
+            val read = input.read(result, offset, count - offset)
+            if (read < 0) throw IllegalStateException("Endpoint closed during protocol response")
+            offset += read
+        }
+        return result
+    }
+}
+`;
+
+const tlsProbe = String.raw`package com.example.advancedtunnel
+
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
+import java.net.InetSocketAddress
+import java.net.Socket
+import javax.net.ssl.SNIHostName
+import javax.net.ssl.SSLParameters
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
+
+/** Real TLS endpoint diagnostic for a server the user owns or is authorized to test. */
+object AuthorizedTlsProbe {
+    data class Result(val tlsVersion: String, val cipherSuite: String, val responsePreview: String, val bytesSent: Int, val bytesReceived: Int)
+
+    fun execute(endpointHost: String, port: Int, tlsServerName: String, hostHeader: String, requestTemplate: String, timeoutMs: Int = 10_000): Result {
+        require(endpointHost.matches(Regex("(?i)^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"))) { "Endpoint must be a DNS hostname" }
+        require(port in 1..65535) { "Invalid port" }
+        require(timeoutMs in 1_000..60_000) { "Invalid timeout" }
+        require(tlsServerName.equals(endpointHost, true)) { "TLS server name must match the authorized endpoint" }
+        require(hostHeader.equals(tlsServerName, true)) { "Host header must match the TLS server name" }
+
+        val request = requestTemplate.replace("[host]", hostHeader, true).replace("[crlf]", "\r\n", true)
+        require(request.toByteArray(Charsets.UTF_8).size <= 4096) { "Request exceeds 4 KiB" }
+        require(!request.contains('\u0000')) { "Request contains a NUL character" }
+        val lines = request.replace("\r\n", "\n").split("\n")
+        require(Regex("(?i)^(GET|HEAD|OPTIONS) /[^ ]* HTTP/1\\.[01]$").matches(lines.firstOrNull().orEmpty())) { "Only origin-form GET, HEAD, and OPTIONS requests are supported" }
+        val hostLines = lines.drop(1).filter { it.startsWith("Host:", true) }
+        require(hostLines.size == 1 && hostLines.single().substringAfter(':').trim().equals(hostHeader, true)) { "Exactly one matching Host header is required" }
+        require(lines.none { it.startsWith("Proxy-Authorization:", true) || it.startsWith("Proxy-Connection:", true) }) { "Proxy control headers are not accepted" }
+
+        val raw = Socket()
+        raw.connect(InetSocketAddress(endpointHost, port), timeoutMs)
+        raw.soTimeout = timeoutMs
+        var tls: SSLSocket? = null
+        try {
+            val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
+            tls = factory.createSocket(raw, endpointHost, port, true) as SSLSocket
+            tls.soTimeout = timeoutMs
+            val params: SSLParameters = tls.sslParameters
+            params.endpointIdentificationAlgorithm = "HTTPS"
+            params.serverNames = listOf(SNIHostName(tlsServerName))
+            tls.sslParameters = params
+            tls.startHandshake()
+
+            val bytes = request.toByteArray(Charsets.UTF_8)
+            val output = BufferedOutputStream(tls.outputStream)
+            output.write(bytes)
+            output.flush()
+            val response = ByteArray(4096)
+            val input = BufferedInputStream(tls.inputStream)
+            var received = 0
+            while (received < response.size) {
+                val read = input.read(response, received, response.size - received)
+                if (read <= 0) break
+                received += read
+                if (response.copyOf(received).toString(Charsets.UTF_8).contains("\r\n\r\n")) break
+            }
+            return Result(tls.session.protocol, tls.session.cipherSuite, response.copyOf(received).toString(Charsets.UTF_8).take(1024), bytes.size, received)
+        } finally {
+            runCatching { tls?.close() }
+            runCatching { raw.close() }
+        }
+    }
+}
+`;
 
 const controller = String.raw`package com.example.advancedtunnel
 
@@ -207,16 +796,323 @@ object TunnelController {
     }
 }`;
 
+const xrayVpnService = String.raw`package com.example.advancedtunnel
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.VpnService
+import android.os.Build
+import android.os.ParcelFileDescriptor
+import org.json.JSONArray
+import org.json.JSONObject
+import libXray.DialerController
+import libXray.LibXray
+import java.util.concurrent.Executors
+
+/**
+ * Xray runs in :xray, separate from WireGuard's Go runtime.
+ * This service owns the Android TUN descriptor and protects Xray's upstream sockets.
+ */
+class XrayVpnService : VpnService() {
+    companion object {
+        const val ACTION_START = "com.example.advancedtunnel.XRAY_START"
+        const val ACTION_STOP = "com.example.advancedtunnel.XRAY_STOP"
+        const val ACTION_STATE = "com.example.advancedtunnel.XRAY_STATE"
+        const val EXTRA_PROFILE = "profile"
+        const val EXTRA_RUNNING = "running"
+        const val EXTRA_MESSAGE = "message"
+        private const val CHANNEL = "xray_vpn"
+        private const val NOTIFICATION_ID = 4502
+        private const val PREFS = "xray_runtime"
+    }
+
+    private val worker = Executors.newSingleThreadExecutor()
+    @Volatile private var tunnel: ParcelFileDescriptor? = null
+    @Volatile private var running = false
+
+    private val socketController = object : DialerController {
+        override fun protectFd(fd: Long): Boolean = protect(fd.toInt())
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_START -> {
+                startForeground(NOTIFICATION_ID, notification("Starting secure Xray tunnel"))
+                val profile = intent.getStringExtra(EXTRA_PROFILE)
+                worker.execute {
+                    if (profile.isNullOrBlank()) {
+                        publish(false, "No saved Xray profile")
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelf(startId)
+                    } else {
+                        startEngine(profile, startId)
+                    }
+                }
+            }
+            ACTION_STOP -> worker.execute { stopEngine("Disconnected") }
+            else -> {
+                publish(running, if (running) "Xray tunnel active" else "Disconnected")
+            }
+        }
+        return START_NOT_STICKY
+    }
+
+    private fun invoke(method: String, payload: JSONObject = JSONObject()): JSONObject {
+        val request = JSONObject()
+            .put("apiVersion", 3)
+            .put("method", method)
+            .put("payload", payload)
+        val response = JSONObject(LibXray.invoke(request.toString()))
+        check(response.optBoolean("success")) { "Xray rejected the profile or operation" }
+        return response.optJSONObject("data") ?: JSONObject()
+    }
+
+    private fun isCoreRunning(): Boolean = runCatching {
+        invoke("getXrayState").optBoolean("running", false)
+    }.getOrDefault(false)
+
+    /**
+     * Accept one Xray share link (or a complete Xray JSON profile).
+     * Custom inbound listeners are replaced by our private TUN inbound so an imported
+     * profile cannot accidentally expose an unauthenticated local/LAN proxy port.
+     * Existing DNS, outbounds and routing policy are retained; an inbound-specific
+     * fallback sends otherwise-unmatched device traffic to the first configured outbound.
+     */
+    private fun buildRuntimeConfig(profile: String, fd: Int): String {
+        require(profile.toByteArray(Charsets.UTF_8).size in 1..1_048_576) {
+            "Profile size must be 1 MiB or less"
+        }
+        val trimmed = profile.trim()
+        val root = if (trimmed.startsWith("{")) {
+            JSONObject(trimmed)
+        } else {
+            val data = invoke(
+                "convertShareLinksToXrayJson",
+                JSONObject().put("text", trimmed)
+            )
+            JSONObject()
+                .put("log", JSONObject().put("loglevel", "warning"))
+                .put("outbounds", data.optJSONArray("outbounds") ?: JSONArray())
+        }
+
+        val outbounds = root.optJSONArray("outbounds")
+            ?: throw IllegalArgumentException("Profile has no outbounds")
+        require(outbounds.length() in 1..64) { "Profile must contain 1–64 outbounds" }
+        for (index in 0 until outbounds.length()) {
+            val outbound = outbounds.optJSONObject(index)
+                ?: throw IllegalArgumentException("Invalid outbound configuration")
+            val streamSettings = outbound.optJSONObject("streamSettings")
+            require(!streamSettings?.optString("security").equals("reality", ignoreCase = true)) {
+                "REALITY camouflage is disabled; use TLS with the authorized endpoint certificate"
+            }
+            val tlsSettings = streamSettings?.optJSONObject("tlsSettings")
+            require(tlsSettings?.optBoolean("allowInsecure", false) != true) {
+                "TLS certificate verification must remain enabled"
+            }
+        }
+        val first = outbounds.optJSONObject(0)
+            ?: throw IllegalArgumentException("Invalid outbound configuration")
+        val fallbackTag = first.optString("tag").ifBlank {
+            "tunnel-default".also { first.put("tag", it) }
+        }
+
+        val inboundSettings = JSONObject()
+            .put("name", "tun0")
+            .put("mtu", 1280)
+        val tunInbound = JSONObject()
+            .put("tag", "tun-in")
+            .put("port", 0)
+            .put("protocol", "tun")
+            .put("settings", inboundSettings)
+
+        // Only the owned TUN inbound is retained; imported listener ports are never opened.
+        root.put("inbounds", JSONArray().put(tunInbound))
+        val env = root.optJSONObject("env") ?: JSONObject()
+        env.put("xray.tun.fd", fd.toString())
+        root.put("env", env)
+
+        val routing = root.optJSONObject("routing") ?: JSONObject()
+        val rules = routing.optJSONArray("rules") ?: JSONArray()
+        rules.put(
+            JSONObject()
+                .put("type", "field")
+                .put("inboundTag", JSONArray().put("tun-in"))
+                .put("outboundTag", fallbackTag)
+        )
+        routing.put("rules", rules)
+        root.put("routing", routing)
+        if (root.optJSONObject("log") == null) {
+            root.put("log", JSONObject().put("loglevel", "warning"))
+        }
+        return root.toString()
+    }
+
+    private fun startEngine(profile: String, startId: Int) {
+        if (running || isCoreRunning()) {
+            running = true
+            publish(true, "Xray tunnel already active")
+            return
+        }
+
+        var pfd: ParcelFileDescriptor? = null
+        try {
+            pfd = Builder()
+                .setSession("Tunnel Console · Xray")
+                .setMtu(1280)
+                .addAddress("10.77.0.1", 32)
+                .addAddress("fdfe:dcba:9876::1", 128)
+                .addRoute("0.0.0.0", 0)
+                .addRoute("::", 0)
+                .addDnsServer("1.1.1.1")
+                .addDnsServer("2606:4700:4700::1111")
+                .establish() ?: error("Android did not establish the VPN interface")
+
+            tunnel = pfd
+            LibXray.registerDialerController(socketController)
+            LibXray.registerListenerController(socketController)
+            LibXray.setDNS(socketController, "1.1.1.1:53")
+
+            val runtimeConfig = buildRuntimeConfig(profile, pfd.fd)
+            invoke("runXray", JSONObject().put("xrayJson", runtimeConfig))
+            check(isCoreRunning()) { "Xray core did not enter the running state" }
+
+            running = true
+            updateNotification("Xray tunnel is running")
+            publish(true, "Xray tunnel started · awaiting server traffic")
+        } catch (_: Exception) {
+            // If the core has actually started, never close its TUN descriptor underneath it.
+            if (isCoreRunning()) {
+                running = true
+                tunnel = pfd
+                updateNotification("Xray stop required · traffic remains inside VPN")
+                publish(true, "START/STOP ERROR · Xray is still active; use Stop")
+                return
+            }
+            runCatching { LibXray.resetDNS() }
+            runCatching { pfd?.close() }
+            tunnel = null
+            running = false
+            publish(false, "Xray could not start · check the profile and authorized server")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf(startId)
+        }
+    }
+
+    private fun stopEngine(message: String) {
+        if (isCoreRunning()) {
+            val stopped = runCatching {
+                invoke("stopXray")
+                !isCoreRunning()
+            }.getOrDefault(false)
+            if (!stopped) {
+                running = true
+                updateNotification("Xray stop incomplete · traffic remains inside VPN")
+                publish(true, "STOP FAILED · tunnel is still active; do not force-close")
+                return
+            }
+        }
+        runCatching { LibXray.resetDNS() }
+        runCatching { tunnel?.close() }
+        tunnel = null
+        running = false
+        publish(false, message)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    private fun ensureNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            getSystemService(NotificationManager::class.java)
+                .createNotificationChannel(
+                    NotificationChannel(CHANNEL, "Xray VPN", NotificationManager.IMPORTANCE_LOW)
+                )
+        }
+    }
+
+    private fun notification(message: String): Notification {
+        ensureNotificationChannel()
+        val stopIntent = PendingIntent.getService(
+            this,
+            0,
+            Intent(this, XrayVpnService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return Notification.Builder(this, CHANNEL)
+            .setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setContentTitle("Tunnel Console · Xray")
+            .setContentText(message)
+            .setOngoing(true)
+            .addAction(Notification.Action.Builder(android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_media_pause), "Stop", stopIntent).build())
+            .build()
+    }
+
+    private fun updateNotification(message: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIFICATION_ID, notification(message))
+    }
+
+    private fun publish(isRunning: Boolean, message: String) {
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+            .edit()
+            .putBoolean(EXTRA_RUNNING, isRunning)
+            .putString(EXTRA_MESSAGE, message)
+            .commit()
+        sendBroadcast(
+            Intent(ACTION_STATE)
+                .setPackage(packageName)
+                .putExtra(EXTRA_RUNNING, isRunning)
+                .putExtra(EXTRA_MESSAGE, message)
+        )
+    }
+
+    override fun onRevoke() {
+        worker.execute { stopEngine("VPN permission revoked") }
+    }
+
+    override fun onDestroy() {
+        // Best-effort orderly teardown; the OS also closes the TUN descriptor on process death.
+        runCatching {
+            if (isCoreRunning()) invoke("stopXray")
+            LibXray.resetDNS()
+        }
+        runCatching { tunnel?.close() }
+        tunnel = null
+        worker.shutdown()
+        super.onDestroy()
+    }
+}`;
+
 const mainActivity = String.raw`package com.example.advancedtunnel
 
+import android.Manifest
+import android.app.ActivityManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import android.widget.ArrayAdapter
 import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.example.advancedtunnel.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
@@ -224,15 +1120,106 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var store: SecureConfigStore
     private lateinit var enrollment: DeviceEnrollment
+    private lateinit var xrayStore: SecureConfigStore
+    private var xrayRunning = false
+    private var pendingXrayStart = false
+    private var pendingXrayProfile: String? = null
+    private var xrayReceiverRegistered = false
     private val main = Handler(Looper.getMainLooper())
     private var lastRx = 0L
     private var lastTx = 0L
     private var stopReason: String? = null
+    private var activityResumed = false
+    private var autoStartInFlight = false
+    private var pendingAutoManaged = false
+    private var suppressAutoSwitchListener = false
+    private var simReceiverRegistered = false
+    private var networkCallbackRegistered = false
+    private var transportProbeInFlight = false
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            main.post { refreshCarrierAutomation() }
+        }
+        override fun onLost(network: Network) {
+            main.post { refreshCarrierAutomation() }
+        }
+        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+            main.post { refreshCarrierAutomation() }
+        }
+    }
+
+    private val simReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            refreshCarrierAutomation()
+        }
+    }
+
+    private val xrayStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            xrayRunning = intent.getBooleanExtra(XrayVpnService.EXTRA_RUNNING, false)
+            pendingXrayStart = false
+            pendingXrayProfile = null
+            val message = intent.getStringExtra(XrayVpnService.EXTRA_MESSAGE) ?: "Xray state updated"
+            showXrayState(message, xrayRunning)
+            renderControls()
+            refreshCarrierAutomation()
+        }
+    }
+
+    private val xrayVpnPermission =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val profile = pendingXrayProfile
+            pendingXrayProfile = null
+            if (result.resultCode == RESULT_OK && !profile.isNullOrBlank()) {
+                startXrayEngine(profile)
+            } else {
+                pendingXrayStart = false
+                showXrayState("VPN permission denied", false)
+                renderControls()
+            }
+        }
 
     private val vpnPermission =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == RESULT_OK) startTunnel()
-            else showState("VPN permission denied")
+            val managedByAutoRule = pendingAutoManaged
+            pendingAutoManaged = false
+            val stillEligible = !managedByAutoRule ||
+                (CarrierAutoConnect.isEnabled(this) &&
+                    CarrierAutoConnect.detect(this).state == CarrierSimState.MOBILY)
+            if (result.resultCode == RESULT_OK && stillEligible) {
+                startTunnel(managedByAutoRule)
+            } else {
+                autoStartInFlight = false
+                if (managedByAutoRule) CarrierAutoConnect.setConsentRequired(this, true)
+                showState("VPN permission denied or Mobily is no longer the active data SIM")
+            }
+        }
+
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val profile = pendingXrayProfile
+            if (granted && !profile.isNullOrBlank()) {
+                continueXrayStart(profile)
+            } else {
+                pendingXrayProfile = null
+                pendingXrayStart = false
+                showXrayState("Notification permission is required for a visible VPN service", false)
+                renderControls()
+            }
+        }
+
+    private val phoneStatePermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                CarrierAutoConnect.setEnabled(this, true)
+                setAutoSwitchChecked(true)
+                refreshCarrierAutomation()
+            } else {
+                setAutoSwitchChecked(false)
+                CarrierAutoConnect.setEnabled(this, false)
+                showState("SIM detection permission denied")
+            }
         }
 
     // UI state is always derived from TunnelController; the activity keeps no running flag.
@@ -250,6 +1237,36 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         store = SecureConfigStore(this)
         enrollment = DeviceEnrollment(this)
+        xrayStore = SecureConfigStore(this, "xray_profile")
+        refreshXrayState()
+        setAutoSwitchChecked(CarrierAutoConnect.isEnabled(this))
+        binding.cbAutoMobily.setOnCheckedChangeListener { _, checked ->
+            if (suppressAutoSwitchListener) return@setOnCheckedChangeListener
+            if (checked) {
+                val granted = ContextCompat.checkSelfPermission(
+                    this, Manifest.permission.READ_PHONE_STATE
+                ) == PackageManager.PERMISSION_GRANTED
+                if (granted) {
+                    CarrierAutoConnect.setEnabled(this, true)
+                    refreshCarrierAutomation()
+                } else {
+                    setAutoSwitchChecked(false)
+                    phoneStatePermission.launch(Manifest.permission.READ_PHONE_STATE)
+                }
+            } else {
+                CarrierAutoConnect.setEnabled(this, false)
+                CarrierAutoConnect.setConsentRequired(this, false)
+                if (CarrierAutoConnect.isAutoStarted(this)) {
+                    if (!TunnelController.isIdle()) {
+                        stopReason = "Mobily automatic connection disabled"
+                        stopTunnel()
+                    } else {
+                        CarrierAutoConnect.setAutoStarted(this, false)
+                    }
+                }
+                binding.tvCarrierInfo.text = "Automatic Mobily connection is off"
+            }
+        }
         binding.btnIdentity.setOnClickListener {
             var key = ""
             TunnelController.whileIdle({ key = enrollment.publicKey() }) { ok ->
@@ -258,11 +1275,104 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnSave.setOnClickListener { validateAndSave() }
+        binding.spTransportProtocol.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            AuthorizedTransportProbe.Protocol.values().map { it.name.replace('_', ' ') }
+        )
+        binding.btnProbeTransport.setOnClickListener {
+            if (transportProbeInFlight) {
+                toast("A protocol test is already running")
+                return@setOnClickListener
+            }
+            transportProbeInFlight = true
+            binding.btnProbeTransport.isEnabled = false
+            val protocol = AuthorizedTransportProbe.Protocol.values()
+                .getOrNull(binding.spTransportProtocol.selectedItemPosition)
+                ?: AuthorizedTransportProbe.Protocol.TLS_TCP
+            val endpointHost = binding.etTransportHost.text.toString().trim()
+            val request = AuthorizedTransportProbe.Request(
+                protocol = protocol,
+                endpointHost = endpointHost,
+                endpointPort = binding.etTransportPort.text.toString().trim().toIntOrNull() ?: 0,
+                tlsServerName = binding.etTlsServerName.text.toString().trim().ifBlank { endpointHost },
+                websocketPath = binding.etWebSocketPath.text.toString().trim().ifBlank { "/" },
+                destinationHost = binding.etDestinationHost.text.toString().trim(),
+                destinationPort = binding.etDestinationPort.text.toString().trim().toIntOrNull() ?: 0
+            )
+            binding.tvTransportResult.text = "Testing authorized endpoint..."
+            Thread {
+                val outcome = try {
+                    val result = AuthorizedTransportProbe.execute(request)
+                    val tlsDetails = if (result.tlsVersion.isNotBlank()) {
+                        " · " + result.tlsVersion + " · " + result.cipherSuite
+                    } else {
+                        " · no TLS"
+                    }
+                    "PASS: " + result.summary + tlsDetails +
+                        " · sent " + result.bytesSent + " B · received " + result.bytesReceived + " B"
+                } catch (error: Exception) {
+                    "FAILED: " + (error.message ?: "Transport check failed").take(160)
+                }
+                main.post {
+                    transportProbeInFlight = false
+                    binding.btnProbeTransport.isEnabled = true
+                    binding.tvTransportResult.text = outcome
+                }
+            }.apply { isDaemon = true }.start()
+        }
+
+        binding.btnSaveXrayProfile.setOnClickListener {
+            val value = binding.etXrayProfile.text.toString().trim()
+            try {
+                xrayStore.save(value)
+                binding.etXrayProfile.setText("")
+                showXrayState("Xray profile saved securely", xrayRunning)
+            } catch (_: Exception) {
+                binding.tvXrayStatus.text = "Unable to save profile securely"
+            }
+        }
+        binding.btnToggleXray.setOnClickListener {
+            if (xrayRunning) {
+                startService(Intent(this, XrayVpnService::class.java).setAction(XrayVpnService.ACTION_STOP))
+                binding.tvXrayStatus.text = "Stopping Xray..."
+            } else {
+                if (!TunnelController.isIdle()) {
+                    toast("Stop the WireGuard tunnel before starting Xray")
+                    return@setOnClickListener
+                }
+                val saved = xrayStore.load()
+                if (saved == null) {
+                    toast("Save an Xray URI or JSON profile first")
+                } else {
+                    pendingXrayStart = true
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+                            PackageManager.PERMISSION_GRANTED
+                    ) {
+                        pendingXrayProfile = saved
+                        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        continueXrayStart(saved)
+                    }
+                }
+            }
+        }
+
         binding.btnToggle.setOnClickListener {
+            if (xrayRunning || pendingXrayStart) {
+                toast("Stop Xray before starting WireGuard")
+                return@setOnClickListener
+            }
             stopReason = null
             when (TunnelController.engineState) {
-                EngineState.UP -> stopTunnel()
-                EngineState.DOWN -> if (store.load() != null) requestVpnPermission() else toast("Enroll this device first")
+                EngineState.UP -> {
+                    // An explicit manual stop also pauses the automatic rule.
+                    CarrierAutoConnect.setEnabled(this, false)
+                    setAutoSwitchChecked(false)
+                    stopTunnel()
+                }
+                EngineState.DOWN -> if (store.load() != null) requestVpnPermission(false) else toast("Enroll this device first")
                 else -> toast("Please wait")
             }
         }
@@ -280,16 +1390,144 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        refreshXrayState()
+        if (!xrayReceiverRegistered) {
+            val filter = IntentFilter(XrayVpnService.ACTION_STATE)
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(xrayStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(xrayStateReceiver, filter)
+            }
+            xrayReceiverRegistered = true
+        }
+        if (!simReceiverRegistered) {
+            val filter = IntentFilter().apply {
+                addAction("android.intent.action.SIM_STATE_CHANGED")
+                addAction("android.intent.action.ACTION_DEFAULT_DATA_SUBSCRIPTION_CHANGED")
+            }
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(simReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(simReceiver, filter)
+            }
+            simReceiverRegistered = true
+        }
+        if (!networkCallbackRegistered) {
+            val manager = getSystemService(ConnectivityManager::class.java)
+            if (manager != null) {
+                manager.registerNetworkCallback(
+                    NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(),
+                    networkCallback
+                )
+                networkCallbackRegistered = true
+            }
+        }
+        refreshCarrierAutomation()
+    }
+
     override fun onResume() {
         super.onResume()
+        activityResumed = true
         main.removeCallbacks(poll)
         main.post(poll)
+        refreshCarrierAutomation()
     }
 
     override fun onPause() {
+        activityResumed = false
         main.removeCallbacks(poll)
         binding.etWgConfig.setText("")
+        binding.etXrayProfile.setText("")
         super.onPause()
+    }
+
+    override fun onStop() {
+        if (xrayReceiverRegistered) {
+            unregisterReceiver(xrayStateReceiver)
+            xrayReceiverRegistered = false
+        }
+        if (simReceiverRegistered) {
+            unregisterReceiver(simReceiver)
+            simReceiverRegistered = false
+        }
+        if (networkCallbackRegistered) {
+            getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(networkCallback)
+            networkCallbackRegistered = false
+        }
+        super.onStop()
+    }
+
+    private fun setAutoSwitchChecked(checked: Boolean) {
+        suppressAutoSwitchListener = true
+        binding.cbAutoMobily.isChecked = checked
+        suppressAutoSwitchListener = false
+    }
+
+    private fun refreshCarrierAutomation() {
+        if (xrayRunning || pendingXrayStart) {
+            binding.tvCarrierInfo.text = "Xray tunnel active; Mobily auto-WireGuard is paused"
+            return
+        }
+        if (!CarrierAutoConnect.isEnabled(this)) {
+            binding.tvCarrierInfo.text = "Automatic Mobily connection is off"
+            return
+        }
+
+        val snapshot = CarrierAutoConnect.detect(this)
+        val simName = snapshot.simOperatorName.ifBlank {
+            snapshot.carrierName.ifBlank { "Unknown" }
+        }
+        val registered = snapshot.registeredNetworkName.ifBlank { "Unavailable" }
+        binding.tvCarrierInfo.text =
+            "SIM operator: " + simName + "\nRegistered network: " + registered
+
+        when (snapshot.state) {
+            CarrierSimState.MOBILY -> {
+                if (store.load() == null) {
+                    showState("Mobily data SIM detected. Enroll a WireGuard profile first.")
+                    return
+                }
+                if (!TunnelController.isIdle() || autoStartInFlight) return
+
+                if (VpnService.prepare(this) != null) {
+                    CarrierAutoConnect.setConsentRequired(this, true)
+                    if (activityResumed) {
+                        requestVpnPermission(true)
+                    } else {
+                        showState("Mobily detected. Open the app to approve VPN access.")
+                    }
+                } else {
+                    CarrierAutoConnect.setConsentRequired(this, false)
+                    requestVpnPermission(true)
+                }
+            }
+            CarrierSimState.OTHER -> stopAutoManagedTunnel(
+                "Default data SIM is not Mobily; automatic tunnel stopped"
+            )
+            CarrierSimState.NO_ACTIVE_DATA_SIM -> stopAutoManagedTunnel(
+                "No active data SIM; automatic tunnel stopped"
+            )
+            CarrierSimState.NON_CELLULAR_NETWORK ->
+                stopAutoManagedTunnel("Wi-Fi or a non-cellular route is active; Mobily auto-connect is paused")
+            CarrierSimState.PERMISSION_REQUIRED ->
+                showState("Allow Phone permission to identify the Mobily SIM.")
+            CarrierSimState.UNKNOWN ->
+                showState("SIM operator is unavailable; automatic start is paused.")
+        }
+    }
+
+    private fun stopAutoManagedTunnel(reason: String) {
+        if (!CarrierAutoConnect.isAutoStarted(this)) return
+        if (TunnelController.isIdle()) {
+            CarrierAutoConnect.setAutoStarted(this, false)
+        } else {
+            stopReason = reason
+            stopTunnel()
+        }
     }
 
     private fun validateAndSave() {
@@ -301,7 +1539,7 @@ class MainActivity : AppCompatActivity() {
         }) { ok ->
             main.post {
                 when {
-                    ok -> { binding.etWgConfig.setText(""); toast("Profile saved securely") }
+                    ok -> { binding.etWgConfig.setText(""); toast("Profile saved securely"); refreshCarrierAutomation() }
                     !TunnelController.isIdle() -> toast("Stop the tunnel before replacing credentials")
                     rejected -> binding.etWgConfig.error = "Enrollment rejected; check server identity and full-tunnel profile"
                     else -> binding.etWgConfig.error = "Invalid WireGuard profile"
@@ -310,18 +1548,58 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestVpnPermission() {
+    private fun requestVpnPermission(managedByAutoRule: Boolean = false) {
+        pendingAutoManaged = managedByAutoRule
+        if (managedByAutoRule) autoStartInFlight = true
         val intent = VpnService.prepare(this)
-        if (intent != null) vpnPermission.launch(intent) else startTunnel()
+        if (intent != null) {
+            vpnPermission.launch(intent)
+        } else {
+            startTunnel(managedByAutoRule)
+        }
     }
 
-    private fun startTunnel() {
-        val text = store.load() ?: return showState("No stored profile")
+    private fun startTunnel(managedByAutoRule: Boolean = false) {
+        if (xrayRunning || pendingXrayStart) {
+            autoStartInFlight = false
+            return showState("Stop Xray before starting WireGuard")
+        }
+        if (managedByAutoRule &&
+            (!CarrierAutoConnect.isEnabled(this) ||
+                CarrierAutoConnect.detect(this).state != CarrierSimState.MOBILY)
+        ) {
+            autoStartInFlight = false
+            return showState("Mobily auto-connect was cancelled because the SIM selection changed")
+        }
+        val text = store.load() ?: run {
+            autoStartInFlight = false
+            return showState("No stored profile")
+        }
+        if (!managedByAutoRule) CarrierAutoConnect.setAutoStarted(this, false)
         showState("STARTING")
         renderControls()
         TunnelController.up(this, text) { error ->
             main.post {
-                if (error != null) showState(error) else {
+                autoStartInFlight = false
+                if (error != null) {
+                    if (managedByAutoRule) CarrierAutoConnect.setAutoStarted(this, false)
+                    showState(error)
+                } else if (managedByAutoRule &&
+                    (!CarrierAutoConnect.isEnabled(this) ||
+                        CarrierAutoConnect.detect(this).state != CarrierSimState.MOBILY)
+                ) {
+                    TunnelController.down(this) { stopped ->
+                        main.post {
+                            CarrierAutoConnect.setAutoStarted(this, false)
+                            showState(
+                                if (stopped) "Mobily auto-connect cancelled after SIM selection changed"
+                                else "STOP FAILED: tunnel still active and blocking traffic"
+                            )
+                            renderControls()
+                        }
+                    }
+                } else {
+                    CarrierAutoConnect.setAutoStarted(this, managedByAutoRule)
                     lastRx = 0L
                     lastTx = 0L
                     stopReason = null
@@ -339,7 +1617,10 @@ class MainActivity : AppCompatActivity() {
         renderControls()
         TunnelController.down(this) { stopped ->
             main.post {
-                if (stopped) render(TunnelStatus.Down) else {
+                if (stopped) {
+                    CarrierAutoConnect.setAutoStarted(this, false)
+                    render(TunnelStatus.Down)
+                } else {
                     showState("STOP FAILED: tunnel still active and blocking traffic")
                     main.post(poll)
                 }
@@ -374,12 +1655,74 @@ class MainActivity : AppCompatActivity() {
     private fun renderControls() {
         val state = TunnelController.engineState
         val idle = TunnelController.isIdle()
-        binding.btnToggle.isEnabled = state == EngineState.UP || state == EngineState.DOWN
-        binding.btnToggle.text = if (state == EngineState.DOWN) "START TUNNEL" else "STOP TUNNEL"
+        binding.btnToggle.isEnabled = !xrayRunning && !pendingXrayStart &&
+            (state == EngineState.UP || state == EngineState.DOWN)
+        binding.btnToggle.text = if (state == EngineState.DOWN) "START WIREGUARD" else "STOP WIREGUARD"
+        binding.btnToggleXray.isEnabled = state == EngineState.DOWN &&
+            (xrayRunning || !pendingXrayStart)
+        binding.btnToggleXray.text = if (xrayRunning) "STOP XRAY TUNNEL" else "START XRAY TUNNEL"
+        binding.btnSaveXrayProfile.isEnabled = state == EngineState.DOWN && !xrayRunning && !pendingXrayStart
         // Credential controls are locked whenever the engine is not confirmed down.
         binding.btnIdentity.isEnabled = idle
         binding.btnSave.isEnabled = idle
         binding.btnClear.isEnabled = idle
+    }
+
+    private fun continueXrayStart(profile: String) {
+        pendingXrayProfile = profile
+        val permission = VpnService.prepare(this)
+        if (permission != null) {
+            xrayVpnPermission.launch(permission)
+        } else {
+            pendingXrayProfile = null
+            startXrayEngine(profile)
+        }
+    }
+
+    private fun startXrayEngine(profile: String) {
+        if (!TunnelController.isIdle()) {
+            pendingXrayStart = false
+            return toast("Stop the WireGuard tunnel first")
+        }
+        pendingXrayStart = true
+        showXrayState("Starting Xray VPN...", false)
+        renderControls()
+        val intent = Intent(this, XrayVpnService::class.java)
+            .setAction(XrayVpnService.ACTION_START)
+            .putExtra(XrayVpnService.EXTRA_PROFILE, profile)
+        androidx.core.content.ContextCompat.startForegroundService(this, intent)
+        pendingXrayProfile = null
+    }
+
+    private fun isXrayServiceAlive(): Boolean {
+        val manager = getSystemService(ACTIVITY_SERVICE) as? ActivityManager ?: return false
+        @Suppress("DEPRECATION")
+        return manager.getRunningServices(Int.MAX_VALUE).any {
+            it.service.className == XrayVpnService::class.java.name
+        }
+    }
+
+    private fun refreshXrayState() {
+        val prefs = getSharedPreferences("xray_runtime", MODE_PRIVATE)
+        // SharedPreferences caches are process-local; Xray runs in :xray.
+        // The service process itself is the authoritative liveness signal on re-entry.
+        val active = isXrayServiceAlive()
+        if (!active) {
+            prefs.edit().putBoolean(XrayVpnService.EXTRA_RUNNING, false).apply()
+            pendingXrayStart = false
+        }
+        val message = if (active) {
+            prefs.getString(XrayVpnService.EXTRA_MESSAGE, null) ?: "Xray tunnel service is active"
+        } else {
+            prefs.getString(XrayVpnService.EXTRA_MESSAGE, "No Xray session") ?: "No Xray session"
+        }
+        showXrayState(message, active)
+    }
+
+    private fun showXrayState(message: String, running: Boolean) {
+        binding.tvXrayStatus.text = message
+        xrayRunning = running
+        binding.btnToggleXray.text = if (running) "STOP XRAY TUNNEL" else "START XRAY TUNNEL"
     }
 
     private fun showState(text: String) { binding.tvStatusInfo.text = text }
@@ -435,9 +1778,90 @@ const layout = String.raw`<?xml version="1.0" encoding="utf-8"?>
                 android:layout_weight="1" android:text="DISCONNECTED" android:gravity="center" />
         </LinearLayout>
 
+        <CheckBox android:id="@+id/cbAutoMobily"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Auto-connect only on Mobily data SIM (balance is not checked)" />
+
+        <TextView android:id="@+id/tvCarrierInfo"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Automatic Mobily connection is off"
+            android:paddingTop="8dp" android:paddingBottom="8dp" />
+
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Authorized protocol diagnostics (not a full-device VPN)"
+            android:textStyle="bold" android:paddingTop="16dp" />
+
+        <Spinner android:id="@+id/spTransportProtocol"
+            android:layout_width="match_parent" android:layout_height="wrap_content" />
+
+        <EditText android:id="@+id/etTransportHost"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="Authorized endpoint hostname" android:inputType="textUri"
+            android:importantForAutofill="no" />
+
+        <EditText android:id="@+id/etTransportPort"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="Endpoint port" android:inputType="number"
+            android:text="443" android:importantForAutofill="no" />
+
+        <EditText android:id="@+id/etTlsServerName"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="TLS server name (must equal endpoint hostname)" android:inputType="textUri"
+            android:importantForAutofill="no" />
+
+        <EditText android:id="@+id/etWebSocketPath"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="WebSocket path (default /)" android:text="/"
+            android:importantForAutofill="no" />
+
+        <EditText android:id="@+id/etDestinationHost"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="Proxy destination hostname (CONNECT / SOCKS5)" android:inputType="textUri"
+            android:importantForAutofill="no" />
+
+        <EditText android:id="@+id/etDestinationPort"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="Proxy destination port" android:inputType="number"
+            android:text="443" android:importantForAutofill="no" />
+
+        <Button android:id="@+id/btnProbeTransport"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Test selected protocol" />
+
+        <TextView android:id="@+id/tvTransportResult"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="No protocol test run" android:paddingTop="8dp"
+            android:paddingBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Device-wide Xray TUN · TCP/UDP, ICMP Echo only"
+            android:textStyle="bold" android:paddingTop="20dp" />
+
+        <EditText android:id="@+id/etXrayProfile"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="vless://, vmess://, trojan://, ss://, socks://, hysteria2:// or Xray JSON"
+            android:inputType="textMultiLine|textNoSuggestions|textPassword"
+            android:importantForAutofill="no" android:saveEnabled="false"
+            android:longClickable="false" android:minLines="5"
+            android:fontFamily="monospace" />
+
+        <Button android:id="@+id/btnSaveXrayProfile"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Save Xray profile securely" />
+
+        <Button android:id="@+id/btnToggleXray"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="START XRAY TUNNEL" />
+
+        <TextView android:id="@+id/tvXrayStatus"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="No Xray session" android:paddingTop="8dp" android:paddingBottom="12dp" />
+
         <Button android:id="@+id/btnToggle"
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="START TUNNEL" />
+            android:text="START WIREGUARD" />
 
         <Button android:id="@+id/btnSave"
             android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -545,6 +1969,7 @@ echo "Server initialized without authorized devices. Use peer-admin.py enroll wi
 `;
 
 export const BLUEPRINT_FILES: BlueprintFile[] = [
+  { name: "XrayVpnService.kt", path: "app/src/main/java/com/example/advancedtunnel/XrayVpnService.kt", lang: "kotlin", code: xrayVpnService },
   { name: "android-workflow.md", path: "native/android/README.md (full workflow in project source)", lang: "markdown", code: `# Repeatable Android checks — all native results NOT RUN
 Complete instructions: native/android/README.md in the project source.
 Pinned tools: JDK 17, Gradle 8.9, AGP 8.7.3, Kotlin 2.0.21, SDK 34.
@@ -563,9 +1988,13 @@ Result records separate emulator from physical; never claim network tests from i
 No JDK/Android SDK/emulator/phone is available here; native execution remains NOT RUN.
 ` },
   { name: "AndroidManifest.xml", path: "app/src/main/AndroidManifest.xml", lang: "xml", code: manifest },
+  { name: "AuthorizedTransportProbe.kt", path: "app/src/main/java/com/example/advancedtunnel/AuthorizedTransportProbe.kt", lang: "kotlin", code: transportProbe },
+
+  { name: "AuthorizedTlsProbe.kt", path: "app/src/main/java/com/example/advancedtunnel/AuthorizedTlsProbe.kt", lang: "kotlin", code: tlsProbe },
   { name: "TunnelController.kt", path: "app/src/main/java/com/example/advancedtunnel/TunnelController.kt", lang: "kotlin", code: controller },
   { name: "MainActivity.kt", path: "app/src/main/java/com/example/advancedtunnel/MainActivity.kt", lang: "kotlin", code: mainActivity },
   { name: "SecureConfigStore.kt", path: "app/src/main/java/com/example/advancedtunnel/SecureConfigStore.kt", lang: "kotlin", code: secureStore },
+  { name: "CarrierAutoConnect.kt", path: "app/src/main/java/com/example/advancedtunnel/CarrierAutoConnect.kt", lang: "kotlin", code: carrierAutoConnect },
   { name: "DeviceEnrollment.kt", path: "app/src/main/java/com/example/advancedtunnel/DeviceEnrollment.kt", lang: "kotlin", code: deviceEnrollmentSource },
   { name: "NativeCredentialsTest.kt", path: "app/src/androidTest/java/com/example/advancedtunnel/NativeCredentialsTest.kt", lang: "kotlin", code: nativeCredentialTestsSource },
   { name: "native-auth.md", path: "docs/native-auth.md", lang: "markdown", code: enrollmentGuide },

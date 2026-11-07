@@ -1,5 +1,7 @@
 import { ROUTE_PRESETS, parsePayload, visualizePayload, type ProfileErrors, type TunnelProfile } from "@/lib/tunnel";
 import { DEFAULT_PAYLOAD_TEMPLATE } from "@/lib/tunnel";
+import { CarrierProfilePanel } from "./CarrierProfilePanel";
+import { TransportAdaptersPanel } from "./TransportAdaptersPanel";
 
 type Props = {
   profile: TunnelProfile;
@@ -28,6 +30,8 @@ export function ConfigTab({ profile, presetId, errors, disabled, onPreset, onCha
 
   return (
     <div className="space-y-4">
+      <CarrierProfilePanel />
+      <TransportAdaptersPanel />
       {disabled && (
         <p className="rounded-xl border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
           Disconnect to edit the configuration.

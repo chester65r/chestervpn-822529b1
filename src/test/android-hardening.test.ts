@@ -32,12 +32,105 @@ describe("Android client fails closed (source assertions, not device evidence)",
   });
 });
 
+describe("authorized native transport diagnostics", () => {
+  it("supports bounded TLS, WSS, CONNECT and SOCKS5 protocol probes", () => {
+    const probe = file("AuthorizedTransportProbe.kt");
+    for (const protocol of ["TLS_TCP", "WS", "WSS", "HTTP_CONNECT", "HTTPS_CONNECT", "SOCKS5", "SOCKS5_TLS"]) {
+      expect(probe).toContain(protocol);
+    }
+    expect(probe).toContain("MAX_HTTP_HEADER_BYTES = 16 * 1024");
+    expect(probe).toContain("timeoutMs in 1_000..60_000");
+    expect(probe).toContain("MessageDigest.getInstance(\"SHA-1\")");
+  });
+
+  it("retains platform TLS trust and hostname verification without a trust-all fallback", () => {
+    const probe = file("AuthorizedTransportProbe.kt");
+    expect(probe).toContain("endpointIdentificationAlgorithm = \"HTTPS\"");
+    expect(probe).toContain("SNIHostName(request.tlsServerName)");
+    expect(probe).toContain("TLS server name must match the authorized endpoint");
+    expect(probe).not.toContain("TrustAll");
+  });
+
+  it("labels non-WireGuard protocols as diagnostics, not full-device VPN transports", () => {
+    const activity = file("MainActivity.kt");
+    const layout = file("activity_main.xml");
+    expect(activity).toContain("AuthorizedTransportProbe.execute(request)");
+    expect(activity).toContain("transportProbeInFlight");
+    expect(layout).toContain("Authorized protocol diagnostics (not a full-device VPN)");
+    expect(layout).toContain("@+id/btnProbeTransport");
+  });
+});
+
 describe("server setup isolates and persists its firewall", () => {
   it("blocks tunnel clients from server-local services except DNS and loads rules on boot", () => {
     const setup = file("server-setup.sh");
     expect(setup).toMatch(/chain input[\s\S]*dport 53 accept[\s\S]*iifname "wg0" drop/);
     expect(setup).toContain("systemctl enable nftables.service");
     expect(setup).toContain("Requires=nftables.service");
+  });
+});
+
+describe("native Xray full-device VPN engine", () => {
+  it("uses the Android TUN fd and a separate process for the second Go runtime", () => {
+    const manifest = file("AndroidManifest.xml");
+    const service = file("XrayVpnService.kt");
+    const gradle = file("build.gradle.kts");
+    expect(manifest).toContain('android:process=":xray"');
+    expect(manifest).toContain('android.permission.BIND_VPN_SERVICE');
+    expect(manifest).toContain('android:foregroundServiceType="systemExempted"');
+    expect(manifest).toContain('android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED');
+    expect(manifest).toContain('tools:ignore="ForegroundServicePermission"');
+    expect(service).toContain('put("xray.tun.fd", fd.toString())');
+    expect(service).toContain("override fun protectFd(fd: Long): Boolean = protect(fd.toInt())");
+    expect(service).toContain("LibXray.registerDialerController(socketController)");
+    expect(service).toContain("LibXray.setDNS(socketController");
+    expect(service).toContain('.addRoute("0.0.0.0", 0)');
+    expect(service).toContain('.addRoute("::", 0)');
+    expect(gradle).toContain('files("libs/libXray.aar")');
+  });
+
+  it("accepts Xray JSON or supported share links but exposes only a private TUN inbound", () => {
+    const service = file("XrayVpnService.kt");
+    expect(service).toContain('convertShareLinksToXrayJson');
+    expect(service).toContain('put("protocol", "tun")');
+    expect(service).toContain('put("tag", "tun-in")');
+    expect(service).toContain('tlsSettings?.optBoolean("allowInsecure", false) != true');
+    expect(service).toContain('streamSettings?.optString("security").equals("reality", ignoreCase = true)');
+    expect(service).toContain("REALITY camouflage is disabled");
+    expect(service).toContain("TLS certificate verification must remain enabled");
+    expect(service).toContain('root.put("inbounds", JSONArray().put(tunInbound))');
+    expect(service).toContain('put("inboundTag", JSONArray().put("tun-in"))');
+    expect(service).toContain("Profile size must be 1 MiB or less");
+  });
+
+  it("stores Xray profiles using a separate Android Keystore-backed store", () => {
+    const activity = file("MainActivity.kt");
+    const layout = file("activity_main.xml");
+    expect(activity).toContain('SecureConfigStore(this, "xray_profile")');
+    expect(activity).toContain("xrayStore.save(value)");
+    expect(activity).toContain("xrayStore.load()");
+    expect(activity).toContain("val active = isXrayServiceAlive()");
+    expect(activity).toContain("SharedPreferences caches are process-local");
+    expect(layout).toContain("@+id/etXrayProfile");
+    expect(layout).toContain("@+id/btnToggleXray");
+  });
+
+  it("requests Android 13 notification permission before starting the Xray foreground VPN", () => {
+    const manifest = file("AndroidManifest.xml");
+    const activity = file("MainActivity.kt");
+    const service = file("XrayVpnService.kt");
+    expect(manifest).toContain("android.permission.POST_NOTIFICATIONS");
+    expect(activity).toContain("notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)");
+    expect(activity).toContain("continueXrayStart(profile)");
+    expect(service).toContain("checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)");
+    expect(service).toContain("PackageManager.PERMISSION_GRANTED");
+  });
+
+  it("keeps the Xray TUN alive if the core refuses to stop", () => {
+    const service = file("XrayVpnService.kt");
+    expect(service).toContain("if (!stopped)");
+    expect(service).toContain('publish(true, "STOP FAILED');
+    expect(service).toContain("do not force-close");
   });
 });
 

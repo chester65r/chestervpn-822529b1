@@ -6,6 +6,7 @@ mode="${2:-build}"
 serial="${3:-}"
 [[ "$mode" == build || "$mode" == emulator || "$mode" == physical ]] || { echo "Invalid mode"; exit 1; }
 [[ -f "$project/gradlew" && -f "$project/app/build.gradle.kts" ]] || { echo "Generate project and install pinned wrapper first; see README."; exit 1; }
+[[ -s "$project/app/libs/libXray.aar" ]] || { echo "Verified libXray AAR is missing; run native/android/fetch-libxray.sh first."; exit 1; }
 [[ -n "${JAVA_HOME:-}" && -n "${ANDROID_HOME:-}" ]] || { echo "Set JDK 17 JAVA_HOME and Android SDK ANDROID_HOME"; exit 1; }
 java_version="$("$JAVA_HOME/bin/java" -version 2>&1 | head -1)"
 [[ "$java_version" =~ \"17[\.\"] ]] || { echo "JDK 17 required"; exit 1; }
@@ -13,7 +14,10 @@ project="$(realpath "$project")"
 evidence="$project/test-evidence/$(date -u +%Y%m%dT%H%M%SZ)-$mode"
 mkdir -p "$evidence"
 printf 'UTC: %s\nMode: %s\nJDK: %s\nNative VPN network tests: NOT RUN\n' "$(date -u +%FT%TZ)" "$mode" "$java_version" > "$evidence/result.txt"
-"$project/gradlew" -p "$project" --no-daemon assembleDebug assembleRelease assembleDebugAndroidTest lintDebug > "$evidence/build.log" 2>&1 || { echo "Build failed; see local build.log"; exit 1; }
+if ! "$project/gradlew" -p "$project" --no-daemon --console=plain assembleDebug assembleRelease assembleDebugAndroidTest lintDebug 2>&1 | tee "$evidence/build.log"; then
+  echo "Android build failed; full compiler/Gradle output is shown above and saved in $evidence/build.log"
+  exit 1
+fi
 printf 'Build: PASS (release is unsigned, NOT distribution approved)\n' >> "$evidence/result.txt"
 if [[ "$mode" != build ]]; then
   [[ -n "$serial" ]] || { echo "Specify a device serial explicitly; never choose a device automatically"; exit 1; }
