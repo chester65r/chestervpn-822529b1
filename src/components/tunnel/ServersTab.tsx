@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import type { Session } from "@supabase/supabase-js";
-import { ArrowRight, Check, Copy, Loader2, LogOut, Server as ServerIcon, Trash2 } from "lucide-react";
+import { ArrowRight, Check, Copy, Loader2, LogOut, RefreshCw, Server as ServerIcon, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useWebMCP } from "use-webmcp-tool";
 import { runWebMCPTool } from "@/lib/webmcp-telemetry";
@@ -16,6 +17,7 @@ import {
   type ServerErrors,
 } from "@/lib/servers";
 import { DEPLOYMENT_TARGETS, RELAY_DEPLOYMENT_NOTES, getRelayDeploymentCommand, type RelayDeploymentTarget } from "@/lib/server-deployment";
+import { checkRelayServer } from "@/lib/relay-control.functions";
 
 const fieldClass =
   "w-full rounded-xl border border-input bg-muted px-3.5 py-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring disabled:opacity-50";
@@ -54,6 +56,8 @@ export function ServersTab({ onUseServer }: Props) {
   const [deploymentTarget, setDeploymentTarget] = useState<RelayDeploymentTarget>("ubuntu");
   const [deploymentHost, setDeploymentHost] = useState("");
   const [copiedDeployment, setCopiedDeployment] = useState(false);
+  const [checkingServerId, setCheckingServerId] = useState<string | null>(null);
+  const runHealthCheck = useServerFn(checkRelayServer);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -78,7 +82,7 @@ export function ServersTab({ onUseServer }: Props) {
     setLoading(true);
     const { data, error } = await supabase
       .from("relay_servers")
-      .select("id,name,host,port,transport,notes,created_at")
+      .select("id,name,host,port,transport,notes,status,last_checked_at,last_latency_ms,created_at")
       .order("created_at", { ascending: false });
     if (generation !== loadGeneration.current || activeUser.current !== userId) return;
     setLoading(false);
@@ -138,7 +142,7 @@ export function ServersTab({ onUseServer }: Props) {
     if (Object.keys(found).length > 0 || !session) return;
     setSaving(true);
     const { error } = await supabase.from("relay_servers").insert({
-      user_id: session.user.id,
+      owner_id: session.user.id,
       name: name.trim(),
       host: host.trim(),
       port: Number(port),
@@ -167,6 +171,26 @@ export function ServersTab({ onUseServer }: Props) {
     }
     toast(`Deleted "${server.name}"`);
     setServers((list) => list.filter((s) => s.id !== server.id));
+  };
+
+  const checkHealth = async (server: RelayServer) => {
+    setCheckingServerId(server.id);
+    try {
+      const result = await runHealthCheck({
+        data: { id: server.id, host: server.host, port: server.port, transport: server.transport },
+      });
+      setServers((list) => list.map((item) => item.id === server.id
+        ? { ...item, status: result.status, lastLatencyMs: result.latencyMs, lastCheckedAt: Date.now() }
+        : item));
+      toast[result.status === "online" ? "success" : "error"](
+        result.status === "online" ? `${server.name} is online` : `${server.name} is ${result.status}`,
+        { description: result.latencyMs ? `${result.latencyMs} ms response time` : result.errorCode ?? "No response" },
+      );
+    } catch (error) {
+      toast.error("Health check failed", { description: error instanceof Error ? error.message : "Try again later." });
+    } finally {
+      setCheckingServerId(null);
+    }
   };
 
   useWebMCP({
@@ -299,7 +323,20 @@ export function ServersTab({ onUseServer }: Props) {
                 <p className="truncate font-mono text-[11px] text-muted-foreground">
                   {s.host}:{s.port} · {s.transport}
                 </p>
+                <p className={`text-[11px] ${s.status === "online" ? "text-primary" : s.status === "offline" ? "text-destructive" : "text-muted-foreground"}`}>
+                  {s.status}{s.lastLatencyMs ? ` · ${s.lastLatencyMs} ms` : ""}
+                </p>
               </div>
+              <button
+                type="button"
+                title="Check server health"
+                aria-label={`Check health of ${s.name}`}
+                onClick={() => void checkHealth(s)}
+                disabled={checkingServerId === s.id}
+                className="rounded-lg bg-secondary p-2 text-secondary-foreground transition-colors hover:text-primary disabled:opacity-50"
+              >
+                <RefreshCw className={`h-4 w-4 ${checkingServerId === s.id ? "animate-spin" : ""}`} />
+              </button>
               <button
                 type="button"
                 title="Use in Configure"

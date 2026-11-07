@@ -7,6 +7,9 @@ export type RelayServer = {
   port: number;
   transport: string;
   notes: string;
+  status: "unknown" | "online" | "offline" | "degraded";
+  lastCheckedAt: number | null;
+  lastLatencyMs: number | null;
   createdAt: number;
 };
 
@@ -34,6 +37,9 @@ export const SAMPLE_VPS_SERVERS: RelayServer[] = [
     port: 443,
     transport: "websocket",
     notes: "Replace with your actual VPS hostname or IP",
+    status: "unknown",
+    lastCheckedAt: null,
+    lastLatencyMs: null,
     createdAt: 0,
   },
   {
@@ -43,6 +49,9 @@ export const SAMPLE_VPS_SERVERS: RelayServer[] = [
     port: 8443,
     transport: "tls",
     notes: "Replace with your actual VPS hostname or IP",
+    status: "unknown",
+    lastCheckedAt: null,
+    lastLatencyMs: null,
     createdAt: 0,
   },
   {
@@ -52,6 +61,9 @@ export const SAMPLE_VPS_SERVERS: RelayServer[] = [
     port: 443,
     transport: "websocket",
     notes: "Replace with your actual VPS hostname or IP",
+    status: "unknown",
+    lastCheckedAt: null,
+    lastLatencyMs: null,
     createdAt: 0,
   },
 ];
@@ -79,7 +91,10 @@ export type RelayServerRow = {
   host: string;
   port: number;
   transport: string;
-  notes: string;
+  notes: string | null;
+  status: "unknown" | "online" | "offline" | "degraded";
+  last_checked_at: string | null;
+  last_latency_ms: number | null;
   created_at: string;
 };
 
@@ -90,7 +105,10 @@ export function rowToServer(row: RelayServerRow): RelayServer {
     host: row.host,
     port: row.port,
     transport: row.transport,
-    notes: row.notes,
+    notes: row.notes ?? "",
+    status: row.status,
+    lastCheckedAt: row.last_checked_at ? Date.parse(row.last_checked_at) : null,
+    lastLatencyMs: row.last_latency_ms,
     createdAt: Date.parse(row.created_at),
   };
 }
