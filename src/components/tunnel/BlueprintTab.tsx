@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { BLUEPRINT_FILES } from "@/lib/android-blueprint";
+import { ALL_IN_ONE_ANDROID_KOTLIN } from "@/lib/all-in-one-android";
 import { probeHetznerServer } from "@/lib/relay-control.functions";
 import {
   HETZNER_SERVER_SPEC,
@@ -110,8 +111,8 @@ export function BlueprintTab() {
   const [activeConfigTab, setActiveConfigTab] = useState<"client" | "server" | "enroll">("client");
   const [copiedWg, setCopiedWg] = useState(false);
 
-  // 3. Built Source Modules Viewer
-  const [active, setActive] = useState(0);
+  // 3. Built Source Modules Viewer (-1 = Merged AllInOneHetznerVpn.kt)
+  const [active, setActive] = useState(-1);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -254,7 +255,14 @@ export function BlueprintTab() {
         ? renderedServerConf
         : renderedEnrollCmd;
 
-  const file = BLUEPRINT_FILES[active] ?? BLUEPRINT_FILES[0];
+  const file =
+    active === -1
+      ? {
+          name: "AllInOneHetznerVpn.kt",
+          path: "app/src/main/java/com/example/advancedtunnel/AllInOneHetznerVpn.kt",
+          code: ALL_IN_ONE_ANDROID_KOTLIN,
+        }
+      : (BLUEPRINT_FILES[active] ?? BLUEPRINT_FILES[0]);
   if (!file) return null;
 
   const copy = async () => {
@@ -577,6 +585,19 @@ export function BlueprintTab() {
         </div>
 
         <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+          <Button
+            variant="ghost"
+            type="button"
+            onClick={() => {
+              setActive(-1);
+              setCopied(false);
+            }}
+            className={`shrink-0 rounded-lg px-3 py-1.5 font-mono text-xs transition-colors ${
+              active === -1 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+            }`}
+          >
+            AllInOneHetznerVpn.kt (Merged)
+          </Button>
           {BLUEPRINT_FILES.map((f, i) => (
             <Button
               variant="ghost"

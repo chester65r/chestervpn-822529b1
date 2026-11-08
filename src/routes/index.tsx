@@ -159,8 +159,8 @@ function Index() {
     setErrors(found);
     const first = Object.values(found)[0];
     if (first) {
-      toast.error(first, { description: "Fix the highlighted field in Configure." });
-      setTab("config");
+      toast.error(first, { description: "Fix the highlighted field." });
+      if (tab !== "home" && tab !== "config") setTab("home");
       return false;
     }
     return true;
@@ -219,7 +219,7 @@ function Index() {
     setPresetId(match?.id ?? "custom");
     setErrors({});
     toast.success("Profile imported");
-    setTab("config");
+    if (tab !== "home") setTab("config");
     return true;
   };
 
@@ -245,7 +245,7 @@ function Index() {
     setPresetId(entry.presetId);
     setErrors({});
     toast.success(`Loaded "${entry.name}"`);
-    setTab("config");
+    if (tab !== "home") setTab("config");
   };
 
   const deleteSaved = (id: string) => {
@@ -259,8 +259,8 @@ function Index() {
     setProfile((p) => ({ ...p, ip: host, port: String(port), sni: host }));
     setPresetId("custom");
     setErrors({});
-    toast.success("Server applied to Configure");
-    setTab("config");
+    toast.success("Server applied to active configuration");
+    setTab("home");
   };
 
   const serverLabel = profile.ip ? `${profile.ip}:${profile.port || "443"}` : "No server configured";
@@ -288,7 +288,7 @@ function Index() {
         <header className="flex items-center justify-between px-5 pb-2 pt-5">
           <div>
             <h1 className="text-lg font-bold tracking-tight">Tunnel Console</h1>
-            <p className="text-xs text-muted-foreground">Network optimization utility</p>
+            <p className="text-xs text-muted-foreground">All-in-One VPN, WireGuard & Hetzner CX23 Command Center</p>
           </div>
           <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" asChild><Link to="/connect" aria-label="Connect your assistant" title="Connect your assistant"><Plug className="h-4 w-4" /></Link></Button>
@@ -315,9 +315,20 @@ function Index() {
               totals={sim.totals}
               serverLabel={serverLabel}
               profile={profile}
+              presetId={presetId}
               networkProfileId={networkProfileId}
+              errors={errors}
+              exportedCode={exported}
+              saved={saved}
+              onPreset={choosePreset}
               onSelectNetworkProfile={applyNetworkProfile}
+              onChange={change}
               onToggle={toggle}
+              onExport={doExport}
+              onImport={doImport}
+              onSave={saveCurrent}
+              onLoad={loadSaved}
+              onDelete={deleteSaved}
               getDiagnostics={getDiagnostics}
             />
           )}
