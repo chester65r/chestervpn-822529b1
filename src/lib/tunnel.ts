@@ -23,6 +23,130 @@ export const DEFAULT_PAYLOAD_TEMPLATE =
 
 export const EMPTY_PROFILE: TunnelProfile = { ip: "", port: "443", sni: "", payload: "" };
 
+/**
+ * Production Hetzner Ubuntu VPS infrastructure specification
+ * (Verified from Hetzner Cloud Console: Server #166592617 "ahmed-docker-manager").
+ */
+export const HETZNER_SERVER_SPEC = {
+  provider: "Hetzner Cloud",
+  serverName: "ahmed-docker-manager",
+  serverId: "166592617",
+  projectId: "16098183",
+  location: "Helsinki, Finland",
+  networkZone: "eu-central",
+  ip: "2.29.8.194",
+  reverseDns: "static.194.8.29.2.clients.your-server.de",
+  ipv6Subnet: "2a01:4f9:c015:48b3::/64",
+  serverType: "CX23",
+  os: "Ubuntu",
+  vcpu: 2,
+  ramGb: 4,
+  diskGb: 40,
+  trafficTb: 20,
+  wireguardPort: 51820,
+  tlsPort: 443,
+  altTlsPort: 8443,
+  vpnSubnet: "10.66.66.0/24",
+  tunSubnet: "10.8.0.0/24",
+} as const;
+
+export const HETZNER_DEFAULT_PROFILE: TunnelProfile = {
+  ip: HETZNER_SERVER_SPEC.ip,
+  port: String(HETZNER_SERVER_SPEC.tlsPort),
+  sni: HETZNER_SERVER_SPEC.reverseDns,
+  payload: DEFAULT_PAYLOAD_TEMPLATE,
+};
+
+export type NetworkProviderProfile = {
+  id: string;
+  name: string;
+  networkType: string;
+  description: string;
+  recommendedMtu: number;
+  keepAliveIntervalSec: number;
+  transportMode: "tls-ws" | "wireguard-udp" | "carrier-cgnat-safe" | "alt-tls-8443";
+  profile: TunnelProfile;
+};
+
+/**
+ * Legitimate network & telecom-provider optimization profiles configured for
+ * the Hetzner CX23 (ahmed-docker-manager / 2.29.8.194 / Helsinki eu-central) VPN and relay server.
+ */
+export const NETWORK_PROVIDER_PROFILES: NetworkProviderProfile[] = [
+  {
+    id: "hetzner-tls-direct",
+    name: "Hetzner CX23 Direct (TLS 1.3 + WebSocket)",
+    networkType: "Fiber / Broadband / Wi-Fi (Helsinki eu-central)",
+    description:
+      "Direct TLS 1.3 handshake to ahmed-docker-manager (2.29.8.194:443) with RFC 6455 WebSocket upgrade and standard 1420 MTU.",
+    recommendedMtu: 1420,
+    keepAliveIntervalSec: 25,
+    transportMode: "tls-ws",
+    profile: {
+      ip: HETZNER_SERVER_SPEC.ip,
+      port: "443",
+      sni: HETZNER_SERVER_SPEC.ip,
+      payload:
+        "GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]X-Tunnel-Profile: hetzner-tls-direct[crlf]",
+    },
+  },
+  {
+    id: "telecom-mobile-cgnat",
+    name: "Mobile Carrier / 4G & 5G CGNAT Safe",
+    networkType: "Telecom Mobile Data (5G VoLTE / Carrier NAT)",
+    description:
+      "Clamped 1280 MTU, 15s NAT keepalive, and chunked TLS handshake for carrier-grade NAT and strict mobile packet inspection.",
+    recommendedMtu: 1280,
+    keepAliveIntervalSec: 15,
+    transportMode: "carrier-cgnat-safe",
+    profile: {
+      ip: HETZNER_SERVER_SPEC.ip,
+      port: "443",
+      sni: HETZNER_SERVER_SPEC.ip,
+      payload:
+        "GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade, Keep-Alive[crlf]Upgrade: websocket[crlf]X-Tunnel-MTU: 1280[crlf]X-Tunnel-Profile: telecom-mobile-cgnat[crlf]",
+    },
+  },
+  {
+    id: "enterprise-firewall-443",
+    name: "Reverse-DNS SNI Relay (clients.your-server.de)",
+    networkType: "Restricted Firewall / Corporate Wi-Fi (UDP Blocked)",
+    description:
+      "Uses Hetzner's official reverse DNS hostname (static.194.8.29.2.clients.your-server.de) as TLS SNI over TCP 443.",
+    recommendedMtu: 1360,
+    keepAliveIntervalSec: 20,
+    transportMode: "tls-ws",
+    profile: {
+      ip: HETZNER_SERVER_SPEC.ip,
+      port: "443",
+      sni: HETZNER_SERVER_SPEC.reverseDns,
+      payload:
+        "GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]Cache-Control: no-cache[crlf]X-Tunnel-Profile: enterprise-firewall-443[crlf]",
+    },
+  },
+  {
+    id: "hetzner-alt-8443",
+    name: "Hetzner CX23 Alternate TLS Port (8443)",
+    networkType: "Alternate Port / Middlebox Fallback",
+    description:
+      "Connects to the secondary TLS listener on 2.29.8.194:8443 when middleboxes throttle standard port 443.",
+    recommendedMtu: 1280,
+    keepAliveIntervalSec: 20,
+    transportMode: "alt-tls-8443",
+    profile: {
+      ip: HETZNER_SERVER_SPEC.ip,
+      port: "8443",
+      sni: HETZNER_SERVER_SPEC.ip,
+      payload:
+        "GET / HTTP/1.1[crlf]Host: [host]:8443[crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]X-Tunnel-Profile: hetzner-alt-8443[crlf]",
+    },
+  },
+];
+
+export function getNetworkProviderProfile(id: string): NetworkProviderProfile | undefined {
+  return NETWORK_PROVIDER_PROFILES.find((item) => item.id === id);
+}
+
 function isTunnelProfile(value: unknown): value is TunnelProfile {
   if (typeof value !== "object" || value === null) return false;
   const p = value as Partial<TunnelProfile>;
@@ -42,6 +166,21 @@ export function parseActiveProfile(json: string | null): { profile: TunnelProfil
   } catch {
     return fallback;
   }
+}
+
+/**
+ * Resolves the active profile on workspace hydration, defaulting to the
+ * production Hetzner CX23 (2.29.8.194) profile when no saved draft is present.
+ */
+export function resolveInitialActiveProfile(json: string | null): { profile: TunnelProfile; presetId: string } {
+  if (!json) {
+    return { profile: HETZNER_DEFAULT_PROFILE, presetId: "custom" };
+  }
+  const parsed = parseActiveProfile(json);
+  if (!parsed.profile.ip && !parsed.profile.sni && !parsed.profile.payload) {
+    return { profile: HETZNER_DEFAULT_PROFILE, presetId: "custom" };
+  }
+  return parsed;
 }
 
 export const PROFILE_PREFIX = "TUNNEL://";

@@ -79,11 +79,26 @@ export function getRelayDeploymentCommand(target: RelayDeploymentTarget, publicH
   return `curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker "$USER" && sudo systemctl enable --now docker && sudo ufw allow ${WIREGUARD_PORT}/udp && ${runCommand}`;
 }
 
+export function getHetznerSafeReleaseCommands(publicHost = "2.29.8.194"): {
+  bootstrapUser: string;
+  deployRelease: string;
+  rollbackRelease: string;
+  statusCheck: string;
+} {
+  const host = publicHost.trim() || "2.29.8.194";
+  return {
+    bootstrapUser: `sudo ./relay-server/deploy-hetzner.sh bootstrap-user "<YOUR_DEPLOY_SSH_PUBKEY>"`,
+    deployRelease: `PUBLIC_HOST=${host} ./relay-server/deploy-hetzner.sh deploy ${host}`,
+    rollbackRelease: `PUBLIC_HOST=${host} ./relay-server/deploy-hetzner.sh rollback`,
+    statusCheck: `./relay-server/deploy-hetzner.sh status`,
+  };
+}
+
 export const DEPLOYMENT_TARGETS = [
   {
     id: "multi-transport" as const,
-    label: "All-in-One Multi-Transport Container",
-    description: "WireGuard + TLS/SNI + WebSocket + HTTP Payload + SOCKS5 + SSH + NAT",
+    label: "Hetzner CX23 Multi-Transport Container",
+    description: "WireGuard (51820/udp) + TLS/SNI + WebSocket (443/tcp) + NAT Masquerading",
   },
   {
     id: "ubuntu" as const,
@@ -98,10 +113,10 @@ export const DEPLOYMENT_TARGETS = [
 ];
 
 export const RELAY_DEPLOYMENT_NOTES = [
-  "Use a dedicated VPS and a DNS name that points to its public IP.",
-  "Open UDP 51820 (WireGuard) and TCP 443/8443/80/8080/1080/2222 in the cloud and host firewalls.",
-  "Generate client keys on the device; never paste private keys into this dashboard.",
-  "The multi-transport container enables kernel IPv4/IPv6 forwarding, iptables NAT masquerading, and /health checks out of the box.",
+  "Target Infrastructure: Hetzner CX23 Ubuntu VPS (2.29.8.194 — 2 vCPU, 4 GB RAM, 40 GB disk).",
+  "Minimum required firewall ports on 2.29.8.194: UDP 51820 (WireGuard), TCP 443 (TLS/WebSocket Gateway), and TCP 22 (SSH).",
+  "Use relay-server/deploy-hetzner.sh for non-destructive timestamped releases under /opt/tunnel-relay/releases/<TIMESTAMP> and instant symlink rollback.",
+  "Generate client keys on the device; persistent Docker volumes (tunnel-wireguard, tunnel-tls) preserve enrolled peers across upgrades and rollbacks.",
 ];
 
 export const SERVER_CONTAINER_FILES: ServerContainerFile[] = [
@@ -147,7 +162,7 @@ ENTRYPOINT ["/opt/tunnel-relay/entrypoint.sh"]`,
   {
     name: "docker-compose.yml",
     path: "relay-server/docker-compose.yml",
-    description: "Compose stack granting NET_ADMIN, /dev/net/tun, IP forwarding sysctls, and mapping all VPN & anti-DPI ports.",
+    description: "Compose stack for Hetzner CX23 (2.29.8.194) granting NET_ADMIN, /dev/net/tun, IP forwarding sysctls, and persistent volumes.",
     code: `services:
   tunnel-relay:
     build:
@@ -165,7 +180,7 @@ ENTRYPOINT ["/opt/tunnel-relay/entrypoint.sh"]`,
       - net.ipv4.conf.all.src_valid_mark=1
       - net.ipv6.conf.all.forwarding=1
     environment:
-      - PUBLIC_HOST=\${PUBLIC_HOST:-vpn.example.com}
+      - PUBLIC_HOST=\${PUBLIC_HOST:-2.29.8.194}
       - TUN_SUBNET=10.8.0.0/24
       - TUN_SERVER_IP=10.8.0.1/24
       - WG_SUBNET=10.66.66.0/24
@@ -194,11 +209,11 @@ volumes:
   {
     name: "entrypoint.sh",
     path: "relay-server/entrypoint.sh",
-    description: "Initializes tun0 (10.8.0.1/24) and wg0 (10.66.66.1/24), configures iptables NAT masquerading, DNS, SSH, and TLS certs.",
+    description: "Initializes tun0 (10.8.0.1/24) and wg0 (10.66.66.1/24), configures iptables NAT masquerading, DNS, SSH, and TLS certs for 2.29.8.194.",
     code: `#!/usr/bin/env bash
 set -euo pipefail
 
-PUBLIC_HOST="\${PUBLIC_HOST:-vpn.example.com}"
+PUBLIC_HOST="\${PUBLIC_HOST:-2.29.8.194}"
 TUN_DEV="\${TUN_DEV:-tun0}"
 TUN_SERVER_IP="\${TUN_SERVER_IP:-10.8.0.1/24}"
 TUN_SUBNET="\${TUN_SUBNET:-10.8.0.0/24}"
@@ -241,7 +256,8 @@ TLS_CERT="/etc/tunnel-relay/tls/fullchain.pem"
 TLS_KEY="/etc/tunnel-relay/tls/privkey.pem"
 if [ ! -f "\${TLS_CERT}" ] || [ ! -f "\${TLS_KEY}" ]; then
   openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \\
-    -keyout "\${TLS_KEY}" -out "\${TLS_CERT}" -subj "/CN=\${PUBLIC_HOST}"
+    -keyout "\${TLS_KEY}" -out "\${TLS_CERT}" -subj "/CN=\${PUBLIC_HOST}" \\
+    -addext "subjectAltName=DNS:\${PUBLIC_HOST},IP:127.0.0.1,IP:2.29.8.194"
 fi
 
 dnsmasq --no-resolv --server=8.8.8.8 --server=1.1.1.1 --listen-address=127.0.0.1,10.8.0.1,10.66.66.1 || true
@@ -258,9 +274,21 @@ import tls from "node:tls";
 import crypto from "node:crypto";
 
 // Listens on TLS_PORTS (443, 8443), HTTP_PORTS (80, 8080), and SOCKS5_PORT (1080)
-// - Accepts any SNI hostname via SNICallback for uTLSEvasionEngine
-// - Responds 200 OK on HEAD/GET /health for control-plane health checks
-// - Upgrades HTTP Custom Payloads (101 Switching Protocols) & CONNECT streams
+// - Accepts any SNI hostname via SNICallback for uTLSEvasionEngine & CarrierTunnelOptimizer
+// - Responds 200 OK on HEAD/GET /health with Hetzner CX23 node telemetry
+// - Upgrades HTTP Custom Payloads (101 Switching Protocols) & echoes X-Tunnel-Profile-Accepted
 // - Filters KeepAliveManager "\\r\\n" heartbeats and forwards traffic to the internet`,
+  },
+  {
+    name: "deploy-hetzner.sh",
+    path: "relay-server/deploy-hetzner.sh",
+    description: "Non-destructive release & atomic symlink rollback script for Hetzner CX23 (2.29.8.194) using dedicated 'tunneldeploy' account.",
+    code: `#!/usr/bin/env bash
+# Usage:
+#   sudo ./relay-server/deploy-hetzner.sh bootstrap-user "<SSH_PUBKEY>"
+#   PUBLIC_HOST=2.29.8.194 ./relay-server/deploy-hetzner.sh deploy 2.29.8.194
+#   PUBLIC_HOST=2.29.8.194 ./relay-server/deploy-hetzner.sh rollback
+#   ./relay-server/deploy-hetzner.sh status
+# Stages immutable releases under /opt/tunnel-relay/releases/<TIMESTAMP> and switches /opt/tunnel-relay/current atomically.`,
   },
 ];

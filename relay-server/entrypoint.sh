@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PUBLIC_HOST="${PUBLIC_HOST:-vpn.example.com}"
+PUBLIC_HOST="${PUBLIC_HOST:-2.29.8.194}"
 TUN_DEV="${TUN_DEV:-tun0}"
 TUN_SERVER_IP="${TUN_SERVER_IP:-10.8.0.1/24}"
 TUN_SUBNET="${TUN_SUBNET:-10.8.0.0/24}"
@@ -72,11 +72,12 @@ iptables -t mangle -C FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-m
 TLS_CERT="/etc/tunnel-relay/tls/fullchain.pem"
 TLS_KEY="/etc/tunnel-relay/tls/privkey.pem"
 if [ ! -f "${TLS_CERT}" ] || [ ! -f "${TLS_KEY}" ]; then
+  SAN_ENTRY="DNS:${PUBLIC_HOST},DNS:static.194.8.29.2.clients.your-server.de,IP:127.0.0.1,IP:2.29.8.194"
   openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
     -keyout "${TLS_KEY}" \
     -out "${TLS_CERT}" \
     -subj "/CN=${PUBLIC_HOST}" \
-    -addext "subjectAltName=DNS:${PUBLIC_HOST},DNS:*.${PUBLIC_HOST},IP:127.0.0.1" >/dev/null 2>&1
+    -addext "subjectAltName=${SAN_ENTRY}" >/dev/null 2>&1
 fi
 
 # 6. Start local DNS forwarder (dnsmasq) for tunnel clients (10.8.0.1 / 10.66.66.1)

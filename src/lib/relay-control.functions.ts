@@ -1,5 +1,8 @@
+import net from "node:net";
+import tls from "node:tls";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { HETZNER_SERVER_SPEC } from "@/lib/tunnel";
 
 const HEALTH_CHECK_WINDOW_MS = 60_000;
 const HEALTH_CHECK_LIMIT = 10;
@@ -11,6 +14,21 @@ export type CheckRelayServerInput = {
   host: string;
   port: number;
   transport: string;
+};
+
+export type ProbeHetznerInput = {
+  port?: number;
+  sni?: string;
+  networkProfileId?: string;
+};
+
+export type RelayProbeResult = {
+  status: "online" | "degraded" | "offline";
+  latencyMs: number | null;
+  errorCode: string | null;
+  tlsEstablished: boolean;
+  tcpReachable: boolean;
+  relayNode: string | null;
 };
 
 function isBlockedHost(host: string): boolean {
@@ -26,6 +44,152 @@ function isBlockedHost(host: string): boolean {
     normalized.startsWith("169.254.") ||
     normalized === "0.0.0.0"
   );
+}
+
+/**
+ * Probes a relay endpoint over HTTPS (/health), falling back to a TLS 1.3 socket
+ * handshake (supporting self-signed IP certificates on 2.29.8.194) and raw TCP check.
+ */
+async function probeRelayEndpoint(
+  host: string,
+  port: number,
+  sniHost?: string,
+): Promise<RelayProbeResult> {
+  const started = performance.now();
+
+  // 1. Try standard HTTPS /health fetch first
+  try {
+    const response = await fetch(`https://${host}:${port}/health`, {
+      method: "HEAD",
+      redirect: "manual",
+      signal: AbortSignal.timeout(3_500),
+    });
+    const latencyMs = Math.round(performance.now() - started);
+    const relayNode = response.headers.get("x-relay-node");
+    return {
+      status: response.ok ? "online" : "degraded",
+      latencyMs,
+      errorCode: response.ok ? null : `HTTP_${response.status}`,
+      tlsEstablished: true,
+      tcpReachable: true,
+      relayNode,
+    };
+  } catch {
+    // Fall through to TLS socket probe (handles self-signed IP certificates on 2.29.8.194)
+  }
+
+  // 2. Try TLS socket handshake + GET /health (allows self-signed certificate on IP endpoints)
+  const tlsResult = await new Promise<RelayProbeResult | null>((resolve) => {
+    const tlsStarted = performance.now();
+    let settled = false;
+    const finish = (val: RelayProbeResult | null) => {
+      if (!settled) {
+        settled = true;
+        resolve(val);
+      }
+    };
+
+    const socket = tls.connect(
+      {
+        host,
+        port,
+        servername: sniHost && !/^\d+\.\d+\.\d+\.\d+$/.test(sniHost) ? sniHost : undefined,
+        rejectUnauthorized: false,
+        timeout: 3_500,
+      },
+      () => {
+        const req =
+          `GET /health HTTP/1.1\r\n` +
+          `Host: ${sniHost || host}\r\n` +
+          `User-Agent: TunnelConsole-HealthProbe/1.0\r\n` +
+          `Connection: close\r\n\r\n`;
+        socket.write(req);
+      },
+    );
+
+    let buf = "";
+    socket.on("data", (chunk) => {
+      buf += chunk.toString("utf8");
+      if (buf.includes("\r\n\r\n") || buf.length > 2048) {
+        const latencyMs = Math.round(performance.now() - tlsStarted);
+        socket.destroy();
+        const is200 = /^HTTP\/1\.[01]\s+200\b/i.test(buf);
+        const isHttp = /^HTTP\/1\.[01]\s+\d{3}\b/i.test(buf);
+        const nodeMatch = buf.match(/x-relay-node:\s*([^\r\n]+)/i);
+        finish({
+          status: is200 ? "online" : "degraded",
+          latencyMs,
+          errorCode: is200 ? null : isHttp ? "HTTP_NON_200" : "TLS_HANDSHAKE_ONLY",
+          tlsEstablished: true,
+          tcpReachable: true,
+          relayNode: nodeMatch?.[1]?.trim() ?? null,
+        });
+      }
+    });
+
+    socket.on("timeout", () => {
+      socket.destroy();
+      finish(null);
+    });
+    socket.on("error", () => {
+      socket.destroy();
+      finish(null);
+    });
+    socket.on("close", () => {
+      finish(null);
+    });
+  });
+
+  if (tlsResult) return tlsResult;
+
+  // 3. Fallback raw TCP reachability check
+  return new Promise<RelayProbeResult>((resolve) => {
+    const tcpStarted = performance.now();
+    let settled = false;
+    const finish = (val: RelayProbeResult) => {
+      if (!settled) {
+        settled = true;
+        resolve(val);
+      }
+    };
+
+    const rawSocket = net.connect({ host, port, timeout: 3_000 }, () => {
+      const latencyMs = Math.round(performance.now() - tcpStarted);
+      rawSocket.destroy();
+      finish({
+        status: "degraded",
+        latencyMs,
+        errorCode: "TCP_OPEN_TLS_PENDING",
+        tlsEstablished: false,
+        tcpReachable: true,
+        relayNode: null,
+      });
+    });
+
+    rawSocket.on("timeout", () => {
+      rawSocket.destroy();
+      finish({
+        status: "offline",
+        latencyMs: null,
+        errorCode: "TIMEOUT",
+        tlsEstablished: false,
+        tcpReachable: false,
+        relayNode: null,
+      });
+    });
+
+    rawSocket.on("error", (err: NodeJS.ErrnoException) => {
+      rawSocket.destroy();
+      finish({
+        status: "offline",
+        latencyMs: null,
+        errorCode: err.code === "ECONNREFUSED" ? "CONN_REFUSED" : "UNREACHABLE",
+        tlsEstablished: false,
+        tcpReachable: false,
+        relayNode: null,
+      });
+    });
+  });
 }
 
 async function notifyCircleCiDeployHook(payload: {
@@ -62,6 +226,26 @@ async function notifyCircleCiDeployHook(payload: {
   }
 }
 
+export const probeHetznerServer = createServerFn({ method: "POST" })
+  .inputValidator((d: ProbeHetznerInput) => d)
+  .handler(async ({ data: input }) => {
+    const port =
+      input?.port && Number.isInteger(input.port) && input.port >= 1 && input.port <= 65535
+        ? input.port
+        : HETZNER_SERVER_SPEC.tlsPort;
+    const sni = input?.sni?.trim() || HETZNER_SERVER_SPEC.ip;
+
+    const probe = await probeRelayEndpoint(HETZNER_SERVER_SPEC.ip, port, sni);
+    return {
+      host: HETZNER_SERVER_SPEC.ip,
+      port,
+      sni,
+      networkProfileId: input?.networkProfileId ?? "hetzner-tls-direct",
+      checkedAt: new Date().toISOString(),
+      ...probe,
+    };
+  });
+
 export const checkRelayServer = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: CheckRelayServerInput) => d)
@@ -86,24 +270,7 @@ export const checkRelayServer = createServerFn({ method: "POST" })
     if (countError) throw new Error("Health-check rate limit is unavailable");
     if ((count ?? 0) >= HEALTH_CHECK_LIMIT) throw new Error("Health-check limit reached. Try again in a minute.");
 
-    const url = `https://${input.host}:${input.port}/health`;
-    const started = performance.now();
-    let status: "online" | "degraded" | "offline" = "offline";
-    let latencyMs: number | null = null;
-    let errorCode: string | null = null;
-
-    try {
-      const response = await fetch(url, {
-        method: "HEAD",
-        redirect: "manual",
-        signal: AbortSignal.timeout(4_000),
-      });
-      latencyMs = Math.round(performance.now() - started);
-      status = response.ok ? "online" : "degraded";
-      if (!response.ok) errorCode = `HTTP_${response.status}`;
-    } catch (error) {
-      errorCode = error instanceof Error && error.name === "TimeoutError" ? "TIMEOUT" : "UNREACHABLE";
-    }
+    const { status, latencyMs, errorCode } = await probeRelayEndpoint(input.host, input.port);
 
     await context.supabase
       .from("relay_servers")

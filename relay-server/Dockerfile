@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssh-server \
     openssl \
     procps \
+    python3 \
     socat \
     wireguard-tools \
   && rm -rf /var/lib/apt/lists/*
@@ -22,8 +23,9 @@ WORKDIR /opt/tunnel-relay
 
 COPY gateway.mjs /opt/tunnel-relay/gateway.mjs
 COPY entrypoint.sh /opt/tunnel-relay/entrypoint.sh
+COPY peer-admin.py /opt/tunnel-relay/peer-admin.py
 
-RUN chmod +x /opt/tunnel-relay/entrypoint.sh \
+RUN chmod +x /opt/tunnel-relay/entrypoint.sh /opt/tunnel-relay/peer-admin.py \
   && mkdir -p /etc/wireguard /etc/tunnel-relay/tls /var/run/sshd
 
 # Expose all Tunnel Console transports:

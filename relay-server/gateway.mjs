@@ -136,17 +136,29 @@ function handleClientConnection(socket, transportLabel) {
 
     // 1. Control-plane health check endpoint (`HEAD /health` or `GET /health`)
     if ((method === "HEAD" || method === "GET") && requestTarget.startsWith("/health")) {
+      const publicHost = process.env.PUBLIC_HOST || "2.29.8.194";
       const body = JSON.stringify({
         status: "online",
+        node: "hetzner-cx23",
+        publicHost,
         transport: transportLabel,
         activeConnections,
         uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
+        wireguardPort: Number(process.env.WG_PORT || 51820),
         transports: ["wireguard", "tls-sni", "websocket", "http-custom-payload", "socks5", "ssh"],
+        networkProfiles: [
+          "hetzner-tls-direct",
+          "telecom-mobile-cgnat",
+          "enterprise-firewall-443",
+          "hetzner-alt-8443",
+        ],
       });
       const responseHeaders = [
         "HTTP/1.1 200 OK",
         "Content-Type: application/json",
         `Content-Length: ${Buffer.byteLength(body)}`,
+        "X-Relay-Node: hetzner-cx23",
+        `X-Relay-Host: ${publicHost}`,
         "Cache-Control: no-store",
         "Connection: close",
         "\r\n",
@@ -160,13 +172,15 @@ function handleClientConnection(socket, transportLabel) {
     if (method === "CONNECT") {
       const [connectHost, connectPortStr] = requestTarget.split(":");
       const connectPort = Number(connectPortStr) || 443;
-      socket.write("HTTP/1.1 200 Connection Established\r\nProxy-Agent: TunnelConsole-Relay/1.0\r\n\r\n");
+      socket.write("HTTP/1.1 200 Connection Established\r\nProxy-Agent: TunnelConsole-Hetzner-CX23/1.0\r\n\r\n");
       attachTunnelStream(socket, remainder, connectHost, connectPort);
       return;
     }
 
     // 3. HTTP Custom Payload / WebSocket Upgrade (`GET / HTTP/1.1` + `Upgrade: websocket`)
     const wsKey = headers["sec-websocket-key"];
+    const requestedProfile = headers["x-tunnel-profile"] || "hetzner-tls-direct";
+    const requestedMtu = headers["x-tunnel-mtu"] || "1280";
     const customTarget = headers["x-target-host"] || headers["x-forward-to"] || "";
     let targetHost = null;
     let targetPort = null;
@@ -181,6 +195,8 @@ function handleClientConnection(socket, transportLabel) {
       "Upgrade: websocket",
       "Connection: Upgrade",
       "X-Tunnel-Transport: " + transportLabel,
+      "X-Tunnel-Profile-Accepted: " + requestedProfile,
+      "X-Tunnel-MTU-Negotiated: " + requestedMtu,
     ];
     if (wsKey) {
       upgradeHeaders.push(`Sec-WebSocket-Accept: ${computeWebSocketAccept(wsKey)}`);

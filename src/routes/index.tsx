@@ -15,16 +15,18 @@ import { AdditionalAccount } from "@/components/tunnel/AdditionalAccount";
 import { ServiceOverview } from "@/components/tunnel/ServiceOverview";
 import { useTunnelSim } from "@/lib/use-tunnel-sim";
 import {
-  EMPTY_PROFILE,
+  HETZNER_DEFAULT_PROFILE,
+  NETWORK_PROVIDER_PROFILES,
   ROUTE_PRESETS,
   SAVED_PROFILES_KEY,
   exportProfile,
   bytesPerSecToMbps,
   importProfile,
-  parseActiveProfile,
   parseSavedProfiles,
+  resolveInitialActiveProfile,
   serializeSavedProfiles,
   validateProfile,
+  type NetworkProviderProfile,
   type ProfileErrors,
   type SavedProfile,
   type TunnelProfile,
@@ -66,8 +68,11 @@ const STORAGE_KEY = "tunnel-console-profile";
 
 function Index() {
   const [tab, setTab] = useState<Tab>("home");
-  const [profile, setProfile] = useState<TunnelProfile>(EMPTY_PROFILE);
+  const [profile, setProfile] = useState<TunnelProfile>(HETZNER_DEFAULT_PROFILE);
   const [presetId, setPresetId] = useState("custom");
+  const [networkProfileId, setNetworkProfileId] = useState<string>(
+    NETWORK_PROVIDER_PROFILES[0]?.id ?? "hetzner-tls-direct",
+  );
   const [errors, setErrors] = useState<ProfileErrors>({});
   const [exported, setExported] = useState<string | null>(null);
   const [saved, setSaved] = useState<SavedProfile[]>([]);
@@ -76,7 +81,7 @@ function Index() {
 
   useEffect(() => {
     try {
-      const restored = parseActiveProfile(localStorage.getItem(STORAGE_KEY));
+      const restored = resolveInitialActiveProfile(localStorage.getItem(STORAGE_KEY));
       setProfile(restored.profile);
       setPresetId(restored.presetId);
     } catch {
@@ -136,6 +141,17 @@ function Index() {
         return rest;
       });
     }
+  };
+
+  const applyNetworkProfile = (netProfile: NetworkProviderProfile) => {
+    if (!canEdit()) return;
+    setNetworkProfileId(netProfile.id);
+    setProfile(netProfile.profile);
+    setPresetId("custom");
+    setErrors({});
+    toast.success(`Applied ${netProfile.name}`, {
+      description: `Target: ${netProfile.profile.ip}:${netProfile.profile.port} · MTU ${netProfile.recommendedMtu}`,
+    });
   };
 
   const checkProfile = () => {
@@ -298,6 +314,9 @@ function Index() {
               seconds={sim.seconds}
               totals={sim.totals}
               serverLabel={serverLabel}
+              profile={profile}
+              networkProfileId={networkProfileId}
+              onSelectNetworkProfile={applyNetworkProfile}
               onToggle={toggle}
               getDiagnostics={getDiagnostics}
             />
@@ -306,9 +325,11 @@ function Index() {
             <ConfigTab
               profile={profile}
               presetId={presetId}
+              networkProfileId={networkProfileId}
               errors={errors}
               disabled={sim.status !== "disconnected"}
               onPreset={choosePreset}
+              onSelectNetworkProfile={applyNetworkProfile}
               onChange={change}
             />
           )}

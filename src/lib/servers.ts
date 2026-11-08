@@ -1,4 +1,4 @@
-import { isHostOrIp } from "./tunnel";
+import { HETZNER_SERVER_SPEC, isHostOrIp } from "./tunnel";
 
 export type RelayServer = {
   id: string;
@@ -32,39 +32,41 @@ export const TRANSPORTS = [
   { id: "wireguard", label: "WireGuard VPN (UDP 51820)" },
 ];
 
-/** Sample VPS server presets for quick setup. Replace with your actual server details. */
+export const PRIMARY_HETZNER_SERVER: RelayServer = {
+  id: "hetzner-cx23-primary",
+  name: "ahmed-docker-manager (Hetzner CX23 · Helsinki)",
+  host: HETZNER_SERVER_SPEC.ip,
+  port: HETZNER_SERVER_SPEC.tlsPort,
+  transport: "websocket",
+  notes: "Hetzner #166592617 (eu-central Helsinki) · 2.29.8.194 / static.194.8.29.2.clients.your-server.de · IPv6 2a01:4f9:c015:48b3::/64",
+  status: "unknown",
+  lastCheckedAt: null,
+  lastLatencyMs: null,
+  createdAt: 0,
+};
+
+/** Pre-configured Hetzner 2.29.8.194 (ahmed-docker-manager) infrastructure endpoints. */
 export const SAMPLE_VPS_SERVERS: RelayServer[] = [
+  PRIMARY_HETZNER_SERVER,
   {
-    id: "sample-vps-1",
-    name: "US East VPS",
-    host: "your-vps-ny.example.com",
-    port: 443,
-    transport: "websocket",
-    notes: "Replace with your actual VPS hostname or IP",
+    id: "hetzner-cx23-wireguard",
+    name: "ahmed-docker-manager WireGuard (wg0)",
+    host: HETZNER_SERVER_SPEC.ip,
+    port: HETZNER_SERVER_SPEC.wireguardPort,
+    transport: "wireguard",
+    notes: "Hetzner #166592617 UDP 51820 WireGuard VPN (10.66.66.1/24, MTU 1280, Helsinki eu-central)",
     status: "unknown",
     lastCheckedAt: null,
     lastLatencyMs: null,
     createdAt: 0,
   },
   {
-    id: "sample-vps-2",
-    name: "Europe VPS",
-    host: "your-vps-fra.example.com",
-    port: 8443,
+    id: "hetzner-cx23-alt-tls",
+    name: "ahmed-docker-manager Alternate TLS (8443)",
+    host: HETZNER_SERVER_SPEC.ip,
+    port: HETZNER_SERVER_SPEC.altTlsPort,
     transport: "tls",
-    notes: "Replace with your actual VPS hostname or IP",
-    status: "unknown",
-    lastCheckedAt: null,
-    lastLatencyMs: null,
-    createdAt: 0,
-  },
-  {
-    id: "sample-vps-3",
-    name: "Asia VPS",
-    host: "your-vps-sgp.example.com",
-    port: 443,
-    transport: "websocket",
-    notes: "Replace with your actual VPS hostname or IP",
+    notes: "Hetzner #166592617 secondary TLS + SNI listener on TCP 8443 (static.194.8.29.2.clients.your-server.de)",
     status: "unknown",
     lastCheckedAt: null,
     lastLatencyMs: null,

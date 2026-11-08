@@ -16,11 +16,13 @@ data class RoutePreset(
     val sni: String
 )
 
+const val HETZNER_SERVER_IP = "2.29.8.194"
+
 val ROUTE_PRESETS = listOf(
+    RoutePreset("hetzner", "Hetzner CX23 Primary (2.29.8.194)", HETZNER_SERVER_IP),
     RoutePreset("stc", "STC Enterprise Gateway (Saudi Telecom)", "stc.com.sa"),
     RoutePreset("mobily", "Mobily Corporate Gateway (Saudi Arabia)", "mobily.com.sa"),
     RoutePreset("gcp", "Google Cloud Compute Engine (GCP Node)", "cloud.google.com"),
-    RoutePreset("hetzner", "Hetzner Cloud VPS (Dedicated Node)", "hetzner.com"),
     RoutePreset("alpha", "Route Preset Alpha (TLS Virtualization)", "alpha.example.com"),
     RoutePreset("beta", "Route Preset Beta (Edge CDN Routing)", "beta.example.com"),
     RoutePreset("gamma", "Route Preset Gamma (Cloud Delivery)", "gamma.example.com"),
@@ -50,13 +52,13 @@ data class RelayServer(
 )
 
 val SAMPLE_VPS_SERVERS = listOf(
+    RelayServer("hetzner-cx23-primary", "Hetzner CX23 Primary (Ubuntu)", HETZNER_SERVER_IP, 443, "WebSocket", "Hetzner CX23 (2 vCPU, 4 GB RAM, 40 GB disk) TLS 1.3 + WebSocket + NAT gateway"),
+    RelayServer("hetzner-cx23-wg", "Hetzner CX23 WireGuard VPN (wg0)", HETZNER_SERVER_IP, 51820, "WireGuard", "Hetzner CX23 UDP 51820 WireGuard endpoint (10.66.66.1/24, MTU 1280)"),
+    RelayServer("hetzner-cx23-alt", "Hetzner CX23 Alternate TLS (8443)", HETZNER_SERVER_IP, 8443, "TLS", "Hetzner CX23 secondary TLS + SNI listener on TCP 8443"),
     RelayServer("gcp-london", "Google Cloud (London - europe-west2)", "europe-west2.gcp.cloud", 443, "TLS", "GCP Compute Engine europe-west2 datacenter"),
     RelayServer("gcp-iowa", "Google Cloud (US Central - us-central1)", "us-central1.gcp.cloud", 443, "TLS", "GCP Compute Engine us-central1 datacenter"),
-    RelayServer("gcp-tokyo", "Google Cloud (Asia - asia-northeast1)", "asia-northeast1.gcp.cloud", 443, "WebSocket", "GCP Compute Engine asia-northeast1 datacenter"),
     RelayServer("hetzner-fsn", "Hetzner Cloud (Germany - Falkenstein)", "fsn1.hetzner.com", 443, "TLS", "Hetzner Falkenstein FSN1 datacenter"),
-    RelayServer("hetzner-hel", "Hetzner Cloud (Finland - Helsinki)", "hel1.hetzner.com", 443, "WebSocket", "Hetzner Helsinki HEL1 datacenter"),
-    RelayServer("hetzner-ash", "Hetzner Cloud (US East - Ashburn)", "ash.hetzner.com", 443, "TLS", "Hetzner Ashburn ASH datacenter"),
-    RelayServer("sample-vps-1", "Custom VPS Node", "127.0.0.1", 443, "TLS", "Dedicated Ubuntu 22.04 tunnel node")
+    RelayServer("hetzner-hel", "Hetzner Cloud (Finland - Helsinki)", "hel1.hetzner.com", 443, "WebSocket", "Hetzner Helsinki HEL1 datacenter")
 )
 
 data class PayloadGeneratorConfig(

@@ -1,10 +1,19 @@
 import { useState } from "react";
-import { ArrowDown, ArrowUp, Clock, Power, ShieldCheck, Sparkles } from "lucide-react";
+import { Activity, ArrowDown, ArrowUp, Clock, Power, RefreshCw, Server, ShieldCheck, Sparkles } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";
 import { explainConnection, type ConnectionDiagnostics } from "@/lib/connection-help.functions";
+import { probeHetznerServer } from "@/lib/relay-control.functions";
 import { SpeedGraph } from "./SpeedGraph";
-import { formatBytes, formatDuration, formatSpeed } from "@/lib/tunnel";
+import {
+  HETZNER_SERVER_SPEC,
+  NETWORK_PROVIDER_PROFILES,
+  formatBytes,
+  formatDuration,
+  formatSpeed,
+  type NetworkProviderProfile,
+  type TunnelProfile,
+} from "@/lib/tunnel";
 import type { TunnelStatus } from "@/lib/use-tunnel-sim";
 
 type Props = {
@@ -16,6 +25,9 @@ type Props = {
   seconds: number;
   totals: { rx: number; tx: number };
   serverLabel: string;
+  profile: TunnelProfile;
+  networkProfileId: string;
+  onSelectNetworkProfile: (profile: NetworkProviderProfile) => void;
   onToggle: () => void;
   getDiagnostics: () => ConnectionDiagnostics;
 };
@@ -35,12 +47,26 @@ export function HomeTab({
   seconds,
   totals,
   serverLabel,
+  profile,
+  networkProfileId,
+  onSelectNetworkProfile,
   onToggle,
   getDiagnostics,
 }: Props) {
   const explain = useServerFn(explainConnection);
+  const runHetznerProbe = useServerFn(probeHetznerServer);
   const [help, setHelp] = useState<{ text?: string; error?: string } | null>(null);
   const [asking, setAsking] = useState(false);
+  const [probing, setProbing] = useState(false);
+  const [probeState, setProbeState] = useState<{
+    status: "online" | "degraded" | "offline";
+    latencyMs: number | null;
+    errorCode: string | null;
+    tlsEstablished: boolean;
+    tcpReachable: boolean;
+    checkedAt: string;
+  } | null>(null);
+
   const ask = async () => {
     setAsking(true);
     setHelp(null);
@@ -52,8 +78,38 @@ export function HomeTab({
       setAsking(false);
     }
   };
+
+  const probeLiveServer = async () => {
+    setProbing(true);
+    try {
+      const portNum = Number(profile.port) || HETZNER_SERVER_SPEC.tlsPort;
+      const res = await runHetznerProbe({
+        data: {
+          port: portNum,
+          sni: profile.sni || HETZNER_SERVER_SPEC.ip,
+          networkProfileId,
+        },
+      });
+      setProbeState(res);
+    } catch {
+      setProbeState({
+        status: "offline",
+        latencyMs: null,
+        errorCode: "PROBE_ERROR",
+        tlsEstablished: false,
+        tcpReachable: false,
+        checkedAt: new Date().toISOString(),
+      });
+    } finally {
+      setProbing(false);
+    }
+  };
+
   const on = status === "connected";
   const busy = status === "connecting";
+  const activeNetProfile =
+    NETWORK_PROVIDER_PROFILES.find((item) => item.id === networkProfileId) ??
+    NETWORK_PROVIDER_PROFILES[0];
 
   return (
     <div className="space-y-4">
@@ -83,10 +139,91 @@ export function HomeTab({
         >
           {STATUS_COPY[status]}
         </p>
-        <p className="mt-1 truncate text-sm text-muted-foreground">{serverLabel}</p>
+        <p className="mt-1 truncate font-mono text-sm text-muted-foreground">{serverLabel}</p>
+        {activeNetProfile && (
+          <p className="mt-1 text-xs text-primary">
+            {activeNetProfile.name} · MTU {activeNetProfile.recommendedMtu}
+          </p>
+        )}
         <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 font-mono text-xs text-muted-foreground">
           <Clock className="h-3 w-3" /> {formatDuration(seconds)}
         </p>
+      </section>
+
+      <section className="rounded-2xl border border-primary/25 bg-card p-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wider text-primary">
+              <Server className="h-3.5 w-3.5" /> HETZNER CX23 INFRASTRUCTURE
+            </p>
+            <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+              {HETZNER_SERVER_SPEC.ip} · {HETZNER_SERVER_SPEC.os} · {HETZNER_SERVER_SPEC.vcpu} vCPU / {HETZNER_SERVER_SPEC.ramGb} GB RAM
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            type="button"
+            onClick={() => void probeLiveServer()}
+            disabled={probing}
+            className="shrink-0 gap-1.5 text-xs"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${probing ? "animate-spin" : ""}`} />
+            {probing ? "Probing…" : "Probe 2.29.8.194"}
+          </Button>
+        </div>
+
+        {probeState && (
+          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-muted/60 px-3 py-2 text-xs">
+            <span className="flex items-center gap-1.5 font-medium">
+              <Activity className="h-3.5 w-3.5 text-primary" />
+              Status:{" "}
+              <span
+                className={
+                  probeState.status === "online"
+                    ? "font-semibold text-primary"
+                    : probeState.status === "degraded"
+                      ? "font-semibold text-chart-4"
+                      : "font-semibold text-destructive"
+                }
+              >
+                {probeState.status.toUpperCase()}
+              </span>
+            </span>
+            <span className="font-mono text-[11px] text-muted-foreground">
+              {probeState.latencyMs !== null ? `${probeState.latencyMs} ms` : probeState.errorCode ?? "Unreachable (awaiting deploy)"}
+            </span>
+          </div>
+        )}
+
+        <div className="mt-3">
+          <p className="mb-1.5 text-[11px] font-medium tracking-wider text-muted-foreground">
+            NETWORK & TELECOM PROVIDER OPTIMIZATION
+          </p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {NETWORK_PROVIDER_PROFILES.map((item) => {
+              const selected = item.id === networkProfileId && profile.ip === HETZNER_SERVER_SPEC.ip;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={status !== "disconnected"}
+                  onClick={() => onSelectNetworkProfile(item)}
+                  className={`rounded-xl border px-2.5 py-2 text-left transition-colors disabled:opacity-50 ${
+                    selected
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border bg-muted/50 text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <p className="truncate text-xs font-semibold">{item.name.replace("Hetzner CX23 ", "")}</p>
+                  <p className="truncate font-mono text-[10px] opacity-80">
+                    {item.profile.ip}:{item.profile.port} · MTU {item.recommendedMtu}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </section>
 
       <section className="grid grid-cols-2 gap-3">

@@ -39,16 +39,25 @@ import java.util.Locale
 @Composable
 fun TunnelConsoleScreen(
     onConnect: (TunnelProfile) -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    devicePublicKey: String = "",
+    wireGuardStatus: String = "DOWN (Idle)",
+    onGenerateDeviceIdentity: () -> Unit = {},
+    onSaveWireGuardEnrollment: (String, String) -> Unit = { _, _ -> },
+    onToggleWireGuard: () -> Unit = {},
+    onClearWireGuardCredentials: () -> Unit = {}
 ) {
     val connectionState by TunnelStateHolder.connectionState.collectAsState()
     val reconnectPhase by TunnelStateHolder.reconnectPhase.collectAsState()
     val dataTransferred by TunnelStateHolder.dataTransferred.collectAsState()
 
-    var ip by remember { mutableStateOf("") }
+    var ip by remember { mutableStateOf(com.example.advancedtunnel.model.HETZNER_SERVER_IP) }
     var port by remember { mutableStateOf("443") }
-    var sni by remember { mutableStateOf("") }
-    var payload by remember { mutableStateOf("") }
+    var sni by remember { mutableStateOf("static.194.8.29.2.clients.your-server.de") }
+    var payload by remember { mutableStateOf(com.example.advancedtunnel.model.DEFAULT_PAYLOAD_TEMPLATE) }
+
+    var trustedServerKey by remember { mutableStateOf("") }
+    var wgEnrollmentResponse by remember { mutableStateOf("") }
 
     val isEstablished = connectionState is TunnelConnectionState.TunnelEstablished
 
@@ -77,7 +86,7 @@ fun TunnelConsoleScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Tunnel Console",
+                        text = "Tunnel Console — ahmed-docker-manager",
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -104,7 +113,7 @@ fun TunnelConsoleScreen(
                         .padding(16.dp)
                 ) {
                     Text(
-                        text = "Connection Status",
+                        text = "Hetzner CX23 (2.29.8.194 · Helsinki eu-central)",
                         style = MaterialTheme.typography.labelLarge
                     )
 
@@ -122,6 +131,50 @@ fun TunnelConsoleScreen(
                         text = "Data transferred: ${formatBytes(dataTransferred)}",
                         style = MaterialTheme.typography.bodyMedium
                     )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        ip = com.example.advancedtunnel.model.HETZNER_SERVER_IP
+                        port = "443"
+                        sni = com.example.advancedtunnel.model.HETZNER_SERVER_IP
+                        payload = "GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]X-Tunnel-Profile: hetzner-tls-direct[crlf]"
+                    },
+                    enabled = !isEstablished && !isBusy,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Direct TLS 443")
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        ip = com.example.advancedtunnel.model.HETZNER_SERVER_IP
+                        port = "443"
+                        sni = com.example.advancedtunnel.model.HETZNER_SERVER_IP
+                        payload = "GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade, Keep-Alive[crlf]Upgrade: websocket[crlf]X-Tunnel-MTU: 1280[crlf]X-Tunnel-Profile: telecom-mobile-cgnat[crlf]"
+                    },
+                    enabled = !isEstablished && !isBusy,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Mobile CGNAT")
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        ip = com.example.advancedtunnel.model.HETZNER_SERVER_IP
+                        port = "443"
+                        sni = "static.194.8.29.2.clients.your-server.de"
+                        payload = "GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]X-Tunnel-Profile: enterprise-firewall-443[crlf]"
+                    },
+                    enabled = !isEstablished && !isBusy,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("rDNS SNI")
                 }
             }
 
@@ -158,8 +211,8 @@ fun TunnelConsoleScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(160.dp),
-                maxLines = 8
+                    .height(140.dp),
+                maxLines = 6
             )
 
             Row(
@@ -178,7 +231,7 @@ fun TunnelConsoleScreen(
                     enabled = !isEstablished && !isBusy,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Connect")
+                    Text("Connect TLS/WS")
                 }
 
                 Spacer(modifier = Modifier.width(12.dp))
@@ -189,6 +242,95 @@ fun TunnelConsoleScreen(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Disconnect")
+                }
+            }
+
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.elevatedCardColors()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "WireGuard GoBackend + Keystore (2.29.8.194:51820)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Text(
+                        text = "Engine Status: $wireGuardStatus",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    OutlinedButton(
+                        onClick = onGenerateDeviceIdentity,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("1. Generate Device Public Key (Android Keystore)")
+                    }
+
+                    if (devicePublicKey.isNotBlank()) {
+                        OutlinedTextField(
+                            value = devicePublicKey,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Device Public Key (enroll with peer-admin.py)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = trustedServerKey,
+                        onValueChange = { trustedServerKey = it },
+                        label = { Text("Server Public Key (/etc/wireguard/server.pub)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = wgEnrollmentResponse,
+                        onValueChange = { wgEnrollmentResponse = it },
+                        label = { Text("Enrollment Config (from peer-admin.py)") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp),
+                        maxLines = 6
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                onSaveWireGuardEnrollment(wgEnrollmentResponse, trustedServerKey)
+                                wgEnrollmentResponse = ""
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Save Enrollment")
+                        }
+
+                        Button(
+                            onClick = onToggleWireGuard,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Start / Stop WG")
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = onClearWireGuardCredentials,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Delete Keystore Credentials")
+                    }
                 }
             }
         }

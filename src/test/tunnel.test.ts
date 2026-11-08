@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PAYLOAD_TEMPLATE,
+  HETZNER_DEFAULT_PROFILE,
+  HETZNER_SERVER_SPEC,
+  NETWORK_PROVIDER_PROFILES,
   ROUTE_PRESETS,
   exportProfile,
+  getNetworkProviderProfile,
   importProfile,
   parsePayload,
   parseActiveProfile,
   parseSavedProfiles,
+  resolveInitialActiveProfile,
   serializeSavedProfiles,
   validateProfile,
   type SavedProfile,
@@ -21,6 +26,36 @@ describe("route presets", () => {
       gamma: "gamma.example.com",
       custom: "",
     });
+  });
+});
+
+describe("Hetzner CX23 (2.29.8.194 / ahmed-docker-manager #166592617) infrastructure & telecom profiles", () => {
+  it("defaults initial active profile to Hetzner CX23 2.29.8.194:443 when unconfigured", () => {
+    const resolved = resolveInitialActiveProfile(null);
+    expect(resolved.profile).toEqual(HETZNER_DEFAULT_PROFILE);
+    expect(resolved.profile.ip).toBe("2.29.8.194");
+    expect(resolved.profile.port).toBe("443");
+    expect(resolved.profile.sni).toBe("static.194.8.29.2.clients.your-server.de");
+    expect(validateProfile(resolved.profile)).toEqual({});
+  });
+
+  it("provides valid legitimate network & telecom-provider profiles targeting 2.29.8.194", () => {
+    expect(HETZNER_SERVER_SPEC.serverName).toBe("ahmed-docker-manager");
+    expect(HETZNER_SERVER_SPEC.serverId).toBe("166592617");
+    expect(HETZNER_SERVER_SPEC.projectId).toBe("16098183");
+    expect(HETZNER_SERVER_SPEC.ip).toBe("2.29.8.194");
+    expect(HETZNER_SERVER_SPEC.ipv6Subnet).toBe("2a01:4f9:c015:48b3::/64");
+    expect(HETZNER_SERVER_SPEC.location).toBe("Helsinki, Finland");
+    expect(HETZNER_SERVER_SPEC.networkZone).toBe("eu-central");
+    expect(NETWORK_PROVIDER_PROFILES.length).toBeGreaterThanOrEqual(4);
+    for (const netProfile of NETWORK_PROVIDER_PROFILES) {
+      expect(netProfile.profile.ip).toBe("2.29.8.194");
+      expect(validateProfile(netProfile.profile)).toEqual({});
+      const parsed = parsePayload(netProfile.profile.payload, netProfile.profile.sni);
+      expect(parsed).toContain(`Host: ${netProfile.profile.sni}`);
+      expect(parsed.endsWith("\r\n\r\n")).toBe(true);
+    }
+    expect(getNetworkProviderProfile("telecom-mobile-cgnat")?.recommendedMtu).toBe(1280);
   });
 });
 

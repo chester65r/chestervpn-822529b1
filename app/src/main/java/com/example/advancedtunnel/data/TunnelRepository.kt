@@ -101,13 +101,16 @@ class TunnelRepository(context: Context) {
     }
 
     fun loadActiveProfile(): Pair<TunnelProfile, String> {
-        var ip = prefs.getString(KEY_ACTIVE_PROFILE_IP, "") ?: ""
-        if (ip == "203.0.113.10" || ip == "your-vps-ny.example.com") {
-            ip = ""
+        var ip = prefs.getString(KEY_ACTIVE_PROFILE_IP, com.example.advancedtunnel.model.HETZNER_SERVER_IP)
+            ?: com.example.advancedtunnel.model.HETZNER_SERVER_IP
+        if (ip.isBlank() || ip == "203.0.113.10" || ip == "your-vps-ny.example.com" || ip == "127.0.0.1") {
+            ip = com.example.advancedtunnel.model.HETZNER_SERVER_IP
         }
         val port = prefs.getString(KEY_ACTIVE_PROFILE_PORT, "443") ?: "443"
-        val sni = prefs.getString(KEY_ACTIVE_PROFILE_SNI, "hetzner.cloud") ?: "hetzner.cloud"
-        val payload = prefs.getString(KEY_ACTIVE_PROFILE_PAYLOAD, "") ?: ""
+        val sni = prefs.getString(KEY_ACTIVE_PROFILE_SNI, com.example.advancedtunnel.model.HETZNER_SERVER_IP)
+            ?: com.example.advancedtunnel.model.HETZNER_SERVER_IP
+        val payload = prefs.getString(KEY_ACTIVE_PROFILE_PAYLOAD, com.example.advancedtunnel.model.DEFAULT_PAYLOAD_TEMPLATE)
+            ?: com.example.advancedtunnel.model.DEFAULT_PAYLOAD_TEMPLATE
         val presetId = prefs.getString(KEY_ACTIVE_PRESET_ID, "hetzner") ?: "hetzner"
         return Pair(TunnelProfile(ip, port, sni, payload), presetId)
     }

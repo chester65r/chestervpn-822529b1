@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { rowToServer, validateServerInput } from "@/lib/servers";
+import { PRIMARY_HETZNER_SERVER, SAMPLE_VPS_SERVERS, rowToServer, validateServerInput } from "@/lib/servers";
 import {
   SERVER_CONTAINER_FILES,
   SERVER_TRANSPORT_CAPABILITIES,
+  getHetznerSafeReleaseCommands,
   getRelayDeploymentCommand,
 } from "@/lib/server-deployment";
 
@@ -59,8 +60,8 @@ describe("deployment commands", () => {
   });
 
   it("creates an all-in-one multi-transport container command and ships container files", () => {
-    const command = getRelayDeploymentCommand("multi-transport", "vpn.example.com");
-    expect(command).toContain("PUBLIC_HOST=vpn.example.com docker compose -f relay-server/docker-compose.yml up -d --build");
+    const command = getRelayDeploymentCommand("multi-transport", "2.29.8.194");
+    expect(command).toContain("PUBLIC_HOST=2.29.8.194 docker compose -f relay-server/docker-compose.yml up -d --build");
     expect(command).toContain("443/tcp");
     expect(command).toContain("1080/tcp");
     expect(SERVER_CONTAINER_FILES.map((f) => f.name)).toEqual([
@@ -68,8 +69,19 @@ describe("deployment commands", () => {
       "docker-compose.yml",
       "entrypoint.sh",
       "gateway.mjs",
+      "deploy-hetzner.sh",
     ]);
     expect(SERVER_TRANSPORT_CAPABILITIES.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it("provides Hetzner CX23 (2.29.8.194) primary endpoints and safe release/rollback commands", () => {
+    expect(PRIMARY_HETZNER_SERVER.host).toBe("2.29.8.194");
+    expect(PRIMARY_HETZNER_SERVER.port).toBe(443);
+    expect(SAMPLE_VPS_SERVERS.every((s) => s.host === "2.29.8.194")).toBe(true);
+    const cmds = getHetznerSafeReleaseCommands("2.29.8.194");
+    expect(cmds.bootstrapUser).toContain("deploy-hetzner.sh bootstrap-user");
+    expect(cmds.deployRelease).toContain("PUBLIC_HOST=2.29.8.194 ./relay-server/deploy-hetzner.sh deploy 2.29.8.194");
+    expect(cmds.rollbackRelease).toContain("./relay-server/deploy-hetzner.sh rollback");
   });
 });
 

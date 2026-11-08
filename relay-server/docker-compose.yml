@@ -15,7 +15,7 @@ services:
       - net.ipv4.conf.all.src_valid_mark=1
       - net.ipv6.conf.all.forwarding=1
     environment:
-      - PUBLIC_HOST=${PUBLIC_HOST:-vpn.example.com}
+      - PUBLIC_HOST=${PUBLIC_HOST:-2.29.8.194}
       - TUN_SUBNET=10.8.0.0/24
       - TUN_SERVER_IP=10.8.0.1/24
       - WG_SUBNET=10.66.66.0/24

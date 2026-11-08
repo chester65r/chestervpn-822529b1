@@ -366,9 +366,15 @@ class TunnelVpnService : VpnService() {
 
     private fun createVpnInterface(): ParcelFileDescriptor? {
         return try {
+            val payload = activeProfile?.payload.orEmpty()
+            val negotiatedMtu = if (payload.contains("X-Tunnel-MTU: 1280", ignoreCase = true)) {
+                1280
+            } else {
+                VPN_MTU
+            }
             Builder()
-                .setSession("Tunnel Console")
-                .setMtu(VPN_MTU)
+                .setSession("Tunnel Console (Hetzner CX23)")
+                .setMtu(negotiatedMtu)
                 .addAddress("10.8.0.2", 32)
                 .addRoute("0.0.0.0", 0)
                 .addDnsServer("8.8.8.8")
@@ -389,7 +395,7 @@ class TunnelVpnService : VpnService() {
     ): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                val targetHost = profile.ip.ifBlank { "127.0.0.1" }
+                val targetHost = profile.ip.ifBlank { com.example.advancedtunnel.model.HETZNER_SERVER_IP }
                 val targetPort = profile.port.toIntOrNull() ?: 443
 
                 if (isReconnectAttempt) {
@@ -401,7 +407,7 @@ class TunnelVpnService : VpnService() {
 
                 val corridors = BugHostProbeEngine.scanBypassCorridors(
                     candidateHosts = listOf(targetHost),
-                    ports = listOf(targetPort, 443, 80, 8080).distinct()
+                    ports = listOf(targetPort, 443, 8443, 80, 8080).distinct()
                 )
 
                 val bestCorridor = corridors.firstOrNull()
@@ -416,7 +422,7 @@ class TunnelVpnService : VpnService() {
                             "latency=${bestCorridor.latencyMs}ms"
                     )
                 } else {
-                    Log.w(TAG, "No corridor found. Trying direct route.")
+                    Log.w(TAG, "No corridor found. Trying direct route to $finalHost:$finalPort.")
                 }
 
                 transportManager.switchTransport(
@@ -452,14 +458,15 @@ class TunnelVpnService : VpnService() {
 
                 val sslParams = SSLParameters()
 
-                if (profile.sni.isNotBlank()) {
-                    sslParams.serverNames = listOf(SNIHostName(profile.sni))
+                val effectiveSni = profile.sni.ifBlank { finalHost }
+                if (effectiveSni.isNotBlank() && !effectiveSni.matches(Regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$"))) {
+                    sslParams.serverNames = listOf(SNIHostName(effectiveSni))
                 }
 
                 secureSocket.sslParameters = sslParams
                 secureSocket.startHandshake()
 
-                Log.i(TAG, "TLS handshake completed. SNI=${profile.sni}")
+                Log.i(TAG, "TLS handshake completed with $finalHost:$finalPort (SNI=$effectiveSni)")
 
                 val payloadTemplate = profile.payload.ifBlank {
                     "GET / HTTP/1.1[crlf]" +
@@ -471,21 +478,39 @@ class TunnelVpnService : VpnService() {
                         "[crlf]"
                 }
 
-                uTLSEvasionEngine.sendFragmentedClientHello(
-                    secureSocket = secureSocket,
-                    sniHost = profile.sni.ifBlank { finalHost },
-                    payloadTemplate = payloadTemplate,
-                    chunkSize = 8,
-                    jitterDelayMs = 12L
-                )
+                if (payloadTemplate.contains("telecom-mobile-cgnat", ignoreCase = true)) {
+                    val expandedHeader = CarrierTunnelOptimizer.expandHeaderTemplate(
+                        template = payloadTemplate,
+                        host = effectiveSni
+                    )
+                    CarrierTunnelOptimizer.writeChunkedHandshake(
+                        socket = secureSocket,
+                        header = expandedHeader,
+                        chunkSize = 24
+                    )
+                } else {
+                    uTLSEvasionEngine.sendFragmentedClientHello(
+                        secureSocket = secureSocket,
+                        sniHost = effectiveSni,
+                        payloadTemplate = payloadTemplate,
+                        chunkSize = 8,
+                        jitterDelayMs = 12L
+                    )
+                }
 
                 tunnelSocket = secureSocket
 
                 keepAliveManager?.stop()
 
+                val keepAliveInterval = if (payloadTemplate.contains("telecom-mobile-cgnat", ignoreCase = true)) {
+                    15000L
+                } else {
+                    20000L
+                }
+
                 keepAliveManager = KeepAliveManager(
                     outputStreamProvider = { secureSocket.outputStream },
-                    intervalMs = 20000L,
+                    intervalMs = keepAliveInterval,
                     onFailure = { error ->
                         Log.e(TAG, "Keep-Alive failure detected. Starting ReconnectionMonitor.")
                         if (shouldReconnect.get()) {

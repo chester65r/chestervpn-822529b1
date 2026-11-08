@@ -9,6 +9,7 @@ import { runWebMCPTool } from "@/lib/webmcp-telemetry";
 import { supabase } from "@/integrations/supabase/client";
 import { AwsPanel } from "./AwsPanel";
 import {
+  PRIMARY_HETZNER_SERVER,
   TRANSPORTS,
   SAMPLE_VPS_SERVERS,
   rowToServer,
@@ -21,10 +22,12 @@ import {
   RELAY_DEPLOYMENT_NOTES,
   SERVER_CONTAINER_FILES,
   SERVER_TRANSPORT_CAPABILITIES,
+  getHetznerSafeReleaseCommands,
   getRelayDeploymentCommand,
   type RelayDeploymentTarget,
 } from "@/lib/server-deployment";
-import { checkRelayServer } from "@/lib/relay-control.functions";
+import { checkRelayServer, probeHetznerServer } from "@/lib/relay-control.functions";
+import { HETZNER_SERVER_SPEC } from "@/lib/tunnel";
 
 const fieldClass =
   "w-full rounded-xl border border-input bg-muted px-3.5 py-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring disabled:opacity-50";
@@ -53,20 +56,50 @@ export function ServersTab({ onUseServer }: Props) {
 
   const [servers, setServers] = useState<RelayServer[]>([]);
   const [loading, setLoading] = useState(false);
-  const [name, setName] = useState("");
-  const [host, setHost] = useState("");
+  const [name, setName] = useState<string>(PRIMARY_HETZNER_SERVER.name);
+  const [host, setHost] = useState<string>(HETZNER_SERVER_SPEC.ip);
   const [port, setPort] = useState("443");
   const [transport, setTransport] = useState("websocket");
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState<string>(PRIMARY_HETZNER_SERVER.notes);
   const [errors, setErrors] = useState<ServerErrors>({});
   const [saving, setSaving] = useState(false);
   const [deploymentTarget, setDeploymentTarget] = useState<RelayDeploymentTarget>("multi-transport");
-  const [deploymentHost, setDeploymentHost] = useState("");
+  const [deploymentHost, setDeploymentHost] = useState<string>(HETZNER_SERVER_SPEC.ip);
   const [copiedDeployment, setCopiedDeployment] = useState(false);
   const [activeContainerFileIdx, setActiveContainerFileIdx] = useState(0);
   const [copiedContainerFile, setCopiedContainerFile] = useState(false);
   const [checkingServerId, setCheckingServerId] = useState<string | null>(null);
+  const [probingPrimary, setProbingPrimary] = useState(false);
+  const [primaryProbe, setPrimaryProbe] = useState<{
+    status: "online" | "degraded" | "offline";
+    latencyMs: number | null;
+    errorCode: string | null;
+  } | null>(null);
   const runHealthCheck = useServerFn(checkRelayServer);
+  const runPrimaryProbe = useServerFn(probeHetznerServer);
+
+  const checkPrimaryHetzner = async () => {
+    setProbingPrimary(true);
+    try {
+      const res = await runPrimaryProbe({ data: { port: 443, sni: HETZNER_SERVER_SPEC.ip } });
+      setPrimaryProbe({ status: res.status, latencyMs: res.latencyMs, errorCode: res.errorCode });
+      toast[res.status === "online" ? "success" : "message"](
+        `Hetzner CX23 (${HETZNER_SERVER_SPEC.ip}): ${res.status}`,
+        {
+          description:
+            res.latencyMs !== null
+              ? `${res.latencyMs} ms response time`
+              : `${res.errorCode ?? "Unreachable"} — deploy relay-server/ to 2.29.8.194 to bring online.`,
+        },
+      );
+    } catch (err) {
+      toast.error("Primary server probe failed", {
+        description: err instanceof Error ? err.message : "Try again later.",
+      });
+    } finally {
+      setProbingPrimary(false);
+    }
+  };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -222,9 +255,56 @@ export function ServersTab({ onUseServer }: Props) {
     );
   }
 
+  const primaryHetznerCard = (
+    <div className="space-y-2.5 rounded-xl border border-primary/30 bg-primary/5 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold tracking-wider text-primary">
+            PRIMARY HETZNER CX23 INFRASTRUCTURE
+          </p>
+          <p className="truncate font-mono text-xs text-foreground">
+            {HETZNER_SERVER_SPEC.ip}:443 (TLS/WS) · {HETZNER_SERVER_SPEC.ip}:51820 (WireGuard)
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {HETZNER_SERVER_SPEC.os} · {HETZNER_SERVER_SPEC.vcpu} vCPU · {HETZNER_SERVER_SPEC.ramGb} GB RAM ·{" "}
+            {HETZNER_SERVER_SPEC.diskGb} GB NVMe
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            title="Probe Hetzner 2.29.8.194"
+            aria-label="Probe Hetzner 2.29.8.194"
+            onClick={() => void checkPrimaryHetzner()}
+            disabled={probingPrimary}
+            className="rounded-lg bg-secondary p-2 text-secondary-foreground transition-colors hover:text-primary disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${probingPrimary ? "animate-spin" : ""}`} />
+          </button>
+          <button
+            type="button"
+            title="Use 2.29.8.194 in Configure"
+            aria-label="Use Hetzner 2.29.8.194 in Configure"
+            onClick={() => onUseServer(HETZNER_SERVER_SPEC.ip, HETZNER_SERVER_SPEC.tlsPort)}
+            className="rounded-lg bg-primary px-2.5 py-2 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            Use 2.29.8.194
+          </button>
+        </div>
+      </div>
+      {primaryProbe && (
+        <p className="font-mono text-[11px] text-muted-foreground">
+          Live probe: <span className="font-semibold text-foreground">{primaryProbe.status}</span>
+          {primaryProbe.latencyMs !== null ? ` · ${primaryProbe.latencyMs} ms` : ` · ${primaryProbe.errorCode ?? "offline"}`}
+        </p>
+      )}
+    </div>
+  );
+
   if (!session) {
     return (
       <div className="space-y-4">
+        {primaryHetznerCard}
         <p className="rounded-xl border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
           Sign in to register the relay servers you operate and sync them across your devices.
         </p>
@@ -266,8 +346,11 @@ export function ServersTab({ onUseServer }: Props) {
     );
   }
 
+  const safeReleaseCommands = getHetznerSafeReleaseCommands(deploymentHost);
+
   return (
     <div className="space-y-4">
+      {primaryHetznerCard}
       <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-muted px-3 py-2">
         <span className="truncate text-xs text-muted-foreground">{session.user.email}</span>
         <button
@@ -283,12 +366,12 @@ export function ServersTab({ onUseServer }: Props) {
         Your relay servers, stored in your account. Use the arrow to send one to the Configure screen.
       </p>
 
-      {/* Quick Start - Sample VPS Servers */}
+      {/* Hetzner CX23 Endpoints */}
       <div className="space-y-2">
-        <p className="text-xs font-medium tracking-wider text-muted-foreground">QUICK START SAMPLES</p>
+        <p className="text-xs font-medium tracking-wider text-muted-foreground">HETZNER CX23 (2.29.8.194) ENDPOINTS</p>
         {SAMPLE_VPS_SERVERS.map((sample) => (
           <div key={sample.id} className="flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/50 px-3 py-2.5">
-            <ServerIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <ServerIcon className="h-4 w-4 shrink-0 text-primary" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{sample.name}</p>
               <p className="truncate font-mono text-[11px] text-muted-foreground">
@@ -297,7 +380,7 @@ export function ServersTab({ onUseServer }: Props) {
             </div>
             <button
               type="button"
-              title="Use this sample"
+              title="Use this endpoint"
               aria-label={`Use ${sample.name}`}
               onClick={() => {
                 setName(sample.name);
@@ -320,7 +403,7 @@ export function ServersTab({ onUseServer }: Props) {
         </div>
       ) : servers.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
-          No servers yet — add your first relay below.
+          No servers yet — add your Hetzner 2.29.8.194 relay below.
         </p>
       ) : (
         <div className="space-y-2">
@@ -373,7 +456,7 @@ export function ServersTab({ onUseServer }: Props) {
         <Field label="NAME" error={errors.name}>
           <input
             className={fieldClass}
-            placeholder="My Frankfurt relay"
+            placeholder="Hetzner CX23 Primary (Ubuntu)"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
@@ -382,7 +465,7 @@ export function ServersTab({ onUseServer }: Props) {
           <Field label="HOST" error={errors.host}>
             <input
               className={fieldClass}
-              placeholder="relay.example.com"
+              placeholder="2.29.8.194"
               value={host}
               onChange={(e) => setHost(e.target.value)}
             />
@@ -427,7 +510,7 @@ export function ServersTab({ onUseServer }: Props) {
 
       <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
         <div>
-          <p className="text-xs font-medium tracking-wider text-primary">DEPLOY YOUR OWN RELAY CONTAINER</p>
+          <p className="text-xs font-medium tracking-wider text-primary">DEPLOY TO HETZNER CX23 (2.29.8.194)</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Includes every internet transport and anti-DPI tool built into Tunnel Console (WireGuard, TLS+SNI, WebSocket, HTTP Custom Payload, Corridor Probe, SOCKS5, SSH, and NAT Masquerading).
           </p>
@@ -450,7 +533,7 @@ export function ServersTab({ onUseServer }: Props) {
         <Field label="PUBLIC HOSTNAME OR IP">
           <input
             className={fieldClass}
-            placeholder="vpn.example.com"
+            placeholder="2.29.8.194"
             value={deploymentHost}
             onChange={(e) => {
               setDeploymentHost(e.target.value);
@@ -487,6 +570,21 @@ export function ServersTab({ onUseServer }: Props) {
           {copiedDeployment ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
           {copiedDeployment ? "Copied" : "Copy deployment command"}
         </button>
+
+        <div className="space-y-1.5 rounded-xl border border-border bg-background/90 p-3">
+          <p className="text-[11px] font-semibold tracking-wider text-primary">
+            SAFE RELEASE & ATOMIC ROLLBACK (deploy-hetzner.sh)
+          </p>
+          <p className="font-mono text-[11px] text-muted-foreground">
+            1. Bootstrap limited user: <code className="text-foreground">{safeReleaseCommands.bootstrapUser}</code>
+          </p>
+          <p className="font-mono text-[11px] text-muted-foreground">
+            2. Deploy immutable release: <code className="text-foreground">{safeReleaseCommands.deployRelease}</code>
+          </p>
+          <p className="font-mono text-[11px] text-muted-foreground">
+            3. Instant symlink rollback: <code className="text-foreground">{safeReleaseCommands.rollbackRelease}</code>
+          </p>
+        </div>
 
         {(() => {
           const activeContainerFile =
