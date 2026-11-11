@@ -41,9 +41,12 @@ jobs:
       # action is deliberately NOT used: its v3 tries to install the obsolete
       # sdkmanager 'tools' package and fails on current runner images.
       - name: Install pinned SDK components (platform 34, build-tools 34.0.0)
+        # sdkmanager is not on PATH on current runner images; resolve it from
+        # the preinstalled SDK under ANDROID_HOME.
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' 'emulator'
+          SDKMANAGER="$(command -v sdkmanager || echo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager")"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' 'emulator'
 
       - name: Enable KVM (hardware acceleration on GitHub-hosted runners)
         run: |
