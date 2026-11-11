@@ -1,17 +1,19 @@
 import { BACKUP_COLUMNS, backupPath, safeServerCSV } from './database-backup'
 
 const REPO = '/repos/chester65r/chestervpn-822529b1'
+const GITHUB_API_ORIGIN = 'https://api.github.com'
 
 export async function runDatabaseBackup() {
-  const apiKey = process.env['LOVABLE_API_KEY']
-  const connectionKey = process.env['GITHUB_API_KEY']
-  if (!apiKey || !connectionKey) throw new Error('Backup connection is not configured')
+  // Direct GitHub API access with a project-owned, repo-scoped fine-grained
+  // token; no third-party gateway sits between this deployment and GitHub.
+  const token = process.env['BACKUP_GITHUB_TOKEN']
+  if (!token) throw new Error('Backup connection is not configured')
   const headers = {
-    Authorization: `Bearer ${apiKey}`, 'X-Connection-Api-Key': connectionKey,
+    Authorization: `Bearer ${token}`,
     Accept: 'application/vnd.github+json', 'Content-Type': 'application/json',
   }
   async function github(path: string, init?: RequestInit, allowMissing = false) {
-    const response = await fetch(`https://connector-gateway.lovable.dev/github${path}`, { ...init, headers })
+    const response = await fetch(`${GITHUB_API_ORIGIN}${path}`, { ...init, headers })
     if (allowMissing && response.status === 404) return null
     if (!response.ok) {
       const body = await response.text()
