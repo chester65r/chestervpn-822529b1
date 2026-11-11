@@ -6,8 +6,6 @@ import { HETZNER_SERVER_SPEC } from "@/lib/tunnel";
 
 const HEALTH_CHECK_WINDOW_MS = 60_000;
 const HEALTH_CHECK_LIMIT = 10;
-const DEFAULT_CIRCLECI_DEPLOY_HOOK_URL =
-  "https://circleci.com/api/v3/deploy/hooks/13990af0-015d-4b37-957b-22c2650488ae/validate";
 
 export type CheckRelayServerInput = {
   id: string;
@@ -201,8 +199,8 @@ async function notifyCircleCiDeployHook(payload: {
   const secret = process.env["CIRCLECI_WEBHOOK_SECRET"]?.trim();
   if (!secret || secret.startsWith("YOUR_")) return;
 
-  const hookUrl =
-    process.env["CIRCLECI_DEPLOY_HOOK_URL"]?.trim() || DEFAULT_CIRCLECI_DEPLOY_HOOK_URL;
+  const hookUrl = process.env["CIRCLECI_DEPLOY_HOOK_URL"]?.trim();
+  if (!hookUrl) return;
 
   try {
     await fetch(hookUrl, {
