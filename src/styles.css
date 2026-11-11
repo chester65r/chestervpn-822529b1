@@ -16,6 +16,13 @@
  * To add a new semantic color:
  * 1. Add the variable to :root (light value) and .dark (dark value)
  * 2. Register it in @theme inline as --color-<name>: var(--<name>)
+ *
+ * Tunnel Console is a dark-only product UI. The palette is a deep slate
+ * base with one confident teal accent (primary = connected / primary
+ * action), soft white-alpha borders, and generous radii. Shared component
+ * classes (.tc-card, .tc-field, .tc-btn-*, .tc-label, .tc-section-title,
+ * .tc-chip, .tc-empty, .tc-code, .tc-icon-btn) live in the components
+ * layer at the bottom so every screen draws from the same system.
  */
 
 @theme inline {
@@ -64,8 +71,10 @@
 @theme {
   --font-sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --shadow-glow: 0 0 60px -10px oklch(0.78 0.13 185 / 0.55);
-  --shadow-card: 0 12px 32px -12px oklch(0 0 0 / 0.6);
+  --shadow-glow: 0 0 56px -12px oklch(0.8 0.135 178 / 0.5);
+  --shadow-card: 0 16px 40px -18px oklch(0 0 0 / 0.55);
+  --shadow-raised: 0 28px 64px -24px oklch(0 0 0 / 0.65);
+  --shadow-pop: 0 10px 24px -10px oklch(0 0 0 / 0.5);
   --animate-ring: ring 2.2s ease-out infinite;
   @keyframes ring {
     0% {
@@ -82,74 +91,77 @@
 /* Dark-only theme: deep slate surfaces, teal = connected, red/grey = disconnected */
 :root {
   --radius: 1rem;
-  --background: oklch(0.15 0.012 230);
-  --foreground: oklch(0.96 0.005 200);
-  --card: oklch(0.2 0.016 230);
-  --card-foreground: oklch(0.96 0.005 200);
-  --popover: oklch(0.22 0.016 230);
-  --popover-foreground: oklch(0.96 0.005 200);
-  --primary: oklch(0.78 0.13 185);
-  --primary-foreground: oklch(0.15 0.02 200);
-  --secondary: oklch(0.26 0.018 230);
-  --secondary-foreground: oklch(0.96 0.005 200);
-  --muted: oklch(0.24 0.016 230);
-  --muted-foreground: oklch(0.7 0.02 225);
-  --accent: oklch(0.3 0.03 200);
-  --accent-foreground: oklch(0.96 0.005 200);
-  --destructive: oklch(0.66 0.2 25);
+  --background: oklch(0.145 0.014 225);
+  --foreground: oklch(0.97 0.004 210);
+  --card: oklch(0.195 0.016 228);
+  --card-foreground: oklch(0.97 0.004 210);
+  --popover: oklch(0.22 0.016 228);
+  --popover-foreground: oklch(0.97 0.004 210);
+  --primary: oklch(0.8 0.135 178);
+  --primary-foreground: oklch(0.16 0.03 190);
+  --secondary: oklch(0.25 0.016 228);
+  --secondary-foreground: oklch(0.97 0.004 210);
+  --muted: oklch(0.225 0.014 228);
+  --muted-foreground: oklch(0.72 0.018 225);
+  --accent: oklch(0.28 0.025 205);
+  --accent-foreground: oklch(0.97 0.004 210);
+  --destructive: oklch(0.65 0.19 25);
   --destructive-foreground: oklch(0.98 0.005 25);
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.78 0.13 185);
-  --chart-1: oklch(0.78 0.13 185);
-  --chart-2: oklch(0.72 0.14 150);
-  --chart-3: oklch(0.7 0.1 230);
-  --chart-4: oklch(0.82 0.15 85);
-  --chart-5: oklch(0.7 0.18 40);
-  --sidebar: oklch(0.2 0.016 230);
-  --sidebar-foreground: oklch(0.96 0.005 200);
-  --sidebar-primary: oklch(0.78 0.13 185);
-  --sidebar-primary-foreground: oklch(0.15 0.02 200);
-  --sidebar-accent: oklch(0.26 0.018 230);
-  --sidebar-accent-foreground: oklch(0.96 0.005 200);
-  --sidebar-border: oklch(1 0 0 / 9%);
-  --sidebar-ring: oklch(0.78 0.13 185);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 10%);
+  --ring: oklch(0.8 0.135 178);
+  --chart-1: oklch(0.8 0.135 178);
+  --chart-2: oklch(0.75 0.15 155);
+  --chart-3: oklch(0.72 0.11 235);
+  --chart-4: oklch(0.83 0.15 85);
+  --chart-5: oklch(0.7 0.17 40);
+  --sidebar: oklch(0.195 0.016 228);
+  --sidebar-foreground: oklch(0.97 0.004 210);
+  --sidebar-primary: oklch(0.8 0.135 178);
+  --sidebar-primary-foreground: oklch(0.16 0.03 190);
+  --sidebar-accent: oklch(0.25 0.016 228);
+  --sidebar-accent-foreground: oklch(0.97 0.004 210);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.8 0.135 178);
   color-scheme: dark;
 }
 
+/* .dark mirrors :root exactly: the product is dark-only, so a toggled
+   dark class must never regress the design to a different palette. */
 .dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.208 0.042 265.755);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.208 0.042 265.755);
-  --sidebar-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.279 0.041 260.031);
-  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.551 0.027 264.364);
+  --background: oklch(0.145 0.014 225);
+  --foreground: oklch(0.97 0.004 210);
+  --card: oklch(0.195 0.016 228);
+  --card-foreground: oklch(0.97 0.004 210);
+  --popover: oklch(0.22 0.016 228);
+  --popover-foreground: oklch(0.97 0.004 210);
+  --primary: oklch(0.8 0.135 178);
+  --primary-foreground: oklch(0.16 0.03 190);
+  --secondary: oklch(0.25 0.016 228);
+  --secondary-foreground: oklch(0.97 0.004 210);
+  --muted: oklch(0.225 0.014 228);
+  --muted-foreground: oklch(0.72 0.018 225);
+  --accent: oklch(0.28 0.025 205);
+  --accent-foreground: oklch(0.97 0.004 210);
+  --destructive: oklch(0.65 0.19 25);
+  --destructive-foreground: oklch(0.98 0.005 25);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 10%);
+  --ring: oklch(0.8 0.135 178);
+  --chart-1: oklch(0.8 0.135 178);
+  --chart-2: oklch(0.75 0.15 155);
+  --chart-3: oklch(0.72 0.11 235);
+  --chart-4: oklch(0.83 0.15 85);
+  --chart-5: oklch(0.7 0.17 40);
+  --sidebar: oklch(0.195 0.016 228);
+  --sidebar-foreground: oklch(0.97 0.004 210);
+  --sidebar-primary: oklch(0.8 0.135 178);
+  --sidebar-primary-foreground: oklch(0.16 0.03 190);
+  --sidebar-accent: oklch(0.25 0.016 228);
+  --sidebar-accent-foreground: oklch(0.97 0.004 210);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.8 0.135 178);
+  color-scheme: dark;
 }
 
 @layer base {
@@ -160,5 +172,229 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 35%, transparent);
+  }
+
+  /* One visible keyboard-focus treatment for links, buttons and
+     summaries; fields manage their own focus ring via .tc-field. */
+  a:focus-visible,
+  button:focus-visible,
+  summary:focus-visible,
+  [role="button"]:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-ring {
+      animation: none;
+    }
+  }
+}
+
+@layer components {
+  /* Page backdrop: near-flat background with a faint teal wash on top. */
+  .tc-app-backdrop {
+    background:
+      radial-gradient(60rem 30rem at 50% -10%, color-mix(in oklch, var(--primary) 9%, transparent), transparent 60%),
+      var(--background);
+  }
+
+  /* Standard surface. Pair with Tailwind padding/spacing utilities. */
+  .tc-card {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 1.25rem;
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Card for the one thing that matters most on a screen (hero, live
+     server): teal-tinted border and a whisper of teal at the top. */
+  .tc-card-accent {
+    background:
+      linear-gradient(180deg, color-mix(in oklch, var(--primary) 6%, transparent), transparent 45%),
+      var(--card);
+    border: 1px solid color-mix(in oklch, var(--primary) 26%, transparent);
+    border-radius: 1.25rem;
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Hero surface for the connection status block on Home. */
+  .tc-hero {
+    background:
+      radial-gradient(120% 150% at 50% 0%, color-mix(in oklch, var(--primary) 8%, transparent), transparent 55%),
+      var(--card);
+    border: 1px solid var(--border);
+    border-radius: 1.75rem;
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Inset panel inside a card (code blocks, parsed previews, rows). */
+  .tc-code {
+    background-color: color-mix(in oklch, var(--background) 82%, transparent);
+    border: 1px solid var(--border);
+    border-radius: 0.875rem;
+    font-family: var(--font-mono);
+  }
+
+  /* Every text input, select and textarea on the tunnel screens. */
+  .tc-field {
+    width: 100%;
+    border-radius: 0.875rem;
+    border: 1px solid var(--input);
+    background-color: color-mix(in oklch, var(--muted) 65%, transparent);
+    padding: 0.625rem 0.875rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    color: var(--foreground);
+    outline: none;
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease,
+      background-color 0.15s ease;
+  }
+  .tc-field::placeholder {
+    color: color-mix(in oklch, var(--muted-foreground) 60%, transparent);
+  }
+  .tc-field:focus {
+    border-color: var(--ring);
+    background-color: var(--muted);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 22%, transparent);
+  }
+  .tc-field:disabled {
+    opacity: 0.5;
+  }
+
+  /* Field labels and small caps headings share one voice. */
+  .tc-label {
+    display: block;
+    margin-bottom: 0.375rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  .tc-section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--foreground);
+  }
+  .tc-section-title svg {
+    color: var(--primary);
+    flex-shrink: 0;
+  }
+
+  /* Raw <button> actions, matching the shadcn Button variants. */
+  .tc-btn-primary,
+  .tc-btn-secondary,
+  .tc-btn-danger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.875rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.25rem;
+    cursor: pointer;
+    transition:
+      filter 0.15s ease,
+      background-color 0.15s ease,
+      transform 0.1s ease,
+      opacity 0.15s ease;
+  }
+  .tc-btn-primary:active,
+  .tc-btn-secondary:active,
+  .tc-btn-danger:active {
+    transform: scale(0.98);
+  }
+  .tc-btn-primary:disabled,
+  .tc-btn-secondary:disabled,
+  .tc-btn-danger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .tc-btn-primary {
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+    box-shadow: 0 10px 24px -10px color-mix(in oklch, var(--primary) 55%, transparent);
+  }
+  .tc-btn-primary:hover {
+    filter: brightness(1.07);
+  }
+  .tc-btn-secondary {
+    background-color: var(--secondary);
+    color: var(--secondary-foreground);
+  }
+  .tc-btn-secondary:hover {
+    background-color: var(--accent);
+  }
+  .tc-btn-danger {
+    background-color: var(--destructive);
+    color: var(--destructive-foreground);
+  }
+  .tc-btn-danger:hover {
+    filter: brightness(1.07);
+  }
+
+  /* Small square icon actions inside rows. */
+  .tc-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    border-radius: 0.625rem;
+    background-color: var(--secondary);
+    color: var(--secondary-foreground);
+    transition:
+      color 0.15s ease,
+      background-color 0.15s ease;
+  }
+  .tc-icon-btn:hover {
+    color: var(--primary);
+  }
+  .tc-icon-btn:disabled {
+    opacity: 0.5;
+  }
+  .tc-icon-btn-danger:hover {
+    color: var(--destructive);
+  }
+
+  .tc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 999px;
+    background-color: var(--muted);
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+  }
+
+  .tc-empty {
+    border: 1.5px dashed var(--border);
+    border-radius: 1rem;
+    padding: 1.5rem 1rem;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+  }
+
+  .tnum {
+    font-variant-numeric: tabular-nums;
   }
 }

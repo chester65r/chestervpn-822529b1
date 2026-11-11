@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Home, Server, Share2, SlidersHorizontal, Plug, Code2 } from "lucide-react";
+import { Home, Server, Share2, ShieldCheck, SlidersHorizontal, Plug, Code2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useWebMCP } from "use-webmcp-tool";
@@ -288,27 +288,36 @@ function Index() {
   });
 
   return (
-    <div className="flex min-h-dvh justify-center bg-background sm:items-center sm:py-6">
-      <div className="flex h-dvh w-full max-w-[420px] flex-col overflow-hidden bg-background sm:h-[min(860px,calc(100dvh-3rem))] sm:rounded-[2rem] sm:border sm:border-border sm:shadow-card md:max-w-5xl lg:max-w-6xl">
-        <header className="flex items-center justify-between px-5 pb-2 pt-5">
-          <div>
-            <h1 className="text-lg font-bold tracking-tight">Tunnel Console</h1>
-            <p className="text-xs text-muted-foreground">All-in-One VPN, WireGuard & Hetzner CX23 Command Center</p>
+    <div className="tc-app-backdrop flex min-h-dvh justify-center sm:items-center sm:py-6">
+      <div className="flex h-dvh w-full max-w-[420px] flex-col overflow-hidden bg-background sm:h-[min(860px,calc(100dvh-3rem))] sm:rounded-[2rem] sm:border sm:border-border sm:shadow-raised md:max-w-5xl lg:max-w-6xl">
+        <header className="flex items-center justify-between gap-3 px-5 pb-3 pt-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/20">
+              <ShieldCheck className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-bold leading-tight tracking-tight">Tunnel Console</h1>
+              <p className="truncate text-xs text-muted-foreground">VPN · WireGuard · Hetzner CX23</p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" asChild><Link to="/connect" aria-label="Connect your assistant" title="Connect your assistant"><Plug className="h-4 w-4" /></Link></Button>
+          <div className="flex shrink-0 items-center gap-1.5">
+          <Button variant="ghost" size="icon" className="rounded-xl" asChild><Link to="/connect" aria-label="Connect your assistant" title="Connect your assistant"><Plug className="h-4 w-4" /></Link></Button>
           <span
             role="status"
             aria-label={`Tunnel ${sim.status}`}
             title={`Tunnel ${sim.status}`}
-            className={`h-2.5 w-2.5 rounded-full transition-colors duration-500 ${
-              sim.status === "connected" ? "bg-primary" : sim.status === "connecting" ? "bg-chart-4" : "bg-destructive"
+            className={`h-2.5 w-2.5 rounded-full ring-4 ring-white/5 transition-all duration-500 ${
+              sim.status === "connected"
+                ? "bg-primary shadow-glow"
+                : sim.status === "connecting"
+                  ? "animate-pulse bg-chart-4"
+                  : "bg-destructive"
             }`}
           />
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-2">
+        <main className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-1">
           {tab === "home" && (
             <HomeTab
               status={sim.status}
@@ -349,7 +358,7 @@ function Index() {
               onChange={change}
             />
           )}
-          {tab === "servers" && <><ServiceOverview /><AdditionalAccount session={additional} /><h2 className="mb-3 text-sm font-semibold">Cloud relay servers</h2><ServersTab onUseServer={useServer} /></>}
+          {tab === "servers" && <><ServiceOverview /><AdditionalAccount session={additional} /><h2 className="tc-section-title mb-3 mt-6">Cloud relay servers</h2><ServersTab onUseServer={useServer} /></>}
           {tab === "share" && (
             <ShareTab
               exportedCode={exported}
@@ -364,20 +373,20 @@ function Index() {
           {tab === "android" && <BlueprintTab />}
         </main>
 
-        <nav aria-label="Workspace" className="grid shrink-0 grid-cols-5 border-t border-border bg-card">
+        <nav aria-label="Workspace" className="grid shrink-0 grid-cols-5 gap-1 border-t border-border bg-card/80 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur">
           {TABS.map(({ id, label, icon: Icon }) => (
-            <Button variant="ghost"
+            <button
               key={id}
               type="button"
               onClick={() => openTab(id)}
               aria-current={tab === id ? "page" : undefined}
-              className={`flex h-auto flex-col items-center gap-1 rounded-none px-0 py-3 text-[11px] font-medium transition-colors ${
-                tab === id ? "text-primary" : "text-muted-foreground"
+              className={`flex flex-col items-center gap-1 rounded-2xl px-0 py-2 text-[11px] font-medium transition-colors ${
+                tab === id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
               }`}
             >
               <Icon className="h-5 w-5" />
               {label}
-            </Button>
+            </button>
           ))}
         </nav>
       </div>
