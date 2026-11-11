@@ -15,8 +15,12 @@ import { additionalBackend } from '../lib/additional-backend';
 
 afterEach(() => vi.unstubAllGlobals());
 
-/** jsdom Blobs have no .text(); FileReader is the portable read in this environment. */
+/** Read a Blob as text across jsdom and Node. jsdom's FileReader cannot read
+ *  Blobs produced by Response.blob(), and inline jsdom Blobs may not expose
+ *  .text(); use whichever is available so both fake-storage and real-fetch
+ *  test paths read reliably. */
 function blobText(blob: Blob): Promise<string> {
+  if (typeof blob.text === 'function') return blob.text();
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));

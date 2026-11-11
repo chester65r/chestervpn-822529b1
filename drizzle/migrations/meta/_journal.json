@@ -29,6 +29,13 @@
       "when": 1794383779913,
       "tag": "0003_relay_health_and_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794470161000,
+      "tag": "0004_rename_relay_servers_owner_id",
+      "breakpoints": true
     }
   ]
 }

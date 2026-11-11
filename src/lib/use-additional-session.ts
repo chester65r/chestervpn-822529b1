@@ -151,7 +151,6 @@ export function useAdditionalSession(simStatus: TunnelStatus) {
       active = false;
       generation.current += 1;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadHealth(accountClient: SupabaseClient) {

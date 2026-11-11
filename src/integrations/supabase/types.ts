@@ -53,11 +53,11 @@ export type Database = {
           last_latency_ms: number | null
           name: string
           notes: string
+          owner_id: string
           port: number
           status: string
           transport: string
           updated_at: string
-          user_id: string
         }
         Insert: {
           created_at?: string
@@ -67,11 +67,11 @@ export type Database = {
           last_latency_ms?: number | null
           name: string
           notes?: string
+          owner_id: string
           port?: number
           status?: string
           transport?: string
           updated_at?: string
-          user_id: string
         }
         Update: {
           created_at?: string
@@ -81,11 +81,11 @@ export type Database = {
           last_latency_ms?: number | null
           name?: string
           notes?: string
+          owner_id?: string
           port?: number
           status?: string
           transport?: string
           updated_at?: string
-          user_id?: string
         }
         Relationships: []
       }
