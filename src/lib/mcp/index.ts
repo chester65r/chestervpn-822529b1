@@ -7,7 +7,7 @@ const rawProjectRef = import.meta.env['VITE_SUPABASE_PROJECT_ID'];
 const projectRef =
   rawProjectRef && !rawProjectRef.startsWith("YOUR_")
     ? rawProjectRef
-    : "vuxeryslquczubilasqe";
+    : "ezhzrkeonqvhyovjwaes";
 export default defineMcp({
   name: "tunnel-guardian-compass",
   title: "Tunnel Console",
