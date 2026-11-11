@@ -43,6 +43,7 @@ export function SpeedGraph({ down, up, active }: Props) {
         fill="none"
         strokeWidth="2"
         strokeLinejoin="round"
+        strokeLinecap="round"
         className={active ? "stroke-primary" : "stroke-muted-foreground"}
       />
       <path d={u.area} className="fill-chart-4/10" />
@@ -51,6 +52,7 @@ export function SpeedGraph({ down, up, active }: Props) {
         fill="none"
         strokeWidth="1.5"
         strokeLinejoin="round"
+        strokeLinecap="round"
         className="stroke-chart-4"
         opacity={active ? 1 : 0.4}
       />

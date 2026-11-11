@@ -287,7 +287,7 @@ export function BlueprintTab() {
   return (
     <div className="space-y-4">
       {/* 1. Android VPN Service panel — browser simulation driven by the real server probe (no Android device is involved here) */}
-      <section className="space-y-3 rounded-2xl border border-primary/30 bg-card p-4">
+      <section className="tc-card-accent space-y-3 p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <p className="flex items-center gap-1.5 text-xs font-bold tracking-wider text-primary">
@@ -344,7 +344,7 @@ export function BlueprintTab() {
         </div>
 
         {selectedNetProfile && (
-          <div className="rounded-xl border border-border bg-background p-2.5 font-mono text-[11px] text-muted-foreground">
+          <div className="tc-code p-3 text-[11px] text-muted-foreground">
             <span className="text-primary">Handshake Payload ({selectedNetProfile.id}): </span>
             {parsePayload(selectedNetProfile.profile.payload, selectedNetProfile.profile.sni).replace(
               /\r\n/g,
@@ -397,7 +397,7 @@ export function BlueprintTab() {
           </p>
         )}
 
-        <div className="rounded-xl border border-border bg-background p-2.5">
+        <div className="tc-code p-3">
           <p className="mb-1 text-[10px] font-semibold tracking-wider text-muted-foreground">
             ANDROID TUNNELVPNSERVICE & RECONNECTIONMONITOR LOG
           </p>
@@ -412,7 +412,7 @@ export function BlueprintTab() {
       </section>
 
       {/* 2. Real WireGuard Key & Full-Tunnel Profile Generator for ahmed-docker-manager (2.29.8.194:51820) */}
-      <section className="space-y-3 rounded-2xl border border-border bg-card p-4">
+      <section className="tc-card space-y-3 p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <p className="flex items-center gap-1.5 text-xs font-bold tracking-wider text-primary">
@@ -434,7 +434,7 @@ export function BlueprintTab() {
             <select
               value={endpointHost}
               onChange={(e) => setEndpointHost(e.target.value)}
-              className="w-full rounded-xl border border-input bg-muted px-3 py-2 font-mono text-xs text-foreground"
+              className="tc-field font-mono text-xs"
             >
               <option value={HETZNER_SERVER_SPEC.ip}>{HETZNER_SERVER_SPEC.ip} (Primary IPv4)</option>
               <option value={HETZNER_SERVER_SPEC.reverseDns}>
@@ -447,7 +447,7 @@ export function BlueprintTab() {
             <input
               value={clientAddress}
               onChange={(e) => setClientAddress(e.target.value)}
-              className="w-full rounded-xl border border-input bg-muted px-3 py-2 font-mono text-xs text-foreground"
+              className="tc-field font-mono text-xs"
             />
           </label>
           <label className="block">
@@ -458,7 +458,7 @@ export function BlueprintTab() {
               max={1420}
               value={mtu}
               onChange={(e) => setMtu(Number(e.target.value) || 1280)}
-              className="w-full rounded-xl border border-input bg-muted px-3 py-2 font-mono text-xs text-foreground"
+              className="tc-field font-mono text-xs"
             />
           </label>
         </div>
@@ -471,7 +471,7 @@ export function BlueprintTab() {
             <input
               value={devicePubKey}
               onChange={(e) => setDevicePubKey(e.target.value)}
-              className="w-full rounded-xl border border-input bg-muted px-3 py-2 font-mono text-xs text-foreground"
+              className="tc-field font-mono text-xs"
             />
           </label>
           <label className="block">
@@ -481,7 +481,7 @@ export function BlueprintTab() {
             <input
               value={serverPubKey}
               onChange={(e) => setServerPubKey(e.target.value)}
-              className="w-full rounded-xl border border-input bg-muted px-3 py-2 font-mono text-xs text-foreground"
+              className="tc-field font-mono text-xs"
             />
           </label>
         </div>
@@ -574,13 +574,13 @@ export function BlueprintTab() {
           </div>
         </div>
 
-        <pre className="max-h-56 overflow-auto rounded-xl border border-border bg-background p-3 font-mono text-[11px] leading-relaxed text-foreground">
+        <pre className="tc-code max-h-56 overflow-auto p-3 text-[11px] leading-relaxed text-foreground">
           <code>{displayedWgText}</code>
         </pre>
       </section>
 
       {/* 3. Built Android & Server Source Modules */}
-      <section className="space-y-3 rounded-2xl border border-border bg-card p-4">
+      <section className="tc-card space-y-3 p-4 sm:p-5">
         <div className="flex items-center justify-between gap-2">
           <div>
             <p className="flex items-center gap-1.5 text-xs font-bold tracking-wider text-primary">
@@ -625,7 +625,7 @@ export function BlueprintTab() {
           ))}
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-border bg-background">
+        <div className="overflow-hidden rounded-2xl border border-border bg-background">
           <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
             <span className="truncate font-mono text-[11px] text-muted-foreground">{file.path}</span>
             <div className="flex items-center gap-1.5">

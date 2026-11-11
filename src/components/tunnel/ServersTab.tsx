@@ -29,13 +29,12 @@ import {
 import { checkRelayServer, probeHetznerServer } from "@/lib/relay-control.functions";
 import { HETZNER_SERVER_SPEC } from "@/lib/tunnel";
 
-const fieldClass =
-  "w-full rounded-xl border border-input bg-muted px-3.5 py-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring disabled:opacity-50";
+const fieldClass = "tc-field py-3";
 
 function Field({ label, error, children }: { label: string; error?: string | undefined; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-xs font-medium tracking-wider text-muted-foreground">{label}</span>
+      <span className="tc-label">{label}</span>
       {children}
       {error && <span className="mt-1 block text-xs text-destructive">{error}</span>}
     </label>
@@ -184,7 +183,7 @@ export function ServersTab({ onUseServer }: Props) {
     if (Object.keys(found).length > 0 || !session) return;
     setSaving(true);
     const { error } = await supabase.from("relay_servers").insert({
-      user_id: session.user.id,
+      owner_id: session.user.id,
       name: name.trim(),
       host: host.trim(),
       port: Number(port),
@@ -256,10 +255,10 @@ export function ServersTab({ onUseServer }: Props) {
   }
 
   const primaryHetznerCard = (
-    <div className="space-y-2.5 rounded-xl border border-primary/30 bg-primary/5 p-3">
+    <div className="tc-card-accent space-y-2.5 p-4">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-xs font-semibold tracking-wider text-primary">
+          <p className="tc-section-title">
             PRIMARY HETZNER CX23 INFRASTRUCTURE
           </p>
           <p className="truncate font-mono text-xs text-foreground">
@@ -277,7 +276,7 @@ export function ServersTab({ onUseServer }: Props) {
             aria-label="Probe Hetzner 2.29.8.194"
             onClick={() => void checkPrimaryHetzner()}
             disabled={probingPrimary}
-            className="rounded-lg bg-secondary p-2 text-secondary-foreground transition-colors hover:text-primary disabled:opacity-50"
+            className="tc-icon-btn"
           >
             <RefreshCw className={`h-4 w-4 ${probingPrimary ? "animate-spin" : ""}`} />
           </button>
@@ -286,7 +285,7 @@ export function ServersTab({ onUseServer }: Props) {
             title="Use 2.29.8.194 in Configure"
             aria-label="Use Hetzner 2.29.8.194 in Configure"
             onClick={() => onUseServer(HETZNER_SERVER_SPEC.ip, HETZNER_SERVER_SPEC.tlsPort)}
-            className="rounded-lg bg-primary px-2.5 py-2 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+            className="tc-btn-primary px-2.5 py-2 text-xs"
           >
             Use 2.29.8.194
           </button>
@@ -305,7 +304,7 @@ export function ServersTab({ onUseServer }: Props) {
     return (
       <div className="space-y-4">
         {primaryHetznerCard}
-        <p className="rounded-xl border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+        <p className="rounded-xl border border-border bg-muted/60 px-3.5 py-2.5 text-xs leading-relaxed text-muted-foreground">
           Sign in to register the relay servers you operate and sync them across your devices.
         </p>
         <Field label="EMAIL">
@@ -330,7 +329,7 @@ export function ServersTab({ onUseServer }: Props) {
           type="button"
           onClick={submitAuth}
           disabled={authBusy || !email || !password}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+          className="tc-btn-primary w-full py-3"
         >
           {authBusy && <Loader2 className="h-4 w-4 animate-spin" />}
           {mode === "signin" ? "Sign in" : "Create account"}
@@ -351,7 +350,7 @@ export function ServersTab({ onUseServer }: Props) {
   return (
     <div className="space-y-4">
       {primaryHetznerCard}
-      <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-muted px-3 py-2">
+      <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-muted/60 px-3.5 py-2.5">
         <span className="truncate text-xs text-muted-foreground">{session.user.email}</span>
         <button
           type="button"
@@ -368,9 +367,9 @@ export function ServersTab({ onUseServer }: Props) {
 
       {/* Hetzner CX23 Endpoints */}
       <div className="space-y-2">
-        <p className="text-xs font-medium tracking-wider text-muted-foreground">HETZNER CX23 (2.29.8.194) ENDPOINTS</p>
+        <p className="tc-label">HETZNER CX23 (2.29.8.194) ENDPOINTS</p>
         {SAMPLE_VPS_SERVERS.map((sample) => (
-          <div key={sample.id} className="flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/50 px-3 py-2.5">
+          <div key={sample.id} className="flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/40 px-3 py-2.5 transition-colors hover:border-primary/30">
             <ServerIcon className="h-4 w-4 shrink-0 text-primary" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{sample.name}</p>
@@ -389,7 +388,7 @@ export function ServersTab({ onUseServer }: Props) {
                 setTransport(sample.transport);
                 setNotes(sample.notes);
               }}
-              className="rounded-lg bg-secondary p-2 text-secondary-foreground transition-colors hover:text-primary"
+              className="tc-icon-btn"
             >
               <ArrowRight className="h-4 w-4" />
             </button>
@@ -402,13 +401,13 @@ export function ServersTab({ onUseServer }: Props) {
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       ) : servers.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
+        <p className="tc-empty py-6">
           No servers yet — add your Hetzner 2.29.8.194 relay below.
         </p>
       ) : (
         <div className="space-y-2">
           {servers.map((s) => (
-            <div key={s.id} className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
+            <div key={s.id} className="tc-card flex items-center gap-2 px-3.5 py-3 shadow-none">
               <ServerIcon className="h-4 w-4 shrink-0 text-primary" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{s.name}</p>
@@ -425,7 +424,7 @@ export function ServersTab({ onUseServer }: Props) {
                 aria-label={`Check health of ${s.name}`}
                 onClick={() => void checkHealth(s)}
                 disabled={checkingServerId === s.id}
-                className="rounded-lg bg-secondary p-2 text-secondary-foreground transition-colors hover:text-primary disabled:opacity-50"
+                className="tc-icon-btn"
               >
                 <RefreshCw className={`h-4 w-4 ${checkingServerId === s.id ? "animate-spin" : ""}`} />
               </button>
@@ -434,7 +433,7 @@ export function ServersTab({ onUseServer }: Props) {
                 title="Use in Configure"
                 aria-label={`Use ${s.name} in Configure`}
                 onClick={() => onUseServer(s.host, s.port)}
-                className="rounded-lg bg-secondary p-2 text-secondary-foreground transition-colors hover:text-primary"
+                className="tc-icon-btn"
               >
                 <ArrowRight className="h-4 w-4" />
               </button>
@@ -442,7 +441,7 @@ export function ServersTab({ onUseServer }: Props) {
                 type="button"
                 title="Delete server"
                 onClick={() => removeServer(s)}
-                className="rounded-lg bg-secondary p-2 text-secondary-foreground transition-colors hover:text-destructive"
+                className="tc-icon-btn tc-icon-btn-danger"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -451,8 +450,8 @@ export function ServersTab({ onUseServer }: Props) {
         </div>
       )}
 
-      <div className="space-y-3 rounded-xl border border-border bg-card p-3">
-        <p className="text-xs font-medium tracking-wider text-muted-foreground">ADD RELAY SERVER</p>
+      <div className="tc-card space-y-3 p-4">
+        <p className="tc-section-title">ADD RELAY SERVER</p>
         <Field label="NAME" error={errors.name}>
           <input
             className={fieldClass}
@@ -501,16 +500,16 @@ export function ServersTab({ onUseServer }: Props) {
           type="button"
           onClick={addServer}
           disabled={saving}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+          className="tc-btn-primary w-full py-3"
         >
           {saving && <Loader2 className="h-4 w-4 animate-spin" />}
           Add server
         </button>
       </div>
 
-      <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
+      <div className="tc-card-accent space-y-3 p-4">
         <div>
-          <p className="text-xs font-medium tracking-wider text-primary">DEPLOY TO HETZNER CX23 (2.29.8.194)</p>
+          <p className="tc-section-title">DEPLOY TO HETZNER CX23 (2.29.8.194)</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Includes every internet transport and anti-DPI tool built into Tunnel Console (WireGuard, TLS+SNI, WebSocket, HTTP Custom Payload, Corridor Probe, SOCKS5, SSH, and NAT Masquerading).
           </p>
@@ -523,7 +522,7 @@ export function ServersTab({ onUseServer }: Props) {
 
         <div className="grid gap-1.5 sm:grid-cols-2">
           {SERVER_TRANSPORT_CAPABILITIES.map((cap) => (
-            <div key={cap.id} className="rounded-lg border border-border bg-background/80 p-2.5">
+            <div key={cap.id} className="rounded-xl border border-border bg-background/70 p-3">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-semibold text-foreground">{cap.name}</span>
                 <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-primary">
@@ -553,7 +552,7 @@ export function ServersTab({ onUseServer }: Props) {
             ))}
           </select>
         </Field>
-        <div className="rounded-lg border border-border bg-background p-2.5">
+        <div className="tc-code p-3">
           <code className="block break-words font-mono text-[11px] leading-relaxed text-muted-foreground">
             {deploymentHost.trim() ? getRelayDeploymentCommand(deploymentTarget, deploymentHost) : "Enter the server host to generate a setup command."}
           </code>
@@ -570,14 +569,14 @@ export function ServersTab({ onUseServer }: Props) {
               toast.error("Couldn't access the clipboard", { description: "Select and copy the command manually." });
             }
           }}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+          className="tc-btn-primary w-full py-3"
         >
           {copiedDeployment ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
           {copiedDeployment ? "Copied" : "Copy deployment command"}
         </button>
 
-        <div className="space-y-1.5 rounded-xl border border-border bg-background/90 p-3">
-          <p className="text-[11px] font-semibold tracking-wider text-primary">
+        <div className="tc-code space-y-1.5 p-3">
+          <p className="font-sans text-[11px] font-semibold tracking-wider text-primary">
             SAFE RELEASE & ATOMIC ROLLBACK (deploy-hetzner.sh)
           </p>
           <p className="font-mono text-[11px] text-muted-foreground">
@@ -597,7 +596,7 @@ export function ServersTab({ onUseServer }: Props) {
           if (!activeContainerFile) return null;
           return (
             <div className="space-y-2 pt-2">
-              <p className="text-xs font-medium tracking-wider text-muted-foreground">
+              <p className="tc-label">
                 SERVER CONTAINER FILES (relay-server/)
               </p>
               <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
@@ -619,7 +618,7 @@ export function ServersTab({ onUseServer }: Props) {
                   </button>
                 ))}
               </div>
-              <div className="overflow-hidden rounded-xl border border-border bg-background">
+              <div className="overflow-hidden rounded-2xl border border-border bg-background">
                 <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
                   <div className="min-w-0">
                     <p className="truncate font-mono text-[11px] font-medium text-foreground">
