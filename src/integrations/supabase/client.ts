@@ -5,14 +5,17 @@ import { brokeredPreviewStorage } from './previewAuthStorage';
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL;
 const rawKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+// Repointed 2026-11-11 to the owner-controlled Cloud project
+// (supabase-alizarin-prism). The previous default pointed at a Supabase
+// project outside the owner's organization.
 const SUPABASE_URL =
   rawUrl && /^https?:\/\//i.test(rawUrl)
     ? rawUrl
-    : 'https://vuxeryslquczubilasqe.supabase.co';
+    : 'https://ezhzrkeonqvhyovjwaes.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY =
   rawKey && !rawKey.startsWith('YOUR_')
     ? rawKey
-    : 'sb_publishable_QgVt-NTb6LRaaiqLOKT2ug_IJsn9Zhh';
+    : 'sb_publishable_RxFbk39W3BHRHRw_ahPz7g_76deM5wM';
 
 
 function isNewSupabaseApiKey(value: string): boolean {
