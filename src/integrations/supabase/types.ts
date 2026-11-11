@@ -20,7 +20,7 @@ export type Database = {
           actor_id: string
           created_at: string
           entity_id: string | null
-          entity_type: string
+          entity_type: string | null
           id: string
           metadata: Json
         }
@@ -29,7 +29,7 @@ export type Database = {
           actor_id: string
           created_at?: string
           entity_id?: string | null
-          entity_type: string
+          entity_type?: string | null
           id?: string
           metadata?: Json
         }
@@ -38,45 +38,9 @@ export type Database = {
           actor_id?: string
           created_at?: string
           entity_id?: string | null
-          entity_type?: string
+          entity_type?: string | null
           id?: string
           metadata?: Json
-        }
-        Relationships: []
-      }
-      provisioning_jobs: {
-        Row: {
-          command_preview: string | null
-          created_at: string
-          error_code: string | null
-          id: string
-          owner_id: string
-          provider: string
-          relay_server_id: string | null
-          status: string
-          updated_at: string
-        }
-        Insert: {
-          command_preview?: string | null
-          created_at?: string
-          error_code?: string | null
-          id?: string
-          owner_id: string
-          provider?: string
-          relay_server_id?: string | null
-          status?: string
-          updated_at?: string
-        }
-        Update: {
-          command_preview?: string | null
-          created_at?: string
-          error_code?: string | null
-          id?: string
-          owner_id?: string
-          provider?: string
-          relay_server_id?: string | null
-          status?: string
-          updated_at?: string
         }
         Relationships: []
       }
@@ -88,12 +52,12 @@ export type Database = {
           last_checked_at: string | null
           last_latency_ms: number | null
           name: string
-          notes: string | null
-          owner_id: string
+          notes: string
           port: number
           status: string
           transport: string
           updated_at: string
+          user_id: string
         }
         Insert: {
           created_at?: string
@@ -102,12 +66,12 @@ export type Database = {
           last_checked_at?: string | null
           last_latency_ms?: number | null
           name: string
-          notes?: string | null
-          owner_id: string
-          port: number
+          notes?: string
+          port?: number
           status?: string
           transport?: string
           updated_at?: string
+          user_id: string
         }
         Update: {
           created_at?: string
@@ -116,12 +80,12 @@ export type Database = {
           last_checked_at?: string | null
           last_latency_ms?: number | null
           name?: string
-          notes?: string | null
-          owner_id?: string
+          notes?: string
           port?: number
           status?: string
           transport?: string
           updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }

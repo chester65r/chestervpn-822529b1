@@ -184,7 +184,7 @@ export function ServersTab({ onUseServer }: Props) {
     if (Object.keys(found).length > 0 || !session) return;
     setSaving(true);
     const { error } = await supabase.from("relay_servers").insert({
-      owner_id: session.user.id,
+      user_id: session.user.id,
       name: name.trim(),
       host: host.trim(),
       port: Number(port),
