@@ -32,41 +32,38 @@ export const TRANSPORTS = [
   { id: "wireguard", label: "WireGuard VPN (UDP 51820)" },
 ];
 
+/** Canonical transport ids: every value the relay form offers is valid anywhere a
+ *  relay server is recorded (database backups, MCP tools, server functions). */
+export const TRANSPORT_IDS = TRANSPORTS.map((t) => t.id) as [string, ...string[]];
+
 export const PRIMARY_HETZNER_SERVER: RelayServer = {
   id: "hetzner-cx23-primary",
   name: "ahmed-docker-manager (Hetzner CX23 · Helsinki)",
   host: HETZNER_SERVER_SPEC.ip,
-  port: HETZNER_SERVER_SPEC.tlsPort,
-  transport: "websocket",
-  notes: "Hetzner #166592617 (eu-central Helsinki) · 2.29.8.194 / static.194.8.29.2.clients.your-server.de · IPv6 2a01:4f9:c015:48b3::/64",
+  port: HETZNER_SERVER_SPEC.wireguardPort,
+  transport: "wireguard",
+  notes: "Hetzner #166592617 (eu-central Helsinki) · 2.29.8.194 / static.194.8.29.2.clients.your-server.de · IPv6 2a01:4f9:c015:48b3::/64 · WireGuard wg0 on UDP 51820 (10.66.66.1/24, MTU 1280) — the server's only tunnel listener",
   status: "unknown",
   lastCheckedAt: null,
   lastLatencyMs: null,
   createdAt: 0,
 };
 
-/** Pre-configured Hetzner 2.29.8.194 (ahmed-docker-manager) infrastructure endpoints. */
+/**
+ * Sample servers for the relay form: the owner's real Hetzner server (its only
+ * tunnel service is WireGuard wg0 on UDP 51820) plus clearly-labelled example
+ * entries. No TLS/WebSocket listener is deployed on 2.29.8.194 — TCP 443 there
+ * belongs to an unrelated Docker Caddy stack — so examples use example hosts.
+ */
 export const SAMPLE_VPS_SERVERS: RelayServer[] = [
   PRIMARY_HETZNER_SERVER,
   {
-    id: "hetzner-cx23-wireguard",
-    name: "ahmed-docker-manager WireGuard (wg0)",
-    host: HETZNER_SERVER_SPEC.ip,
-    port: HETZNER_SERVER_SPEC.wireguardPort,
-    transport: "wireguard",
-    notes: "Hetzner #166592617 UDP 51820 WireGuard VPN (10.66.66.1/24, MTU 1280, Helsinki eu-central)",
-    status: "unknown",
-    lastCheckedAt: null,
-    lastLatencyMs: null,
-    createdAt: 0,
-  },
-  {
-    id: "hetzner-cx23-alt-tls",
-    name: "ahmed-docker-manager Alternate TLS (8443)",
-    host: HETZNER_SERVER_SPEC.ip,
+    id: "example-vps-alt-tls",
+    name: "Example VPS — Alternate TLS (8443, not deployed)",
+    host: "vps.example.com",
     port: HETZNER_SERVER_SPEC.altTlsPort,
     transport: "tls",
-    notes: "Hetzner #166592617 secondary TLS + SNI listener on TCP 8443 (static.194.8.29.2.clients.your-server.de)",
+    notes: "EXAMPLE ONLY — illustrative TLS + SNI endpoint. No such listener exists on the Hetzner server; do not register this against 2.29.8.194.",
     status: "unknown",
     lastCheckedAt: null,
     lastLatencyMs: null,

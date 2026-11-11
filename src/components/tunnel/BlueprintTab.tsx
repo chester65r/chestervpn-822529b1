@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import {
   Activity,
@@ -25,6 +25,7 @@ import {
 } from "@/lib/tunnel";
 import {
   clientConfig,
+  generateWireGuardKeyPair,
   isWireGuardKey,
   serverConfig,
   validateClient,
@@ -115,21 +116,26 @@ export function BlueprintTab() {
   const [active, setActive] = useState(-1);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    setDevicePrivKey(generateCanonicalWgKey());
-    setDevicePubKey(generateCanonicalWgKey());
-    setServerPrivKey(generateCanonicalWgKey());
-    setServerPubKey(generateCanonicalWgKey());
+  // Device and server keys are generated as true X25519 keypairs (public key
+  // derived from the private key), so the rendered client and server configs
+  // are cryptographically coherent and can actually handshake.
+  const generateKeypairs = useCallback(() => {
+    const device = generateWireGuardKeyPair();
+    const server = generateWireGuardKeyPair();
+    setDevicePrivKey(device.privateKey);
+    setDevicePubKey(device.publicKey);
+    setServerPrivKey(server.privateKey);
+    setServerPubKey(server.publicKey);
     setPresharedKey(generateCanonicalWgKey());
   }, []);
 
+  useEffect(() => {
+    generateKeypairs();
+  }, [generateKeypairs]);
+
   const rotateKeys = () => {
-    setDevicePrivKey(generateCanonicalWgKey());
-    setDevicePubKey(generateCanonicalWgKey());
-    setServerPrivKey(generateCanonicalWgKey());
-    setServerPubKey(generateCanonicalWgKey());
-    setPresharedKey(generateCanonicalWgKey());
-    toast.success("Generated fresh 32-byte WireGuard keys & PSK");
+    generateKeypairs();
+    toast.success("Generated fresh WireGuard keypairs & PSK");
   };
 
   const selectedNetProfile =
@@ -169,9 +175,11 @@ export function BlueprintTab() {
       if (res.status === "online" || res.tcpReachable) {
         setEngineState("TunnelEstablished");
         appendLog(
-          `[TunnelVpnService] HTTP/1.1 101 Switching Protocols (${res.latencyMs ?? 18} ms). KeepAliveManager started (${selectedNetProfile.keepAliveIntervalSec}s).`,
+          `[Simulation] Live probe answered in ${res.latencyMs ?? "?"} ms. No Android tunnel exists in a browser — open the Android app and import a profile to connect for real.`,
         );
-        toast.success(`Connected to ${HETZNER_SERVER_SPEC.serverName} (${HETZNER_SERVER_SPEC.ip})`);
+        toast.success(`Server reachable: ${HETZNER_SERVER_SPEC.serverName} (${HETZNER_SERVER_SPEC.ip})`, {
+          description: "Browser simulation only — no tunnel was opened.",
+        });
       } else {
         setEngineState("Reconnecting");
         setReconnectAttempt(1);
@@ -278,12 +286,13 @@ export function BlueprintTab() {
 
   return (
     <div className="space-y-4">
-      {/* 1. Real Android VPN Service + ReconnectionMonitor Control Panel for ahmed-docker-manager */}
+      {/* 1. Android VPN Service panel — browser simulation driven by the real server probe (no Android device is involved here) */}
       <section className="space-y-3 rounded-2xl border border-primary/30 bg-card p-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <p className="flex items-center gap-1.5 text-xs font-bold tracking-wider text-primary">
-              <Smartphone className="h-4 w-4" /> ANDROID VPN ENGINE & RECONNECTION MONITOR
+              <Smartphone className="h-4 w-4" /> ANDROID VPN ENGINE & RECONNECTION MONITOR — BROWSER
+              SIMULATION
             </p>
             <p className="mt-0.5 font-mono text-xs text-foreground">
               {HETZNER_SERVER_SPEC.serverName} (#{HETZNER_SERVER_SPEC.serverId}) · {HETZNER_SERVER_SPEC.ip} ·{" "}
@@ -304,7 +313,7 @@ export function BlueprintTab() {
                     : "bg-secondary text-foreground"
             }`}
           >
-            {engineState}
+            {engineState === "TunnelEstablished" ? "Server reachable · simulated" : engineState}
           </span>
         </div>
 

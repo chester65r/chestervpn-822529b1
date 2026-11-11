@@ -28,6 +28,125 @@ const IPV4_CIDR = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/;
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 const HOST = /^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
 
+function base64ToBytes(value: string): Uint8Array {
+  const bin = atob(value);
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  bytes.forEach((b) => {
+    bin += String.fromCharCode(b);
+  });
+  return btoa(bin);
+}
+
+// --- X25519 (RFC 7748) -------------------------------------------------------
+// WireGuard public keys are X25519(privateKey, base point 9). Browsers cannot
+// derive them natively, and a "public key" that is just another random value
+// produces configs that can never handshake — so derivation is implemented
+// here as a pure function over BigInt and tested against RFC vectors.
+
+const X25519_P = (1n << 255n) - 19n;
+const X25519_A24 = 121665n;
+
+function x25519Mod(value: bigint): bigint {
+  return ((value % X25519_P) + X25519_P) % X25519_P;
+}
+
+function x25519Pow(base: bigint, exponent: bigint): bigint {
+  let result = 1n;
+  let b = x25519Mod(base);
+  let e = exponent;
+  while (e > 0n) {
+    if (e & 1n) result = x25519Mod(result * b);
+    b = x25519Mod(b * b);
+    e >>= 1n;
+  }
+  return result;
+}
+
+function bytesToBigIntLE(bytes: Uint8Array): bigint {
+  let out = 0n;
+  for (let i = bytes.length - 1; i >= 0; i--) out = (out << 8n) | BigInt(bytes[i] ?? 0);
+  return out;
+}
+
+function bigIntToBytesLE(value: bigint, length = 32): Uint8Array {
+  const out = new Uint8Array(length);
+  let v = value;
+  for (let i = 0; i < length; i++) {
+    out[i] = Number(v & 0xffn);
+    v >>= 8n;
+  }
+  return out;
+}
+
+/** Derives the WireGuard public key for a 32-byte base64 private key (RFC 7748 §5). */
+export function deriveWireGuardPublicKey(privateKey: string): string {
+  if (!isWireGuardKey(privateKey)) throw new Error("Private key must be a 32-byte base64 WireGuard key");
+  const scalarBytes = base64ToBytes(privateKey);
+  // Clamp per RFC 7748 decodeScalar25519.
+  scalarBytes[0] = (scalarBytes[0] ?? 0) & 248;
+  scalarBytes[31] = ((scalarBytes[31] ?? 0) & 127) | 64;
+  const scalar = bytesToBigIntLE(scalarBytes);
+
+  const x1 = 9n;
+  let x2 = 1n;
+  let z2 = 0n;
+  let x3 = x1;
+  let z3 = 1n;
+  let swap = 0n;
+  const cswap = (a: bigint, b: bigint, bit: bigint): [bigint, bigint] => (bit === 1n ? [b, a] : [a, b]);
+
+  for (let t = 254; t >= 0; t--) {
+    const bit = (scalar >> BigInt(t)) & 1n;
+    swap ^= bit;
+    [x2, x3] = cswap(x2, x3, swap);
+    [z2, z3] = cswap(z2, z3, swap);
+    swap = bit;
+
+    const a = x25519Mod(x2 + z2);
+    const aa = x25519Mod(a * a);
+    const b = x25519Mod(x2 - z2);
+    const bb = x25519Mod(b * b);
+    const e = x25519Mod(aa - bb);
+    const c = x25519Mod(x3 + z3);
+    const d = x25519Mod(x3 - z3);
+    const da = x25519Mod(d * a);
+    const cb = x25519Mod(c * b);
+    const daPlusCb = x25519Mod(da + cb);
+    const daMinusCb = x25519Mod(da - cb);
+    x3 = x25519Mod(daPlusCb * daPlusCb);
+    z3 = x25519Mod(x1 * x25519Mod(daMinusCb * daMinusCb));
+    x2 = x25519Mod(aa * bb);
+    z2 = x25519Mod(e * x25519Mod(aa + X25519_A24 * e));
+  }
+  [x2, x3] = cswap(x2, x3, swap);
+  [z2, z3] = cswap(z2, z3, swap);
+
+  const result = x25519Mod(x2 * x25519Pow(z2, X25519_P - 2n));
+  return bytesToBase64(bigIntToBytesLE(result));
+}
+
+/**
+ * Generates a real WireGuard keypair in the browser: a clamped random private
+ * key from WebCrypto and its X25519-derived public key. The pair actually
+ * matches — unlike picking two independent random strings.
+ */
+export function generateWireGuardKeyPair(): { privateKey: string; publicKey: string } {
+  const bytes = new Uint8Array(32);
+  const cryptoObj = globalThis.crypto;
+  if (!cryptoObj || typeof cryptoObj.getRandomValues !== "function") {
+    throw new Error("Secure random generation is unavailable in this environment");
+  }
+  cryptoObj.getRandomValues(bytes);
+  bytes[0] = (bytes[0] ?? 0) & 248;
+  bytes[31] = ((bytes[31] ?? 0) & 127) | 64;
+  const privateKey = bytesToBase64(bytes);
+  return { privateKey, publicKey: deriveWireGuardPublicKey(privateKey) };
+}
+
 /** A WireGuard key is exactly 32 bytes encoded as canonical padded base64 (44 characters). */
 export function isWireGuardKey(value: string): boolean {
   if (!/^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$/.test(value)) return false;

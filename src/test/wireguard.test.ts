@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
-import { clientConfig, isIpv6Cidr, isWireGuardKey, serverConfig, validateClient, validateServer, type WireGuardClient } from "../lib/wireguard";
+import { clientConfig, deriveWireGuardPublicKey, generateWireGuardKeyPair, isIpv6Cidr, isWireGuardKey, serverConfig, validateClient, validateServer, type WireGuardClient } from "../lib/wireguard";
 import { BLUEPRINT_FILES } from "../lib/android-blueprint";
 
 const key = () => generateKeyPairSync("x25519").publicKey.export({ format: "der", type: "spki" }).subarray(-32).toString("base64");
@@ -61,6 +61,61 @@ describe("WireGuard profile rules", () => {
     const server = serverConfig({ privateKey: key(), address: "10.66.66.1/24", listenPort: 51820, mtu: 1280, peers: [{ name: "x\nPostUp = rm", publicKey: key(), presharedKey: client.presharedKey, address: client.address }] });
     expect(server).toContain(`AllowedIPs = ${client.address}`);
     expect(server).not.toMatch(/^PostUp/m);
+  });
+});
+
+describe("WireGuard public key derivation (X25519, RFC 7748)", () => {
+  const fromHex = (hex: string) => Buffer.from(hex, "hex").toString("base64");
+
+  it("matches the RFC 7748 §6.1 base-point vector", () => {
+    // Alice's private key and public key from the RFC's Diffie-Hellman example.
+    const alicePrivate = fromHex("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
+    expect(deriveWireGuardPublicKey(alicePrivate)).toBe(
+      fromHex("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"),
+    );
+  });
+
+  it("agrees with Node's native X25519 keypairs", () => {
+    for (let i = 0; i < 5; i++) {
+      const pair = generateKeyPairSync("x25519");
+      const privateRaw = pair.privateKey.export({ format: "der", type: "pkcs8" }).subarray(-32);
+      const publicRaw = pair.publicKey.export({ format: "der", type: "spki" }).subarray(-32);
+      expect(deriveWireGuardPublicKey(Buffer.from(privateRaw).toString("base64"))).toBe(
+        Buffer.from(publicRaw).toString("base64"),
+      );
+    }
+  });
+
+  it("rejects values that are not canonical WireGuard keys", () => {
+    expect(() => deriveWireGuardPublicKey("not-a-key")).toThrow();
+    expect(() => deriveWireGuardPublicKey(randomBytes(31).toString("base64"))).toThrow();
+  });
+
+  it("generates browser keypairs whose public key is really derived from the private key", () => {
+    const pair = generateWireGuardKeyPair();
+    expect(isWireGuardKey(pair.privateKey)).toBe(true);
+    expect(isWireGuardKey(pair.publicKey)).toBe(true);
+    expect(deriveWireGuardPublicKey(pair.privateKey)).toBe(pair.publicKey);
+    expect(generateWireGuardKeyPair().privateKey).not.toBe(pair.privateKey);
+  });
+
+  it("builds a client/server pair that validates with cross-matched public keys", () => {
+    const device = generateWireGuardKeyPair();
+    const server = generateWireGuardKeyPair();
+    const psk = randomBytes(32).toString("base64");
+    expect(
+      validateClient({
+        privateKey: device.privateKey, address: "10.66.66.4/32", dns: "1.1.1.1", mtu: 1380,
+        serverPublicKey: server.publicKey, presharedKey: psk,
+        endpointHost: "2.29.8.194", endpointPort: 51820, allowedIps: ["0.0.0.0/0", "::/0"], keepalive: 25,
+      }),
+    ).toEqual([]);
+    expect(
+      validateServer({
+        privateKey: server.privateKey, address: "10.66.66.1/24", listenPort: 51820, mtu: 1380,
+        peers: [{ name: "device", publicKey: device.publicKey, presharedKey: psk, address: "10.66.66.4/32" }],
+      }),
+    ).toEqual([]);
   });
 });
 

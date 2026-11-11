@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { ALL_IN_ONE_ANDROID_KOTLIN } from "@/lib/all-in-one-android";
 import { explainConnection, type ConnectionDiagnostics } from "@/lib/connection-help.functions";
 import { probeHetznerServer } from "@/lib/relay-control.functions";
-import { clientConfig } from "@/lib/wireguard";
+import { clientConfig, generateWireGuardKeyPair } from "@/lib/wireguard";
 import { SpeedGraph } from "./SpeedGraph";
 import {
   DEFAULT_PAYLOAD_TEMPLATE,
@@ -160,13 +160,18 @@ export function HomeTab({
   const [wgPub, setWgPub] = useState("");
   const [wgServerPub, setWgServerPub] = useState("");
   const [wgPsk, setWgPsk] = useState("");
+  const [wgAddress, setWgAddress] = useState("10.66.66.4/32");
   const [previewTab, setPreviewTab] = useState<"none" | "android-kt" | "wg-conf" | "deploy-sh">("none");
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
 
   useEffect(() => {
-    setWgPriv(generateWgKey());
-    setWgPub(generateWgKey());
-    setWgServerPub(generateWgKey());
+    // A real keypair: the public key is X25519-derived from the private key,
+    // so the downloaded config can actually handshake. The server key defaults
+    // to the live server's real public key (still editable for other servers).
+    const pair = generateWireGuardKeyPair();
+    setWgPriv(pair.privateKey);
+    setWgPub(pair.publicKey);
+    setWgServerPub(HETZNER_SERVER_SPEC.wireguardPublicKey);
     setWgPsk(generateWgKey());
   }, []);
 
@@ -232,8 +237,8 @@ export function HomeTab({
     wgPriv && wgServerPub && wgPsk
       ? clientConfig({
           privateKey: wgPriv,
-          address: "10.66.66.2/32",
-          dns: "10.66.66.1",
+          address: wgAddress.trim() || "10.66.66.4/32",
+          dns: "1.1.1.1",
           mtu: activeNetProfile?.recommendedMtu ?? 1280,
           serverPublicKey: wgServerPub,
           presharedKey: wgPsk,
@@ -244,7 +249,10 @@ export function HomeTab({
         })
       : "";
 
-  const hetznerDeployCmd = `ssh root@${HETZNER_SERVER_SPEC.ip} "bash -s" < relay-server/deploy-hetzner.sh && ssh root@${HETZNER_SERVER_SPEC.ip} "docker exec tunnel-relay-all-in-one python3 /opt/tunnel-relay/peer-admin.py enroll --public-key '${wgPub}' --address 10.66.66.2/32 --endpoint ${HETZNER_SERVER_SPEC.ip}:51820"`;
+  // Enrolls this hub's peer on the LIVE wg-quick server (wg0), with the same
+  // preshared key the downloaded config carries, then persists the config.
+  const wgAddressForCmd = wgAddress.trim() || "10.66.66.4/32";
+  const hetznerDeployCmd = `ssh root@${HETZNER_SERVER_SPEC.ip} "umask 077; printf '%s' '${wgPsk}' > /root/.tc-psk; wg set wg0 peer '${wgPub}' preshared-key /root/.tc-psk allowed-ips ${wgAddressForCmd}; wg-quick save wg0; rm -f /root/.tc-psk"`;
 
   return (
     <div className="space-y-4">
@@ -278,6 +286,9 @@ export function HomeTab({
               {STATUS_COPY[status]}
             </p>
             <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{serverLabel}</p>
+            <p className="mt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              Simulated — no real tunnel in a browser
+            </p>
             {activeNetProfile && (
               <p className="mt-1 text-xs font-medium text-primary">
                 {activeNetProfile.name} · MTU {activeNetProfile.recommendedMtu}
@@ -307,14 +318,16 @@ export function HomeTab({
           <section className="grid grid-cols-2 gap-3">
             <div className="rounded-2xl border border-border bg-card p-3.5">
               <p className="flex items-center gap-1.5 text-[11px] font-medium tracking-wider text-muted-foreground">
-                <ArrowDown className="h-3.5 w-3.5 text-primary" /> DOWNLOAD
+                <ArrowDown className="h-3.5 w-3.5 text-primary" /> DOWNLOAD{" "}
+                <span className="font-normal">(simulated)</span>
               </p>
               <p className="mt-1 font-mono text-base font-bold text-primary">{formatSpeed(downSpeed)}</p>
               <p className="font-mono text-[11px] text-muted-foreground">{formatBytes(totals.rx)} total</p>
             </div>
             <div className="rounded-2xl border border-border bg-card p-3.5">
               <p className="flex items-center gap-1.5 text-[11px] font-medium tracking-wider text-muted-foreground">
-                <ArrowUp className="h-3.5 w-3.5 text-chart-4" /> UPLOAD
+                <ArrowUp className="h-3.5 w-3.5 text-chart-4" /> UPLOAD{" "}
+                <span className="font-normal">(simulated)</span>
               </p>
               <p className="mt-1 font-mono text-base font-bold text-chart-4">{formatSpeed(upSpeed)}</p>
               <p className="font-mono text-[11px] text-muted-foreground">{formatBytes(totals.tx)} total</p>
@@ -361,15 +374,15 @@ export function HomeTab({
               size="sm"
               variant="secondary"
               type="button"
-              onClick={() => void copyText("Hetzner deploy command", hetznerDeployCmd)}
+              onClick={() => void copyText("Hetzner peer enroll command", hetznerDeployCmd)}
               className="gap-1.5 text-xs"
             >
-              {copiedTag === "Hetzner deploy command" ? (
+              {copiedTag === "Hetzner peer enroll command" ? (
                 <Check className="h-3.5 w-3.5 text-primary" />
               ) : (
                 <Copy className="h-3.5 w-3.5" />
               )}
-              Copy Server Deploy Cmd
+              Copy Peer Enroll Cmd
             </Button>
           </div>
         </div>
@@ -564,6 +577,39 @@ export function HomeTab({
                 Download wg.conf
               </Button>
             </div>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Client tunnel address
+                </span>
+                <input
+                  className={fieldClass}
+                  value={wgAddress}
+                  onChange={(e) => setWgAddress(e.target.value)}
+                />
+                <span className="mt-1 block text-[10px] text-muted-foreground">
+                  10.66.66.2 and .3 are already enrolled on the server — .4 is the next free address.
+                </span>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Server public key
+                </span>
+                <input
+                  className={fieldClass}
+                  value={wgServerPub}
+                  onChange={(e) => setWgServerPub(e.target.value)}
+                />
+                <span className="mt-1 block text-[10px] text-muted-foreground">
+                  Defaults to your live server&apos;s real public key. Your device public key below is
+                  derived from the generated private key — enroll it with the Peer Enroll Cmd.
+                </span>
+              </label>
+            </div>
+            <p className="break-all rounded-xl border border-border bg-background p-2.5 font-mono text-[10px] text-muted-foreground">
+              Device public key: {wgPub}
+            </p>
 
             <div className="flex flex-wrap gap-1.5">
               <Button
