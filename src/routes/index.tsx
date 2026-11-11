@@ -14,6 +14,7 @@ import { ServersTab } from "@/components/tunnel/ServersTab";
 import { AdditionalAccount } from "@/components/tunnel/AdditionalAccount";
 import { ServiceOverview } from "@/components/tunnel/ServiceOverview";
 import { useTunnelSim } from "@/lib/use-tunnel-sim";
+import { useAdditionalSession } from "@/lib/use-additional-session";
 import {
   HETZNER_DEFAULT_PROFILE,
   NETWORK_PROVIDER_PROFILES,
@@ -78,6 +79,10 @@ function Index() {
   const [saved, setSaved] = useState<SavedProfile[]>([]);
   const [loaded, setLoaded] = useState(false);
   const sim = useTunnelSim();
+  // Route-level: the additional-account session (and its sim-transition
+  // history recorder) must survive tab switches, so it is owned here and
+  // not by the Servers-tab section that merely displays it.
+  const additional = useAdditionalSession(sim.status);
 
   useEffect(() => {
     try {
@@ -344,7 +349,7 @@ function Index() {
               onChange={change}
             />
           )}
-          {tab === "servers" && <><ServiceOverview /><AdditionalAccount simStatus={sim.status} /><h2 className="mb-3 text-sm font-semibold">Cloud relay servers</h2><ServersTab onUseServer={useServer} /></>}
+          {tab === "servers" && <><ServiceOverview /><AdditionalAccount session={additional} /><h2 className="mb-3 text-sm font-semibold">Cloud relay servers</h2><ServersTab onUseServer={useServer} /></>}
           {tab === "share" && (
             <ShareTab
               exportedCode={exported}
