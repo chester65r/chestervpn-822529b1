@@ -1,0 +1,102 @@
+# Android emulator lane — manual only (workflow_dispatch).
+# Mirrors the emulator lane in native/android/README.md at API 34:
+# the repo's own run-checks.sh "emulator" mode builds all APKs + lint,
+# installs debug and instrumentation APKs non-streamed on the booted AVD,
+# verifies both packages, then runs the native credential instrumentation
+# (NativeCredentialsTest). Results are EMULATOR evidence only; per the
+# README they are never promoted to physical-device PASS, and no VPN /
+# network test is claimed by this runner.
+name: Android emulator checks (API 34)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ANDROID_PROJECT_DIR: tunnel-android
+
+jobs:
+  emulator:
+    name: Emulator instrumentation (API 34, google_apis x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun (project generator runtime)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Set up JDK 17 (Temurin, per native/android/README.md)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # GitHub's ubuntu runners preinstall the Android SDK (ANDROID_HOME /
+      # ANDROID_SDK_ROOT already point at it). The android-actions/setup-android
+      # action is deliberately NOT used: its v3 tries to install the obsolete
+      # sdkmanager 'tools' package and fails on current runner images.
+      - name: Install pinned SDK components (platform 34, build-tools 34.0.0)
+        # sdkmanager is not on PATH on current runner images; resolve it from
+        # the preinstalled SDK under ANDROID_HOME.
+        run: |
+          SDKMANAGER="$(command -v sdkmanager || echo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager")"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' 'emulator'
+
+      - name: Enable KVM (hardware acceleration on GitHub-hosted runners)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Generate the Android project from the blueprint
+        run: bun native/android/generate-project.ts "$ANDROID_PROJECT_DIR"
+
+      - name: Set up Gradle 8.9 (used only to create the pinned wrapper)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Create the pinned Gradle wrapper
+        run: gradle -p "$ANDROID_PROJECT_DIR" wrapper --gradle-version 8.9 --distribution-type bin
+
+      - name: Verify the wrapper pins the documented Gradle 8.9 checksum
+        run: |
+          grep -q 'd725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab' \
+            "$ANDROID_PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties"
+
+      - name: Boot API 34 emulator and run the documented emulator lane
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: Nexus 6
+          # The runner's AVD listens on port 5554, so run-checks.sh addresses
+          # it by its explicit serial, exactly as the README lane prescribes.
+          # The script itself enforces full boot + package-service readiness
+          # and records API/ABI into the evidence directory.
+          script: bash native/android/run-checks.sh "$GITHUB_WORKSPACE/$ANDROID_PROJECT_DIR" emulator emulator-5554
+
+      - name: Upload emulator evidence (result.txt, build/install/instrumentation logs)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-emulator-evidence-api34
+          path: ${{ env.ANDROID_PROJECT_DIR }}/test-evidence/**
+          if-no-files-found: warn
+
+      - name: Upload APKs built for the emulator run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-emulator-apks
+          path: |
+            ${{ env.ANDROID_PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+            ${{ env.ANDROID_PROJECT_DIR }}/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          if-no-files-found: warn

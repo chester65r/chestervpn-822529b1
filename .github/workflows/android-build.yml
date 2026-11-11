@@ -1,0 +1,93 @@
+# Android build lane — mirrors native/android/README.md exactly:
+# generate with Bun, pin the Gradle 8.9 wrapper, then run the repo's own
+# run-checks.sh in "build" mode (assembleDebug + assembleRelease +
+# assembleDebugAndroidTest + lintDebug). No device evidence is claimed:
+# emulator and physical lanes live in android-emulator.yml / manual records.
+name: Android build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Generated project location (the docs use /tmp/tunnel-android; a
+  # workspace-relative dir keeps artifact paths stable on CI runners).
+  ANDROID_PROJECT_DIR: tunnel-android
+
+jobs:
+  build:
+    name: Generate and build (pinned toolchain)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun (project generator runtime)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Set up JDK 17 (Temurin, per native/android/README.md)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # GitHub's ubuntu runners preinstall the Android SDK (ANDROID_HOME /
+      # ANDROID_SDK_ROOT already point at it). The android-actions/setup-android
+      # action is deliberately NOT used: its v3 tries to install the obsolete
+      # sdkmanager 'tools' package and fails on current runner images.
+      - name: Install pinned SDK components (platform 34, build-tools 34.0.0)
+        # sdkmanager is not on PATH on current runner images; resolve it from
+        # the preinstalled SDK under ANDROID_HOME.
+        run: |
+          SDKMANAGER="$(command -v sdkmanager || echo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager")"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' 'emulator'
+
+      - name: Generate the Android project from the blueprint
+        run: bun native/android/generate-project.ts "$ANDROID_PROJECT_DIR"
+
+      - name: Set up Gradle 8.9 (used only to create the pinned wrapper)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Create the pinned Gradle wrapper
+        run: gradle -p "$ANDROID_PROJECT_DIR" wrapper --gradle-version 8.9 --distribution-type bin
+
+      - name: Verify the wrapper pins the documented Gradle 8.9 checksum
+        # README: the generated wrapper must carry this official binary checksum
+        # in gradle/wrapper/gradle-wrapper.properties (distributionSha256Sum).
+        run: |
+          grep -q 'd725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab' \
+            "$ANDROID_PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties"
+
+      - name: Run the documented build lane (repo's own runner)
+        # run-checks.sh requires JAVA_HOME (JDK 17) and ANDROID_HOME, both set
+        # by the setup actions above. It runs:
+        #   gradlew assembleDebug assembleRelease assembleDebugAndroidTest lintDebug
+        # Release output is unsigned; a pass is NOT a signed-release verification.
+        run: bash native/android/run-checks.sh "$GITHUB_WORKSPACE/$ANDROID_PROJECT_DIR" build
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apks
+          path: |
+            ${{ env.ANDROID_PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+            ${{ env.ANDROID_PROJECT_DIR }}/app/build/outputs/apk/release/app-release-unsigned.apk
+            ${{ env.ANDROID_PROJECT_DIR }}/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          if-no-files-found: error
+
+      - name: Upload build evidence (result.txt + build.log from run-checks.sh)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-evidence
+          path: ${{ env.ANDROID_PROJECT_DIR }}/test-evidence/**
+          if-no-files-found: warn
