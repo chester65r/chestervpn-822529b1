@@ -14,14 +14,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      audit_logs: {
+        Row: {
+          action: string
+          actor_id: string
+          created_at: string
+          entity_id: string | null
+          entity_type: string | null
+          id: string
+          metadata: Json
+        }
+        Insert: {
+          action: string
+          actor_id: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          metadata?: Json
+        }
+        Update: {
+          action?: string
+          actor_id?: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          metadata?: Json
+        }
+        Relationships: []
+      }
       relay_servers: {
         Row: {
           created_at: string
           host: string
           id: string
+          last_checked_at: string | null
+          last_latency_ms: number | null
           name: string
           notes: string
           port: number
+          status: string
           transport: string
           updated_at: string
           user_id: string
@@ -30,9 +63,12 @@ export type Database = {
           created_at?: string
           host: string
           id?: string
+          last_checked_at?: string | null
+          last_latency_ms?: number | null
           name: string
           notes?: string
           port?: number
+          status?: string
           transport?: string
           updated_at?: string
           user_id: string
@@ -41,9 +77,12 @@ export type Database = {
           created_at?: string
           host?: string
           id?: string
+          last_checked_at?: string | null
+          last_latency_ms?: number | null
           name?: string
           notes?: string
           port?: number
+          status?: string
           transport?: string
           updated_at?: string
           user_id?: string
