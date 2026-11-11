@@ -1,0 +1,33 @@
+# Web CI — install with Bun, run the Vitest suite and the production build.
+# Uploads nothing; the job fails if tests or the build fail.
+name: Web CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Test and build (web)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run tests (vitest run)
+        run: npm test
+
+      - name: Build (vite build)
+        run: npm run build
