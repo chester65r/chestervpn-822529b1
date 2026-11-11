@@ -1,6 +1,6 @@
 # Roadmap
 
-- [ ] Rotate this project's LOVABLE_API_KEY (2026-11-11), then refresh the running server to use the new key.
+- [x] Rotate this project's LOVABLE_API_KEY (2026-11-11): rotation confirmed and new secret stored; preview picks up changed secrets automatically. Published app needs republishing to receive the new key; old key remains valid for about one hour.
 
 - [ ] Add a real VPN server (2026-11-07): no saved relay servers and no Google Cloud management connection found; awaiting provider selection or an owned server address and authorized access. Existing Google trial-only first-test preference remains in effect.
 
