@@ -17,7 +17,7 @@ export function AndroidChecklist() {
   };
 
   return (
-    <section aria-labelledby="android-checklist-title" className="space-y-3 border-t border-border pt-4">
+    <section aria-labelledby="android-checklist-title" className="tc-card space-y-3 p-4 sm:p-5">
       <div className="flex items-start justify-between gap-2">
         <h2 id="android-checklist-title" className="flex items-center gap-2 text-sm font-bold">
           <ClipboardList className="h-4 w-4 shrink-0 text-primary" /> Compatibility checklist

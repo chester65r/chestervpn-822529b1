@@ -38,7 +38,7 @@ export function AwsPanel() {
   if (!signedIn || (status && !status.allowed)) return null;
 
   return (
-    <section className="mt-6 rounded-2xl border border-border bg-card p-4">
+    <section className="tc-card mt-6 p-4 sm:p-5">
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-foreground">AWS servers</h2>
@@ -48,19 +48,19 @@ export function AwsPanel() {
           onClick={load}
           disabled={busy}
           aria-label="Refresh AWS status"
-          className="rounded-lg border border-border p-2 text-muted-foreground hover:text-foreground"
+          className="tc-icon-btn border border-border"
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
         </button>
       </div>
       {status?.allowed && status.error && <p className="text-xs text-destructive">{status.error}</p>}
       {status?.allowed && !status.error && status.servers.length === 0 && (
-        <p className="text-xs text-muted-foreground">No servers in this AWS region yet.</p>
+        <p className="tc-empty">No servers in this AWS region yet.</p>
       )}
       <ul className="space-y-2">
         {status?.allowed &&
           status.servers.map((s) => (
-            <li key={s.id} className="rounded-xl bg-muted p-3 font-mono text-xs">
+            <li key={s.id} className="rounded-xl border border-border bg-background/60 p-3 font-mono text-xs">
               <div className="flex justify-between">
                 <span className="text-foreground">{s.name || s.id}</span>
                 <span className={s.state === "running" ? "text-primary" : "text-muted-foreground"}>{s.state}</span>
