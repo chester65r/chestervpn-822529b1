@@ -344,7 +344,7 @@ function Index() {
               onChange={change}
             />
           )}
-          {tab === "servers" && <><ServiceOverview /><AdditionalAccount /><h2 className="mb-3 text-sm font-semibold">Cloud relay servers</h2><ServersTab onUseServer={useServer} /></>}
+          {tab === "servers" && <><ServiceOverview /><AdditionalAccount simStatus={sim.status} /><h2 className="mb-3 text-sm font-semibold">Cloud relay servers</h2><ServersTab onUseServer={useServer} /></>}
           {tab === "share" && (
             <ShareTab
               exportedCode={exported}
