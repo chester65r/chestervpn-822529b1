@@ -31,7 +31,7 @@ export const ANDROID_COMPATIBILITY_CHECKS: CompatibilityCheck[] = [
   },
   {
     id: "build", title: "Android build & device matrix", status: "unverified",
-    finding: "2026-11-01: fresh debug, unsigned release, instrumentation APK compilation and lint passed with JDK 17, Gradle 8.9 and SDK 34. API 26 x86_64 software emulator completed full boot and exposed the package service, but debug APK installation exceeded the 180-second bound. No instrumentation, library loading or real WireGuard handshake/traffic result passed. Hardware acceleration is unavailable. Earlier API 34 runtime and API 31/33/newer coverage remain unverified. See native/android/verification-2026-11-01.md. Physical devices and an owned reachable WireGuard server remain required.",
+    finding: "2026-11-01: fresh debug, unsigned release, instrumentation APK compilation and lint passed with JDK 17, Gradle 8.9 and SDK 34. API 26 x86_64 software emulator completed full boot and exposed the package service, but debug APK installation exceeded the 180-second bound. No instrumentation, library loading or real WireGuard handshake/traffic result passed. Hardware acceleration is unavailable. Earlier API 34 runtime and API 31/33/newer coverage remain unverified. See native/android/verification-2026-11-01.md. 2026-11-11: a freshly generated project built again with zero source changes (debug APK via the pinned toolchain, 128 Gradle tasks; see ANDROID-BUILD.md), and an owned reachable WireGuard server now exists — but installation and instrumentation on an emulator or device remain NOT RUN. Physical devices remain required.",
     passCriteria: "Record clean debug and release builds with exact Gradle/JDK/AGP versions, and install/start/stop results on API 26, 31, 33, 34 and every newer version you support, including 16 KB page-size devices.",
   },
   {
@@ -76,7 +76,7 @@ export const ANDROID_COMPATIBILITY_CHECKS: CompatibilityCheck[] = [
   },
   {
     id: "release", title: "Deployment & release readiness", status: "unverified",
-    finding: "No production server deployment, security/load assessment, signed APK verification or store-policy review is demonstrated.",
+    finding: "A production WireGuard server deployment exists (the owner's VPS, live since 2026-11-05 with real peer traffic; see the workspace SERVER-SETUP.md), but it predates and does not follow this blueprint's setup script. Security/load assessment, signed APK verification and store-policy review remain undemonstrated.",
     passCriteria: "Record signed release testing, VPN/store disclosures, privacy policy, secret handling and an independent security review before distribution.",
   },
 ];
@@ -93,7 +93,7 @@ export function androidChecklistMarkdown(): string {
   return [
     "# Android / server compatibility checklist",
     "",
-    `NOT PRODUCTION READY. ${counts.blocked} known blockers, ${counts.local} items with local engine tests only, ${counts.unverified} unverified. Native debug/unsigned release/test APK builds and lint passed on 2026-10-31; emulator runtime was blocked before instrumentation. No Android device test has passed. Browser and local engine tests are not Android evidence.`,
+    `NOT PRODUCTION READY. ${counts.blocked} known blockers, ${counts.local} items with local engine tests only, ${counts.unverified} unverified. Native debug/unsigned release/test APK builds and lint passed on 2026-10-31, and a fresh generated project built again on 2026-11-11; emulator runtime was blocked before instrumentation. No Android device test has passed. Browser and local engine tests are not Android evidence.`,
     `Reproduce local packet evidence: ${INTEROP_COMMAND}`,
     "",
     "## Test record",

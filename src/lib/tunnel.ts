@@ -44,6 +44,8 @@ export const HETZNER_SERVER_SPEC = {
   diskGb: 40,
   trafficTb: 20,
   wireguardPort: 51820,
+  /** Public key of the live wg0 server identity (workspace SERVER-SETUP.md). Public keys are safe to share. */
+  wireguardPublicKey: "tq3wgbo6i2A/Fg/nV2II4bk9qjupyksu/IiqLFKZHm8=",
   tlsPort: 443,
   altTlsPort: 8443,
   vpnSubnet: "10.66.66.0/24",

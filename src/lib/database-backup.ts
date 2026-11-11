@@ -1,10 +1,13 @@
 import { z } from 'zod'
+import { TRANSPORT_IDS } from './servers'
 
 // Deliberately omit all free-text fields, including host, name and notes.
 export const BACKUP_COLUMNS = 'id,user_id,port,transport,created_at,updated_at'
 const rowSchema = z.object({
   id: z.uuid(), user_id: z.uuid(), port: z.number().int().min(1).max(65535),
-  transport: z.enum(['websocket', 'tls']),
+  // Accept every transport the relay form can save (incl. WireGuard), not only
+  // websocket/tls; the canonical id list lives with the form in servers.ts.
+  transport: z.enum(TRANSPORT_IDS),
   created_at: z.iso.datetime({ offset: true }), updated_at: z.iso.datetime({ offset: true }),
 })
 

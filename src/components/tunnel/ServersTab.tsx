@@ -514,6 +514,11 @@ export function ServersTab({ onUseServer }: Props) {
           <p className="mt-1 text-xs text-muted-foreground">
             Includes every internet transport and anti-DPI tool built into Tunnel Console (WireGuard, TLS+SNI, WebSocket, HTTP Custom Payload, Corridor Probe, SOCKS5, SSH, and NAT Masquerading).
           </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            <strong className="font-semibold text-foreground">Not deployed:</strong> this relay stack is
+            not running on 2.29.8.194 today — the live server runs WireGuard (wg0, UDP 51820) only, so
+            the transports below are a deployment blueprint, not live endpoints.
+          </p>
         </div>
 
         <div className="grid gap-1.5 sm:grid-cols-2">

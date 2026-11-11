@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PRIMARY_HETZNER_SERVER, SAMPLE_VPS_SERVERS, rowToServer, validateServerInput } from "@/lib/servers";
+import { PRIMARY_HETZNER_SERVER, SAMPLE_VPS_SERVERS, TRANSPORTS, TRANSPORT_IDS, rowToServer, validateServerInput } from "@/lib/servers";
 import {
   SERVER_CONTAINER_FILES,
   SERVER_TRANSPORT_CAPABILITIES,
@@ -76,12 +76,32 @@ describe("deployment commands", () => {
 
   it("provides Hetzner CX23 (2.29.8.194) primary endpoints and safe release/rollback commands", () => {
     expect(PRIMARY_HETZNER_SERVER.host).toBe("2.29.8.194");
-    expect(PRIMARY_HETZNER_SERVER.port).toBe(443);
-    expect(SAMPLE_VPS_SERVERS.every((s) => s.host === "2.29.8.194")).toBe(true);
+    expect(PRIMARY_HETZNER_SERVER.port).toBe(51820);
+    expect(PRIMARY_HETZNER_SERVER.transport).toBe("wireguard");
+    // Only the primary entry may claim the real server, and only as WireGuard
+    // UDP 51820 — no sample may present an invented TLS/WebSocket listener on it.
+    const realHostSamples = SAMPLE_VPS_SERVERS.filter((s) => s.host === "2.29.8.194");
+    expect(realHostSamples).toEqual([PRIMARY_HETZNER_SERVER]);
+    expect(SAMPLE_VPS_SERVERS.filter((s) => s.host !== "2.29.8.194").every((s) => s.host.endsWith(".example.com"))).toBe(true);
     const cmds = getHetznerSafeReleaseCommands("2.29.8.194");
     expect(cmds.bootstrapUser).toContain("deploy-hetzner.sh bootstrap-user");
     expect(cmds.deployRelease).toContain("PUBLIC_HOST=2.29.8.194 ./relay-server/deploy-hetzner.sh deploy 2.29.8.194");
     expect(cmds.rollbackRelease).toContain("./relay-server/deploy-hetzner.sh rollback");
+  });
+});
+
+describe("transports", () => {
+  it("offers WireGuard with its UDP port so the real server can be registered truthfully", () => {
+    const wireguard = TRANSPORTS.find((t) => t.id === "wireguard");
+    expect(wireguard?.label).toContain("WireGuard");
+    expect(wireguard?.label).toContain("51820");
+    expect(validateServerInput({ ...valid, transport: "wireguard", port: "51820" })).toEqual({});
+  });
+
+  it("keeps the canonical transport ids in sync with the form options", () => {
+    expect(TRANSPORT_IDS).toEqual(TRANSPORTS.map((t) => t.id));
+    expect(TRANSPORT_IDS).toContain("websocket");
+    expect(TRANSPORT_IDS).toContain("tls");
   });
 });
 
