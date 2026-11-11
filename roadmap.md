@@ -1,5 +1,9 @@
 # Roadmap
 
+- [x] Rotate this project's LOVABLE_API_KEY (2026-11-11): rotation confirmed and new secret stored; preview picks up changed secrets automatically. Published app needs republishing to receive the new key; old key remains valid for about one hour.
+
+- [ ] Add a real VPN server (2026-11-07): no saved relay servers and no Google Cloud management connection found; awaiting provider selection or an owned server address and authorized access. Existing Google trial-only first-test preference remains in effect.
+
 - [ ] Configure an owned reachable WireGuard server (2026-11-01): user selected Ubuntu/Debian VPS; no provider, endpoint or remote administrative connection supplied, and no server-management connection is available. Safe setup/connection/test guide completed in docs/wireguard-owned-server-testing.md. Awaiting non-secret server identification and authorized access; never collect private keys/passwords/enrollment files in chat. Cloud and additional backend remain unchanged.
 
 - [x] Fix Android emulator APK installation timeout and rerun install/boot checks (2026-11-01 14:35 UTC): complete runner PASS with non-streamed bounded installation, full boot/package readiness, both package read-backs and six real Android credential tests. Seven workflow regression tests PASS. Evidence: native/android/verification-2026-11-01.md.
