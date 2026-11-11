@@ -21,13 +21,12 @@ type Props = {
   onChange: (patch: Partial<TunnelProfile>) => void;
 };
 
-const fieldClass =
-  "w-full rounded-xl border border-input bg-muted px-3.5 py-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring disabled:opacity-50";
+const fieldClass = "tc-field py-3";
 
 function Field({ label, error, children }: { label: string; error?: string | undefined; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-xs font-medium tracking-wider text-muted-foreground">{label}</span>
+      <span className="tc-label">{label}</span>
       {children}
       {error && <span className="mt-1 block text-xs text-destructive">{error}</span>}
     </label>
@@ -50,14 +49,14 @@ export function ConfigTab({
     NETWORK_PROVIDER_PROFILES[0];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {disabled && (
-        <p className="rounded-xl border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+        <p className="rounded-xl border border-chart-4/30 bg-chart-4/10 px-3.5 py-2.5 text-xs text-foreground">
           Disconnect to edit the configuration.
         </p>
       )}
 
-      <div className="space-y-2.5 rounded-2xl border border-primary/25 bg-card p-3.5">
+      <div className="tc-card-accent space-y-3 p-4">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-semibold tracking-wider text-primary">
             HETZNER CX23 ({HETZNER_SERVER_SPEC.ip}) NETWORK & TELECOM PROFILE
@@ -82,7 +81,7 @@ export function ConfigTab({
           ))}
         </select>
         {activeNetProfile && (
-          <div className="rounded-xl border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+          <div className="tc-code px-3 py-2.5 font-sans text-xs text-muted-foreground">
             <p className="text-foreground">{activeNetProfile.description}</p>
             <p className="mt-1 font-mono text-[11px] text-primary">
               Endpoint: {activeNetProfile.profile.ip}:{activeNetProfile.profile.port} · Recommended MTU:{" "}
@@ -154,8 +153,8 @@ export function ConfigTab({
       </Field>
 
       <div>
-        <p className="mb-1.5 text-xs font-medium tracking-wider text-muted-foreground">LIVE PARSED PREVIEW</p>
-        <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-xl border border-border bg-background p-3 font-mono text-xs leading-relaxed text-primary">
+        <p className="tc-label">LIVE PARSED PREVIEW</p>
+        <pre className="tc-code overflow-x-auto whitespace-pre-wrap break-all p-3 text-xs leading-relaxed text-primary">
           {preview}
         </pre>
       </div>

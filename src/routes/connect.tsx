@@ -24,7 +24,7 @@ function CopyBlock({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
   return <div className="space-y-2">
-    <div className="flex items-start gap-2 rounded-md border border-border bg-muted p-3">
+    <div className="tc-card flex items-start gap-2 p-3.5 shadow-none">
       <code className="min-w-0 flex-1 break-all text-sm text-foreground">{text || "Loading address…"}</code>
       <Button variant="ghost" size="icon" disabled={!text} aria-label={label} title={label} onClick={async () => {
         try { await navigator.clipboard.writeText(text); setCopied(true); setError(""); }
@@ -41,11 +41,11 @@ function ConnectionGuide() {
   useEffect(() => { setUrl(new URL("/mcp", window.location.origin).toString()); }, []);
   const claudeLink = `https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=${encodeURIComponent(CONNECTION_APP_NAME)}&connectorUrl=${encodeURIComponent(url)}`;
   const slug = CONNECTION_SLUG;
-  return <main className="mx-auto min-h-dvh max-w-2xl px-5 py-6 sm:px-8 sm:py-10">
-    <Link to="/" className="mb-6 inline-flex items-center gap-2 text-sm text-muted-foreground"><ArrowLeft className="h-4 w-4" />Tunnel Console</Link>
-    <h1 className="text-2xl font-bold">Connect your assistant</h1>
+  return <main className="tc-app-backdrop mx-auto min-h-dvh max-w-2xl px-5 py-6 sm:px-8 sm:py-10">
+    <Link to="/" className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"><ArrowLeft className="h-4 w-4" />Tunnel Console</Link>
+    <h1 className="text-3xl font-bold tracking-tight">Connect your assistant</h1>
     <section className="space-y-3 border-b border-border py-6">
-      <h2 className="text-sm font-semibold text-muted-foreground">MCP SERVER URL</h2>
+      <h2 className="tc-label">MCP SERVER URL</h2>
       <CopyBlock text={url} label="Copy MCP server URL" />
     </section>
     <Tabs value={client} onValueChange={value => setClient(value as Client)} className="mt-6">
@@ -54,7 +54,7 @@ function ConnectionGuide() {
       </TabsList>
     </Tabs>
     <section className="space-y-4 border-b border-border py-6">
-      <h2 className="text-lg font-semibold">Connect</h2>
+      <h2 className="text-lg font-semibold tracking-tight">Connect</h2>
       <ol className="list-decimal space-y-4 pl-5 text-sm leading-relaxed">
         {client === "chatgpt" && <>
           <li>Open <External href="https://chatgpt.com/#settings/Connectors/Advanced">ChatGPT Apps settings</External> and enable Developer mode. Read the risk notice. If unavailable, ask your ChatGPT admin to enable it.</li>
@@ -84,7 +84,7 @@ function ConnectionGuide() {
       </ol>
     </section>
     <section className="space-y-4 py-6">
-      <h2 className="text-lg font-semibold">Refresh after the app changes</h2>
+      <h2 className="text-lg font-semibold tracking-tight">Refresh after the app changes</h2>
       <p className="text-sm text-muted-foreground">After updates are published, refresh your connection to load the latest tools.</p>
       <ol className="list-decimal space-y-4 pl-5 text-sm leading-relaxed">
         {client === "chatgpt" && <><li>Open <External href="https://chatgpt.com/plugins">ChatGPT Plugins</External> and select this app.</li><li>Scroll to “Information” and click “Refresh”.</li><li>If the URL changed, delete the app from Plugins and repeat the connect steps with the latest URL. ChatGPT cannot change an existing app’s URL.</li><li>Start a new chat and ask ChatGPT to use the app.</li></>}

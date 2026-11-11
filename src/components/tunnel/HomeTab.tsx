@@ -79,8 +79,7 @@ const STATUS_COPY: Record<TunnelStatus, string> = {
   connected: "CONNECTED",
 };
 
-const fieldClass =
-  "w-full rounded-xl border border-input bg-muted px-3 py-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring disabled:opacity-50";
+const fieldClass = "tc-field";
 
 function generateWgKey(): string {
   const bytes = new Uint8Array(32);
@@ -255,19 +254,19 @@ export function HomeTab({
   const hetznerDeployCmd = `ssh root@${HETZNER_SERVER_SPEC.ip} "umask 077; printf '%s' '${wgPsk}' > /root/.tc-psk; wg set wg0 peer '${wgPub}' preshared-key /root/.tc-psk allowed-ips ${wgAddressForCmd}; wg-quick save wg0; rm -f /root/.tc-psk"`;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* 1. Unified Hero Status + Connect Action + Speed Telemetry */}
-      <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
+      <div className="grid gap-5 lg:grid-cols-[1.15fr_1fr]">
         <section
-          className={`relative flex flex-col justify-between overflow-hidden rounded-3xl border p-5 text-center shadow-card transition-all duration-700 ${
-            on ? "border-primary/40 bg-card shadow-glow" : "border-border bg-card"
+          className={`tc-hero relative flex flex-col justify-between overflow-hidden p-6 text-center transition-all duration-700 ${
+            on ? "border-primary/40 shadow-glow" : ""
           }`}
         >
           <div>
-            <div className="relative mx-auto mb-3 grid h-20 w-20 place-items-center">
+            <div className="relative mx-auto mb-4 grid h-24 w-24 place-items-center">
               {on && <span className="absolute inset-0 animate-ring rounded-full bg-primary/30" />}
               <span
-                className={`relative grid h-16 w-16 place-items-center rounded-full transition-colors duration-700 ${
+                className={`relative grid h-20 w-20 place-items-center rounded-full shadow-pop transition-colors duration-700 ${
                   on
                     ? "bg-primary text-primary-foreground"
                     : busy
@@ -275,11 +274,11 @@ export function HomeTab({
                       : "bg-muted text-destructive"
                 }`}
               >
-                <ShieldCheck className={`h-8 w-8 ${busy ? "animate-pulse" : ""}`} />
+                <ShieldCheck className={`h-10 w-10 ${busy ? "animate-pulse" : ""}`} />
               </span>
             </div>
             <p
-              className={`font-mono text-lg font-bold tracking-widest transition-colors duration-700 ${
+              className={`font-mono text-xl font-bold tracking-[0.2em] transition-colors duration-700 ${
                 on ? "text-primary" : busy ? "text-foreground" : "text-destructive"
               }`}
             >
@@ -294,7 +293,7 @@ export function HomeTab({
                 {activeNetProfile.name} · MTU {activeNetProfile.recommendedMtu}
               </p>
             )}
-            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 font-mono text-xs text-muted-foreground">
+            <p className="tc-chip tnum mt-3 font-mono">
               <Clock className="h-3 w-3" /> {formatDuration(seconds)}
             </p>
           </div>
@@ -303,38 +302,36 @@ export function HomeTab({
             type="button"
             onClick={onToggle}
             disabled={busy}
-            className={`mt-4 flex w-full items-center justify-center gap-2.5 rounded-2xl py-4 text-sm font-bold tracking-widest transition-all duration-300 active:scale-[0.98] disabled:opacity-70 ${
-              on
-                ? "bg-destructive text-destructive-foreground"
-                : "bg-primary text-primary-foreground shadow-glow"
+            className={`mt-5 w-full py-4 text-base font-bold tracking-widest ${
+              on ? "tc-btn-danger" : "tc-btn-primary"
             }`}
           >
-            <Power className="h-4 w-4" />
+            <Power className="h-5 w-5" />
             {busy ? "CONNECTING…" : on ? "DISCONNECT" : "CONNECT"}
           </button>
         </section>
 
-        <div className="flex flex-col justify-between gap-3">
-          <section className="grid grid-cols-2 gap-3">
-            <div className="rounded-2xl border border-border bg-card p-3.5">
+        <div className="flex flex-col justify-between gap-4">
+          <section className="grid grid-cols-2 gap-4">
+            <div className="tc-card p-4">
               <p className="flex items-center gap-1.5 text-[11px] font-medium tracking-wider text-muted-foreground">
                 <ArrowDown className="h-3.5 w-3.5 text-primary" /> DOWNLOAD{" "}
                 <span className="font-normal">(simulated)</span>
               </p>
-              <p className="mt-1 font-mono text-base font-bold text-primary">{formatSpeed(downSpeed)}</p>
-              <p className="font-mono text-[11px] text-muted-foreground">{formatBytes(totals.rx)} total</p>
+              <p className="tnum mt-1.5 font-mono text-xl font-bold text-primary">{formatSpeed(downSpeed)}</p>
+              <p className="tnum font-mono text-[11px] text-muted-foreground">{formatBytes(totals.rx)} total</p>
             </div>
-            <div className="rounded-2xl border border-border bg-card p-3.5">
+            <div className="tc-card p-4">
               <p className="flex items-center gap-1.5 text-[11px] font-medium tracking-wider text-muted-foreground">
                 <ArrowUp className="h-3.5 w-3.5 text-chart-4" /> UPLOAD{" "}
                 <span className="font-normal">(simulated)</span>
               </p>
-              <p className="mt-1 font-mono text-base font-bold text-chart-4">{formatSpeed(upSpeed)}</p>
-              <p className="font-mono text-[11px] text-muted-foreground">{formatBytes(totals.tx)} total</p>
+              <p className="tnum mt-1.5 font-mono text-xl font-bold text-chart-4">{formatSpeed(upSpeed)}</p>
+              <p className="tnum font-mono text-[11px] text-muted-foreground">{formatBytes(totals.tx)} total</p>
             </div>
           </section>
 
-          <section className="flex-1 rounded-2xl border border-border bg-card p-3.5">
+          <section className="tc-card flex-1 p-4">
             <p className="mb-1.5 text-[11px] font-medium tracking-wider text-muted-foreground">
               LIVE BANDWIDTH <span className="font-normal">(simulated)</span>
             </p>
@@ -344,10 +341,10 @@ export function HomeTab({
       </div>
 
       {/* 2. Hetzner CX23 (ahmed-docker-manager #166592617) Server + 1-Tap Carrier Presets */}
-      <section className="rounded-2xl border border-primary/25 bg-card p-4">
+      <section className="tc-card-accent p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
-            <p className="flex items-center gap-1.5 text-xs font-bold tracking-wider text-primary">
+            <p className="tc-section-title">
               <Server className="h-3.5 w-3.5" /> HETZNER CX23 — {HETZNER_SERVER_SPEC.serverName} (#{HETZNER_SERVER_SPEC.serverId})
             </p>
             <p className="mt-0.5 font-mono text-xs text-foreground">
@@ -388,7 +385,7 @@ export function HomeTab({
         </div>
 
         {probeState && (
-          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-muted/60 px-3 py-2 text-xs">
+          <div className="tc-code mt-3 flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
             <span className="flex items-center gap-1.5 font-medium">
               <Activity className="h-3.5 w-3.5 text-primary" />
               Live Server Status:{" "}
@@ -425,7 +422,7 @@ export function HomeTab({
                   type="button"
                   disabled={disabledEdit}
                   onClick={() => onSelectNetworkProfile(item)}
-                  className={`rounded-xl border px-2.5 py-2 text-left transition-colors disabled:opacity-50 ${
+                  className={`rounded-xl border px-3 py-2.5 text-left transition-all hover:border-primary/40 active:scale-[0.98] disabled:opacity-50 ${
                     selected
                       ? "border-primary bg-primary/10 text-foreground"
                       : "border-border bg-muted/50 text-muted-foreground hover:text-foreground"
@@ -443,10 +440,10 @@ export function HomeTab({
       </section>
 
       {/* 3. Merged Inline Connection Configuration + Saved Profiles / Share */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <section className="space-y-3 rounded-2xl border border-border bg-card p-4">
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section className="tc-card space-y-4 p-5">
           <div className="flex items-center justify-between gap-2">
-            <p className="flex items-center gap-1.5 text-xs font-bold tracking-wider text-primary">
+            <p className="tc-section-title">
               <SlidersHorizontal className="h-3.5 w-3.5" /> INLINE ENDPOINT, SNI & PAYLOAD EDITOR
             </p>
             {disabledEdit && (
@@ -456,7 +453,7 @@ export function HomeTab({
 
           <div className="grid grid-cols-[1fr_5.5rem_1fr] gap-2">
             <label className="block">
-              <span className="mb-1 block text-[10px] font-medium text-muted-foreground">SERVER IP / HOST</span>
+              <span className="tc-label">SERVER IP / HOST</span>
               <input
                 aria-label="Server IP or domain"
                 className={fieldClass}
@@ -467,7 +464,7 @@ export function HomeTab({
               {errors.ip && <span className="mt-0.5 block text-[10px] text-destructive">{errors.ip}</span>}
             </label>
             <label className="block">
-              <span className="mb-1 block text-[10px] font-medium text-muted-foreground">PORT</span>
+              <span className="tc-label">PORT</span>
               <input
                 aria-label="Server Port"
                 className={fieldClass}
@@ -479,7 +476,7 @@ export function HomeTab({
               {errors.port && <span className="mt-0.5 block text-[10px] text-destructive">{errors.port}</span>}
             </label>
             <label className="block">
-              <span className="mb-1 block text-[10px] font-medium text-muted-foreground">ROUTE PRESET</span>
+              <span className="tc-label">ROUTE PRESET</span>
               <select
                 aria-label="Route preset"
                 className={fieldClass}
@@ -497,7 +494,7 @@ export function HomeTab({
           </div>
 
           <label className="block">
-            <span className="mb-1 block text-[10px] font-medium text-muted-foreground">SERVER NAME (TLS SNI)</span>
+            <span className="tc-label">SERVER NAME (TLS SNI)</span>
             <input
               aria-label="Server Name SNI"
               className={fieldClass}
@@ -509,7 +506,7 @@ export function HomeTab({
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-[10px] font-medium text-muted-foreground">
+            <span className="tc-label">
               HANDSHAKE PAYLOAD (<code className="font-mono text-primary">[host]</code>{" "}
               <code className="font-mono text-primary">[crlf]</code>)
             </span>
@@ -523,9 +520,9 @@ export function HomeTab({
             />
           </label>
 
-          <div className="rounded-xl border border-border bg-background p-2.5">
+          <div className="tc-code p-3">
             <p className="mb-1 text-[10px] font-medium tracking-wider text-muted-foreground">LIVE PARSED PAYLOAD</p>
-            <pre className="max-h-20 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] text-primary">
+            <pre className="max-h-20 overflow-x-auto whitespace-pre-wrap break-all text-[11px] text-primary">
               {payloadPreview}
             </pre>
           </div>
@@ -533,10 +530,10 @@ export function HomeTab({
 
         {/* 4. Merged All-in-One Android + WireGuard + Saved Profiles / Share */}
         <div className="space-y-4">
-          <section className="space-y-2.5 rounded-2xl border border-primary/25 bg-card p-4">
+          <section className="tc-card-accent space-y-3 p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="flex items-center gap-1.5 text-xs font-bold tracking-wider text-primary">
+                <p className="tc-section-title">
                   <Smartphone className="h-3.5 w-3.5" /> ALL-IN-ONE ANDROID & WIREGUARD HUB
                 </p>
                 <p className="text-[11px] text-muted-foreground">
@@ -580,7 +577,7 @@ export function HomeTab({
 
             <div className="grid gap-2 sm:grid-cols-2">
               <label className="block">
-                <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                <span className="tc-label">
                   Client tunnel address
                 </span>
                 <input
@@ -593,7 +590,7 @@ export function HomeTab({
                 </span>
               </label>
               <label className="block">
-                <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                <span className="tc-label">
                   Server public key
                 </span>
                 <input
@@ -607,7 +604,7 @@ export function HomeTab({
                 </span>
               </label>
             </div>
-            <p className="break-all rounded-xl border border-border bg-background p-2.5 font-mono text-[10px] text-muted-foreground">
+            <p className="tc-code break-all p-3 text-[10px] text-muted-foreground">
               Device public key: {wgPub}
             </p>
 
@@ -633,7 +630,7 @@ export function HomeTab({
             </div>
 
             {previewTab !== "none" && (
-              <pre className="max-h-48 overflow-auto rounded-xl border border-border bg-background p-2.5 font-mono text-[10px] leading-relaxed text-foreground">
+              <pre className="tc-code max-h-48 overflow-auto p-3 text-[10px] leading-relaxed text-foreground">
                 <code>
                   {previewTab === "android-kt"
                     ? ALL_IN_ONE_ANDROID_KOTLIN
@@ -645,9 +642,9 @@ export function HomeTab({
             )}
           </section>
 
-          <section className="space-y-2.5 rounded-2xl border border-border bg-card p-4">
+          <section className="tc-card space-y-3 p-5">
             <div className="flex items-center justify-between gap-2">
-              <p className="flex items-center gap-1.5 text-xs font-bold tracking-wider text-primary">
+              <p className="tc-section-title">
                 <Share2 className="h-3.5 w-3.5" /> QUICK SAVE & TUNNEL:// SHARE / IMPORT
               </p>
               {onExport && (
@@ -658,7 +655,7 @@ export function HomeTab({
             </div>
 
             {exportedCode && (
-              <pre className="max-h-20 overflow-auto whitespace-pre-wrap break-all rounded-xl border border-border bg-background p-2 font-mono text-[10px] text-muted-foreground">
+              <pre className="tc-code max-h-20 overflow-auto whitespace-pre-wrap break-all p-2.5 text-[10px] text-muted-foreground">
                 {exportedCode}
               </pre>
             )}
@@ -718,7 +715,7 @@ export function HomeTab({
                 {saved.map((s) => (
                   <li
                     key={s.id}
-                    className="flex items-center gap-2 rounded-xl border border-border bg-background px-2.5 py-1.5"
+                    className="flex items-center gap-2 rounded-xl border border-border bg-background/60 px-3 py-2 transition-colors hover:border-primary/30"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-xs font-medium">{s.name}</p>
@@ -730,7 +727,7 @@ export function HomeTab({
                       type="button"
                       onClick={() => onLoad?.(s.id)}
                       aria-label={`Load ${s.name}`}
-                      className="rounded p-1.5 text-primary hover:bg-muted"
+                      className="rounded-lg p-1.5 text-primary transition-colors hover:bg-muted"
                     >
                       <Upload className="h-3.5 w-3.5" />
                     </button>
@@ -738,7 +735,7 @@ export function HomeTab({
                       type="button"
                       onClick={() => onDelete?.(s.id)}
                       aria-label={`Delete ${s.name}`}
-                      className="rounded p-1.5 text-destructive hover:bg-muted"
+                      className="rounded-lg p-1.5 text-destructive transition-colors hover:bg-muted"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -751,9 +748,9 @@ export function HomeTab({
       </div>
 
       {/* 5. AI Connection Diagnostics Helper */}
-      <section className="rounded-2xl border border-border bg-card p-4" aria-live="polite">
+      <section className="tc-card p-5" aria-live="polite">
         <div className="flex items-center justify-between gap-3">
-          <p className="flex items-center gap-1.5 text-xs font-medium tracking-wider text-muted-foreground">
+          <p className="tc-section-title">
             <Sparkles className="h-3.5 w-3.5 text-primary" /> AI CONNECTION HELPER
           </p>
           <Button size="sm" variant="secondary" onClick={ask} disabled={asking}>
