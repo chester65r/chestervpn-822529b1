@@ -143,6 +143,23 @@ export const NETWORK_PROVIDER_PROFILES: NetworkProviderProfile[] = [
         "GET / HTTP/1.1[crlf]Host: [host]:8443[crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]X-Tunnel-Profile: hetzner-alt-8443[crlf]",
     },
   },
+  {
+    id: "strict-dpi-bypass",
+    name: "Strict Deep Packet Inspection (DPI) Bypass & Obfuscated SNI",
+    networkType: "Restricted ISP / Censored Firewall / DPI Bypass",
+    description:
+      "Advanced anti-DPI obfuscation profile utilizing fragmented TLS SNI headers, custom User-Agent spoofing, and randomized keepalive padding targeting the Hetzner CX23 gateway.",
+    recommendedMtu: 1280,
+    keepAliveIntervalSec: 10,
+    transportMode: "tls-ws",
+    profile: {
+      ip: HETZNER_SERVER_SPEC.ip,
+      port: "443",
+      sni: HETZNER_SERVER_SPEC.reverseDns,
+      payload:
+        "GET /cdn/websocket HTTP/1.1[crlf]Host: [host][crlf]User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36[crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]Sec-WebSocket-Protocol: tunnel-v2[crlf]X-Bypass-DPI: true[crlf]",
+    },
+  },
 ];
 
 export function getNetworkProviderProfile(id: string): NetworkProviderProfile | undefined {
