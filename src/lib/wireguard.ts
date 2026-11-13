@@ -180,6 +180,13 @@ export function isIpv4(value: string): boolean {
 export function isEndpointHost(value: string): boolean {
   return isIpv4(value) || (HOST.test(value) && !/^\d+(\.\d+)*$/.test(value));
 }
+
+/** Checks whether a peer or client keypair exceeds the recommended rotation window (default 90 days). */
+export function needsKeyRotation(createdAtEpochMs: number, maxAgeDays = 90): boolean {
+  const ageMs = Date.now() - createdAtEpochMs;
+  const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+  return ageMs > maxAgeMs;
+}
 const portOk = (port: number) => Number.isInteger(port) && port >= 1 && port <= 65535;
 // 1280 is the IPv6 minimum; 1420 is the WireGuard default for a 1500-byte underlay.
 const mtuOk = (mtu: number) => Number.isInteger(mtu) && mtu >= 1280 && mtu <= 1420;
