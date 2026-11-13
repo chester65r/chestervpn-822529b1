@@ -278,7 +278,7 @@ export const checkRelayServer = createServerFn({ method: "POST" })
         last_latency_ms: latencyMs,
       })
       .eq("id", input.id)
-      .eq("user_id", context.userId);
+      .eq("owner_id", context.userId);
 
     await context.supabase.from("audit_logs").insert({
       actor_id: context.userId,
