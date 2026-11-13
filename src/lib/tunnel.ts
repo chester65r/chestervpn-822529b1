@@ -160,6 +160,40 @@ export const NETWORK_PROVIDER_PROFILES: NetworkProviderProfile[] = [
         "GET /cdn/websocket HTTP/1.1[crlf]Host: [host][crlf]User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36[crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]Sec-WebSocket-Protocol: tunnel-v2[crlf]X-Bypass-DPI: true[crlf]",
     },
   },
+  {
+    id: "stc-ksa-5g-cgnat",
+    name: "STC KSA 4G/5G (Saudi Telecom Carrier NAT Optimized)",
+    networkType: "Saudi Telecom (STC KSA Mobile Data & Fiber)",
+    description:
+      "Specialized profile optimized for STC KSA network gateways (AS25019 / AS39386) with 1280 MTU, aggressive 12s keepalive, and reverse-DNS SNI over port 443.",
+    recommendedMtu: 1280,
+    keepAliveIntervalSec: 12,
+    transportMode: "carrier-cgnat-safe",
+    profile: {
+      ip: HETZNER_SERVER_SPEC.ip,
+      port: "443",
+      sni: HETZNER_SERVER_SPEC.reverseDns,
+      payload:
+        "GET /stc/v2/stream HTTP/1.1[crlf]Host: [host][crlf]X-Carrier: STC-KSA[crlf]Connection: Upgrade, Keep-Alive[crlf]Upgrade: websocket[crlf]Cache-Control: no-store[crlf]",
+    },
+  },
+  {
+    id: "mobily-ksa-lte-bypass",
+    name: "Mobily KSA (Etihad Etisalat Mobile Data & CGNAT)",
+    networkType: "Mobily KSA (Etihad Etisalat Mobile & Broadband)",
+    description:
+      "Tuned specifically for Mobily KSA infrastructure (AS2914 / AS39386) featuring chunked HTTP header padding, 1280 MTU, and 15s persistent keepalive to defeat middlebox throttling.",
+    recommendedMtu: 1280,
+    keepAliveIntervalSec: 15,
+    transportMode: "carrier-cgnat-safe",
+    profile: {
+      ip: HETZNER_SERVER_SPEC.ip,
+      port: "443",
+      sni: HETZNER_SERVER_SPEC.reverseDns,
+      payload:
+        "GET /mobily/ws/connect HTTP/1.1[crlf]Host: [host][crlf]X-Operator: Mobily-KSA[crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]Sec-WebSocket-Version: 13[crlf]",
+    },
+  },
 ];
 
 export function getNetworkProviderProfile(id: string): NetworkProviderProfile | undefined {
