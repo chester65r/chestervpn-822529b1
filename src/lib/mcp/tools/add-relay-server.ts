@@ -23,7 +23,7 @@ export default defineTool({
     const { name, host, port, transport, notes } = args;
 
     const { data, error } = await client.from("relay_servers").insert({
-      user_id: userId,
+      owner_id: userId,
       name: name.trim(),
       host: host.trim(),
       port,
