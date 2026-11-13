@@ -56,6 +56,10 @@ describe("Hetzner CX23 (2.29.8.194 / ahmed-docker-manager #166592617) infrastruc
       expect(parsed.endsWith("\r\n\r\n")).toBe(true);
     }
     expect(getNetworkProviderProfile("telecom-mobile-cgnat")?.recommendedMtu).toBe(1280);
+    expect(getNetworkProviderProfile("stc-ksa-5g-cgnat")?.recommendedMtu).toBe(1280);
+    expect(getNetworkProviderProfile("mobily-ksa-lte-bypass")?.recommendedMtu).toBe(1280);
+    expect(getNetworkProviderProfile("stc-ksa-5g-cgnat")?.profile.ip).toBe("2.29.8.194");
+    expect(getNetworkProviderProfile("mobily-ksa-lte-bypass")?.profile.ip).toBe("2.29.8.194");
   });
 });
 
