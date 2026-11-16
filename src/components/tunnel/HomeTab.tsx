@@ -255,21 +255,7 @@ export function HomeTab({
     }
   };
 
-  useEffect(() => {
-    void probeLiveServer();
-    // Run an initial live probe against the server endpoint on first mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (status !== "connected") return;
-    const id = window.setInterval(() => {
-      void probeLiveServer();
-    }, 10_000);
-    return () => window.clearInterval(id);
-    // Re-probe live server latency every 10s while connected
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, profile.ip, profile.port, profile.sni, networkProfileId]);
+  // Endpoint probes run on explicit user action ("Probe 2.29.8.194") rather than automatic background polling.
 
   const on = status === "connected";
   const busy = status === "connecting";

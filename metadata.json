@@ -1,6 +1,6 @@
 {
   "name": "Tunnel Console",
-  "description": "Native Android VPN, Google Cloud and Hetzner VPS Quick Connect, real TUN interface telemetry, and HTTP Payload Generator.",
+  "description": "Mobile-first network configuration console, WireGuard key provisioner, and Android VpnService studio blueprint.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

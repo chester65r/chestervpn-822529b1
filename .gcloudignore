@@ -1,0 +1,8 @@
+node_modules/
+.git/
+.gradle/
+.android/
+interop/
+native/
+MIGRATE/
+.playwright-cli/

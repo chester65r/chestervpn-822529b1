@@ -1,5 +1,3 @@
-import net from "node:net";
-import tls from "node:tls";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getAuditLogs, recordAuditEvent } from "@/lib/audit";
@@ -48,17 +46,15 @@ function isBlockedHost(host: string): boolean {
 }
 
 /**
- * Probes a relay endpoint over HTTPS (/health), falling back to a TLS 1.3 socket
- * handshake (supporting self-signed IP certificates on 2.29.8.194) and raw TCP check.
+ * Probes a relay endpoint over standard HTTPS (/health) without opening raw TCP/SSH sockets.
  */
 async function probeRelayEndpoint(
   host: string,
   port: number,
-  sniHost?: string,
+  _sniHost?: string,
 ): Promise<RelayProbeResult> {
   const started = performance.now();
 
-  // 1. Try standard HTTPS /health fetch first
   try {
     const response = await fetch(`https://${host}:${port}/health`, {
       method: "HEAD",
@@ -75,122 +71,29 @@ async function probeRelayEndpoint(
       tcpReachable: true,
       relayNode,
     };
-  } catch {
-    // Fall through to TLS socket probe (handles self-signed IP certificates on 2.29.8.194)
-  }
-
-  // 2. Try TLS socket handshake + GET /health (allows self-signed certificate on IP endpoints)
-  const tlsResult = await new Promise<RelayProbeResult | null>((resolve) => {
-    const tlsStarted = performance.now();
-    let settled = false;
-    const finish = (val: RelayProbeResult | null) => {
-      if (!settled) {
-        settled = true;
-        resolve(val);
-      }
-    };
-
-    const socket = tls.connect(
-      {
-        host,
-        port,
-        servername: sniHost && !/^\d+\.\d+\.\d+\.\d+$/.test(sniHost) ? sniHost : undefined,
-        rejectUnauthorized: false,
-        timeout: 3_500,
-      },
-      () => {
-        const req =
-          `GET /health HTTP/1.1\r\n` +
-          `Host: ${sniHost || host}\r\n` +
-          `User-Agent: TunnelConsole-HealthProbe/1.0\r\n` +
-          `Connection: close\r\n\r\n`;
-        socket.write(req);
-      },
-    );
-
-    let buf = "";
-    socket.on("data", (chunk) => {
-      buf += chunk.toString("utf8");
-      if (buf.includes("\r\n\r\n") || buf.length > 2048) {
-        const latencyMs = Math.round(performance.now() - tlsStarted);
-        socket.destroy();
-        const is200 = /^HTTP\/1\.[01]\s+200\b/i.test(buf);
-        const isHttp = /^HTTP\/1\.[01]\s+\d{3}\b/i.test(buf);
-        const nodeMatch = buf.match(/x-relay-node:\s*([^\r\n]+)/i);
-        finish({
-          status: is200 ? "online" : "degraded",
-          latencyMs,
-          errorCode: is200 ? null : isHttp ? "HTTP_NON_200" : "TLS_HANDSHAKE_ONLY",
-          tlsEstablished: true,
-          tcpReachable: true,
-          relayNode: nodeMatch?.[1]?.trim() ?? null,
-        });
-      }
-    });
-
-    socket.on("timeout", () => {
-      socket.destroy();
-      finish(null);
-    });
-    socket.on("error", () => {
-      socket.destroy();
-      finish(null);
-    });
-    socket.on("close", () => {
-      finish(null);
-    });
-  });
-
-  if (tlsResult) return tlsResult;
-
-  // 3. Fallback raw TCP reachability check
-  return new Promise<RelayProbeResult>((resolve) => {
-    const tcpStarted = performance.now();
-    let settled = false;
-    const finish = (val: RelayProbeResult) => {
-      if (!settled) {
-        settled = true;
-        resolve(val);
-      }
-    };
-
-    const rawSocket = net.connect({ host, port, timeout: 3_000 }, () => {
-      const latencyMs = Math.round(performance.now() - tcpStarted);
-      rawSocket.destroy();
-      finish({
+  } catch (err) {
+    const latencyMs = Math.round(performance.now() - started);
+    const msg = err instanceof Error ? err.message : String(err);
+    const isCertOrTls = /certificate|self-signed|tls|ssl/i.test(msg);
+    if (isCertOrTls) {
+      return {
         status: "degraded",
         latencyMs,
-        errorCode: "TCP_OPEN_TLS_PENDING",
-        tlsEstablished: false,
+        errorCode: "TLS_HANDSHAKE_ONLY",
+        tlsEstablished: true,
         tcpReachable: true,
         relayNode: null,
-      });
-    });
-
-    rawSocket.on("timeout", () => {
-      rawSocket.destroy();
-      finish({
-        status: "offline",
-        latencyMs: null,
-        errorCode: "TIMEOUT",
-        tlsEstablished: false,
-        tcpReachable: false,
-        relayNode: null,
-      });
-    });
-
-    rawSocket.on("error", (err: NodeJS.ErrnoException) => {
-      rawSocket.destroy();
-      finish({
-        status: "offline",
-        latencyMs: null,
-        errorCode: err.code === "ECONNREFUSED" ? "CONN_REFUSED" : "UNREACHABLE",
-        tlsEstablished: false,
-        tcpReachable: false,
-        relayNode: null,
-      });
-    });
-  });
+      };
+    }
+    return {
+      status: "offline",
+      latencyMs: null,
+      errorCode: /timeout|aborted/i.test(msg) ? "TIMEOUT" : "UNREACHABLE",
+      tlsEstablished: false,
+      tcpReachable: false,
+      relayNode: null,
+    };
+  }
 }
 
 async function notifyCircleCiDeployHook(payload: {
@@ -247,7 +150,7 @@ export const probeHetznerServer = createServerFn({ method: "POST" })
         ? input.port
         : HETZNER_SERVER_SPEC.tlsPort;
     const sni = input?.sni?.trim() || targetHost;
-    const networkProfileId = input?.networkProfileId ?? "hetzner-tls-direct";
+    const networkProfileId = input?.networkProfileId ?? "stc-ksa-5g-cgnat";
 
     const probe = await probeRelayEndpoint(targetHost, port, sni);
 
@@ -276,40 +179,9 @@ export const probeHetznerServer = createServerFn({ method: "POST" })
   });
 
 const RELAY_SERVICE_PORTS = [
-  { port: 443, service: "sing-box VLESS-Reality", useTls: true },
-  { port: 8443, service: "sing-box Trojan-TLS", useTls: true },
-  { port: 22, service: "SSH Management", useTls: false },
+  { port: 443, service: "VLESS-Reality / WSS (443)" },
+  { port: 8443, service: "Trojan-TLS (8443)" },
 ] as const;
-
-function probeTcpPort(host: string, port: number): Promise<{ tcpReachable: boolean; latencyMs: number | null; errorCode: string | null }> {
-  return new Promise((resolve) => {
-    const started = performance.now();
-    let settled = false;
-    const finish = (val: { tcpReachable: boolean; latencyMs: number | null; errorCode: string | null }) => {
-      if (!settled) {
-        settled = true;
-        resolve(val);
-      }
-    };
-    const sock = net.connect({ host, port, timeout: 2_500 }, () => {
-      const latencyMs = Math.round(performance.now() - started);
-      sock.destroy();
-      finish({ tcpReachable: true, latencyMs, errorCode: null });
-    });
-    sock.on("timeout", () => {
-      sock.destroy();
-      finish({ tcpReachable: false, latencyMs: null, errorCode: "TIMEOUT" });
-    });
-    sock.on("error", (err: NodeJS.ErrnoException) => {
-      sock.destroy();
-      finish({
-        tcpReachable: false,
-        latencyMs: null,
-        errorCode: err.code === "ECONNREFUSED" ? "CONN_REFUSED" : "UNREACHABLE",
-      });
-    });
-  });
-}
 
 export const probeHetznerMultiPort = createServerFn({ method: "POST" })
   .inputValidator((d: { host?: string; sni?: string }) => d)
@@ -322,27 +194,15 @@ export const probeHetznerMultiPort = createServerFn({ method: "POST" })
 
     const results = await Promise.all(
       RELAY_SERVICE_PORTS.map(async (item) => {
-        if (item.useTls) {
-          const probe = await probeRelayEndpoint(targetHost, item.port, sni);
-          return {
-            port: item.port,
-            service: item.service,
-            status: probe.status,
-            latencyMs: probe.latencyMs,
-            tcpReachable: probe.tcpReachable,
-            tlsEstablished: probe.tlsEstablished,
-            errorCode: probe.errorCode,
-          };
-        }
-        const tcp = await probeTcpPort(targetHost, item.port);
+        const probe = await probeRelayEndpoint(targetHost, item.port, sni);
         return {
           port: item.port,
           service: item.service,
-          status: tcp.tcpReachable ? ("online" as const) : ("offline" as const),
-          latencyMs: tcp.latencyMs,
-          tcpReachable: tcp.tcpReachable,
-          tlsEstablished: false,
-          errorCode: tcp.errorCode,
+          status: probe.status,
+          latencyMs: probe.latencyMs,
+          tcpReachable: probe.tcpReachable,
+          tlsEstablished: probe.tlsEstablished,
+          errorCode: probe.errorCode,
         };
       }),
     );

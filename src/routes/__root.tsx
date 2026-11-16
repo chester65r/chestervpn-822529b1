@@ -85,13 +85,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         name: "description",
         content:
-          "Native Android VPN, Google Cloud and Hetzner VPS Quick Connect, real TUN interface telemetry, and HTTP Payload Generator.",
+          "Mobile-first network configuration console, WireGuard key provisioner, and Android VpnService studio blueprint.",
       },
       { property: "og:title", content: "Tunnel Console" },
       {
         property: "og:description",
         content:
-          "Native Android VPN, Google Cloud and Hetzner VPS Quick Connect, real TUN interface telemetry, and HTTP Payload Generator.",
+          "Mobile-first network configuration console, WireGuard key provisioner, and Android VpnService studio blueprint.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
