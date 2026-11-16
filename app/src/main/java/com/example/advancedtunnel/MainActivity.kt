@@ -918,7 +918,7 @@ private fun ServersScreen(
         AlertDialog(
             onDismissRequest = { showImportDialog = false },
             containerColor = Color(0xFF101827),
-            titleColor = Color(0xFFF8FAFC),
+            titleContentColor = Color(0xFFF8FAFC),
             title = { Text("Import VLESS-Reality Link") },
             text = {
                 Column {
