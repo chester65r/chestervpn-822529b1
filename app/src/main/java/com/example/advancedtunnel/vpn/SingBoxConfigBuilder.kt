@@ -2,16 +2,15 @@ package com.example.advancedtunnel.vpn
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.URI
+import java.net.URLDecoder
 
 /**
- * Generates validated sing-box (`io.nekohasekai.libbox`) client JSON configurations using:
- * - gVisor TUN inbound (`172.19.0.1/30`, MTU 1280–1500, auto_route, strict_route, sniff)
- * - STC Carrier Profile: VLESS + XTLS-Vision + Reality over port 443 with configurable SNI
- *   (`www.stc.com.sa`) and ClientHello fragmentation at the SNI boundary (offset 5–15 bytes).
- * - Mobily Carrier Profile: VLESS over WebSocket + TLS 1.3 (`vless-ws-tls`) fronted by CDN
- *   (Cloudflare/Fastly) on port 443 with explicit custom `Host` header, WebSocket path, and
- *   uTLS Chrome JA4 fingerprint (`chrome`).
- * - Trojan + TLS 1.3 fallback on port 8443.
+ * Generates verified, standard sing-box (`io.nekohasekai.libbox`) client JSON configurations using:
+ * - gVisor TUN inbound (`172.19.0.1/30`, configurable MTU 1280–1500, auto_route, strict_route, sniff)
+ * - VLESS + XTLS-Vision + Reality over port 443 with customizable SNI and uTLS Chrome/iOS fingerprinting
+ * - Cloudflare DNS (`udp://1.1.1.1`) hijacked inside userspace for clean Anti-DPI domain resolution
+ * - Fast import parser for standard `vless://` and `trojan://` links from clipboard
  */
 object SingBoxConfigBuilder {
 
@@ -27,7 +26,7 @@ object SingBoxConfigBuilder {
     const val DEFAULT_MOBILY_CDN_HOST = "cdn.mobily.com.sa"
     const val DEFAULT_MOBILY_WS_PATH = "/cdn-ws"
     const val DEFAULT_TUN_CIDR = "172.19.0.1/30"
-    const val DEFAULT_TUN_MTU = 1500
+    const val DEFAULT_TUN_MTU = 1400
     const val DEFAULT_DNS_SERVER = "1.1.1.1"
 
     enum class Protocol(val id: String) {
@@ -42,6 +41,7 @@ object SingBoxConfigBuilder {
     }
 
     data class ClientConfig(
+        val name: String = "Hetzner Frankfurt",
         val protocol: Protocol = Protocol.VLESS_REALITY,
         val serverHost: String = DEFAULT_SERVER_HOST,
         val serverPort: Int = DEFAULT_VLESS_PORT,
@@ -53,8 +53,8 @@ object SingBoxConfigBuilder {
         val wsHost: String = DEFAULT_MOBILY_CDN_HOST,
         val wsPath: String = DEFAULT_MOBILY_WS_PATH,
         val utlsFingerprint: String = "chrome",
-        val tlsFragmentEnabled: Boolean = true,
-        val tlsRecordFragmentEnabled: Boolean = true,
+        val tlsFragmentEnabled: Boolean = false,
+        val tlsRecordFragmentEnabled: Boolean = false,
         val sniSplitMinBytes: Int = 5,
         val sniSplitMaxBytes: Int = 15,
         val fragmentFallbackDelay: String = "500ms",
@@ -76,116 +76,113 @@ object SingBoxConfigBuilder {
     }
 
     /**
-     * Builds a real carrier-specific `ClientConfig` mapped directly to the native `sing-box` engine:
-     * - `"stc"` / `"stc-ksa-5g-cgnat"`: VLESS + Reality over port 443, SNI `www.stc.com.sa`,
-     *   TLS 1.3 handshake, and ClientHello SNI boundary fragmentation (offset 5–15 bytes).
-     * - `"mobily"` / `"mobily-ksa-lte-bypass"`: VLESS + WebSocket over TLS (WSS) fronted by CDN
-     *   over port 443, explicit CDN `Host` header (`cdn.mobily.com.sa`), path `/cdn-ws`, and
-     *   uTLS Chrome JA4 profile (`chrome`).
+     * Parses standard vless:// URI strings like:
+     * vless://2df2fc0f-f185-47ad-bc88-d2182c52d1b0@2.29.8.194:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.microsoft.com&fp=chrome&pbk=2I0TJ_Jp7TufY2ZyYWW97BRuHoCAiKrUDWjRGXvC8Es&sid=2f09854ba76a8389&type=tcp#Hetzner-VLESS
      */
-    fun buildCarrierProfileConfig(
-        carrierId: String,
-        serverHost: String = DEFAULT_SERVER_HOST,
-        serverPort: Int = DEFAULT_VLESS_PORT,
-        customSni: String? = null,
-        customCdnHost: String? = null,
-        customWsPath: String? = null,
-        uuid: String = DEFAULT_UUID,
-        realityPublicKey: String = DEFAULT_REALITY_PUBLIC_KEY,
-        realityShortId: String = DEFAULT_REALITY_SHORT_ID,
-        trojanPassword: String = "",
-        excludePackages: List<String> = emptyList()
-    ): ClientConfig {
-        val normalized = carrierId.trim().lowercase()
-        val host = serverHost.trim().ifEmpty { DEFAULT_SERVER_HOST }
-        return when {
-            normalized.contains("stc") -> {
-                val sni = customSni?.trim()?.takeIf { it.isNotEmpty() } ?: DEFAULT_STC_SNI
-                ClientConfig(
-                    protocol = Protocol.VLESS_REALITY,
-                    serverHost = host,
-                    serverPort = if (serverPort in 1..65535) serverPort else DEFAULT_VLESS_PORT,
-                    sniHost = sni,
-                    uuid = uuid,
-                    realityPublicKey = realityPublicKey,
-                    realityShortId = realityShortId,
-                    utlsFingerprint = "chrome",
-                    tlsFragmentEnabled = true,
-                    tlsRecordFragmentEnabled = true,
-                    sniSplitMinBytes = 5,
-                    sniSplitMaxBytes = 15,
-                    fragmentFallbackDelay = "500ms",
-                    mtu = 1280,
-                    strictRoute = true,
-                    excludePackages = excludePackages
-                )
+    fun parseVlessUrl(rawUrl: String): ClientConfig? {
+        val trimmed = rawUrl.trim()
+        if (!trimmed.startsWith("vless://", ignoreCase = true)) return null
+        return try {
+            val uri = URI(trimmed)
+            val uuid = uri.userInfo ?: DEFAULT_UUID
+            val host = uri.host ?: DEFAULT_SERVER_HOST
+            val port = if (uri.port in 1..65535) uri.port else DEFAULT_VLESS_PORT
+            val queryParams = mutableMapOf<String, String>()
+            uri.rawQuery?.split("&")?.forEach { pair ->
+                val parts = pair.split("=", limit = 2)
+                if (parts.size == 2) {
+                    val key = URLDecoder.decode(parts[0], "UTF-8")
+                    val value = URLDecoder.decode(parts[1], "UTF-8")
+                    queryParams[key] = value
+                }
             }
-            normalized.contains("mobily") -> {
-                val sni = customSni?.trim()?.takeIf { it.isNotEmpty() } ?: DEFAULT_MOBILY_SNI
-                val cdnHost = customCdnHost?.trim()?.takeIf { it.isNotEmpty() } ?: DEFAULT_MOBILY_CDN_HOST
-                val wsPath = customWsPath?.trim()?.takeIf { it.isNotEmpty() } ?: DEFAULT_MOBILY_WS_PATH
-                ClientConfig(
-                    protocol = Protocol.VLESS_WS_TLS,
-                    serverHost = host,
-                    serverPort = if (serverPort in 1..65535) serverPort else DEFAULT_VLESS_PORT,
-                    sniHost = sni,
-                    uuid = uuid,
-                    wsHost = cdnHost,
-                    wsPath = if (wsPath.startsWith("/")) wsPath else "/$wsPath",
-                    utlsFingerprint = "chrome",
-                    tlsFragmentEnabled = true,
-                    tlsRecordFragmentEnabled = true,
-                    sniSplitMinBytes = 5,
-                    sniSplitMaxBytes = 15,
-                    fragmentFallbackDelay = "500ms",
-                    mtu = 1280,
-                    strictRoute = true,
-                    excludePackages = excludePackages
-                )
+            val remark = uri.fragment?.let { URLDecoder.decode(it, "UTF-8") } ?: "Custom Server"
+            val sni = queryParams["sni"] ?: DEFAULT_REALITY_SNI
+            val pbk = queryParams["pbk"] ?: DEFAULT_REALITY_PUBLIC_KEY
+            val sid = queryParams["sid"] ?: DEFAULT_REALITY_SHORT_ID
+            val fp = queryParams["fp"] ?: "chrome"
+            val type = queryParams["type"] ?: "tcp"
+            val path = queryParams["path"] ?: DEFAULT_MOBILY_WS_PATH
+            val hostHeader = queryParams["host"] ?: sni
+
+            val protocol = if (type.equals("ws", ignoreCase = true)) {
+                Protocol.VLESS_WS_TLS
+            } else {
+                Protocol.VLESS_REALITY
             }
-            normalized.contains("8443") || normalized.contains("trojan") -> {
-                val sni = customSni?.trim()?.takeIf { it.isNotEmpty() }
-                    ?: "static.194.8.29.2.clients.your-server.de"
-                ClientConfig(
-                    protocol = Protocol.TROJAN_TLS,
-                    serverHost = host,
-                    serverPort = if (serverPort == 443) DEFAULT_TROJAN_PORT else serverPort,
-                    sniHost = sni,
-                    trojanPassword = trojanPassword,
-                    utlsFingerprint = "chrome",
-                    tlsFragmentEnabled = true,
-                    tlsRecordFragmentEnabled = true,
-                    sniSplitMinBytes = 5,
-                    sniSplitMaxBytes = 15,
-                    mtu = 1280,
-                    strictRoute = true,
-                    excludePackages = excludePackages
-                )
-            }
-            else -> {
-                val sni = customSni?.trim()?.takeIf { it.isNotEmpty() } ?: DEFAULT_REALITY_SNI
-                ClientConfig(
-                    protocol = Protocol.VLESS_REALITY,
-                    serverHost = host,
-                    serverPort = if (serverPort in 1..65535) serverPort else DEFAULT_VLESS_PORT,
-                    sniHost = sni,
-                    uuid = uuid,
-                    realityPublicKey = realityPublicKey,
-                    realityShortId = realityShortId,
-                    utlsFingerprint = "chrome",
-                    tlsFragmentEnabled = true,
-                    tlsRecordFragmentEnabled = true,
-                    sniSplitMinBytes = 5,
-                    sniSplitMaxBytes = 15,
-                    mtu = DEFAULT_TUN_MTU,
-                    strictRoute = true,
-                    excludePackages = excludePackages
-                )
-            }
+
+            ClientConfig(
+                name = remark,
+                protocol = protocol,
+                serverHost = host,
+                serverPort = port,
+                sniHost = sni,
+                uuid = uuid,
+                realityPublicKey = pbk,
+                realityShortId = sid,
+                wsHost = hostHeader,
+                wsPath = path,
+                utlsFingerprint = fp,
+                mtu = DEFAULT_TUN_MTU,
+                strictRoute = true
+            )
+        } catch (_: Exception) {
+            null
         }
     }
 
-    fun buildCarrierConfigJson(
+    fun buildPresetProfiles(): List<ClientConfig> {
+        return listOf(
+            ClientConfig(
+                name = "Hetzner Frankfurt (Default)",
+                protocol = Protocol.VLESS_REALITY,
+                serverHost = DEFAULT_SERVER_HOST,
+                serverPort = DEFAULT_VLESS_PORT,
+                sniHost = DEFAULT_REALITY_SNI,
+                uuid = DEFAULT_UUID,
+                realityPublicKey = DEFAULT_REALITY_PUBLIC_KEY,
+                realityShortId = DEFAULT_REALITY_SHORT_ID,
+                utlsFingerprint = "chrome",
+                mtu = DEFAULT_TUN_MTU
+            ),
+            ClientConfig(
+                name = "Saudi STC Anti-DPI",
+                protocol = Protocol.VLESS_REALITY,
+                serverHost = DEFAULT_SERVER_HOST,
+                serverPort = DEFAULT_VLESS_PORT,
+                sniHost = DEFAULT_STC_SNI,
+                uuid = DEFAULT_UUID,
+                realityPublicKey = DEFAULT_REALITY_PUBLIC_KEY,
+                realityShortId = DEFAULT_REALITY_SHORT_ID,
+                utlsFingerprint = "chrome",
+                mtu = 1280
+            ),
+            ClientConfig(
+                name = "Saudi Mobily Anti-DPI",
+                protocol = Protocol.VLESS_REALITY,
+                serverHost = DEFAULT_SERVER_HOST,
+                serverPort = DEFAULT_VLESS_PORT,
+                sniHost = DEFAULT_MOBILY_SNI,
+                uuid = DEFAULT_UUID,
+                realityPublicKey = DEFAULT_REALITY_PUBLIC_KEY,
+                realityShortId = DEFAULT_REALITY_SHORT_ID,
+                utlsFingerprint = "chrome",
+                mtu = 1280
+            ),
+            ClientConfig(
+                name = "Trojan-TLS Port 8443",
+                protocol = Protocol.TROJAN_TLS,
+                serverHost = DEFAULT_SERVER_HOST,
+                serverPort = DEFAULT_TROJAN_PORT,
+                sniHost = "static.194.8.29.2.clients.your-server.de",
+                trojanPassword = "",
+                utlsFingerprint = "chrome",
+                mtu = 1280
+            )
+        )
+    }
+
+fun buildCarrierConfigJson(
         carrierId: String,
         serverHost: String = DEFAULT_SERVER_HOST,
         serverPort: Int = DEFAULT_VLESS_PORT,
@@ -205,10 +202,94 @@ object SingBoxConfigBuilder {
         )
     }
 
-    /**
-     * Parses a full `sing-box` JSON configuration string (if present in `TunnelProfile.payload`)
-     * back into a `ClientConfig` so edits or carrier presets in `payload` drive the core engine directly.
-     */
+    fun buildCarrierProfileConfig(
+        carrierId: String,
+        serverHost: String = DEFAULT_SERVER_HOST,
+        serverPort: Int = DEFAULT_VLESS_PORT,
+        customSni: String? = null,
+        customCdnHost: String? = null,
+        customWsPath: String? = null,
+        uuid: String = DEFAULT_UUID,
+        realityPublicKey: String = DEFAULT_REALITY_PUBLIC_KEY,
+        realityShortId: String = DEFAULT_REALITY_SHORT_ID,
+        trojanPassword: String = "",
+        excludePackages: List<String> = emptyList()
+    ): ClientConfig {
+        val normalized = carrierId.trim().lowercase()
+        val host = serverHost.trim().ifEmpty { DEFAULT_SERVER_HOST }
+        return when {
+            normalized.contains("stc") -> {
+                val sni = customSni?.trim()?.takeIf { it.isNotEmpty() } ?: DEFAULT_STC_SNI
+                ClientConfig(
+                    name = "Saudi STC Anti-DPI",
+                    protocol = Protocol.VLESS_REALITY,
+                    serverHost = host,
+                    serverPort = if (serverPort in 1..65535) serverPort else DEFAULT_VLESS_PORT,
+                    sniHost = sni,
+                    uuid = uuid,
+                    realityPublicKey = realityPublicKey,
+                    realityShortId = realityShortId,
+                    utlsFingerprint = "chrome",
+                    mtu = 1280,
+                    strictRoute = true,
+                    excludePackages = excludePackages
+                )
+            }
+            normalized.contains("mobily") -> {
+                val sni = customSni?.trim()?.takeIf { it.isNotEmpty() } ?: DEFAULT_MOBILY_SNI
+                val cdnHost = customCdnHost?.trim()?.takeIf { it.isNotEmpty() } ?: DEFAULT_MOBILY_CDN_HOST
+                val wsPath = customWsPath?.trim()?.takeIf { it.isNotEmpty() } ?: DEFAULT_MOBILY_WS_PATH
+                ClientConfig(
+                    name = "Saudi Mobily Anti-DPI",
+                    protocol = Protocol.VLESS_WS_TLS,
+                    serverHost = host,
+                    serverPort = if (serverPort in 1..65535) serverPort else DEFAULT_VLESS_PORT,
+                    sniHost = sni,
+                    uuid = uuid,
+                    wsHost = cdnHost,
+                    wsPath = if (wsPath.startsWith("/")) wsPath else "/$wsPath",
+                    utlsFingerprint = "chrome",
+                    mtu = 1280,
+                    strictRoute = true,
+                    excludePackages = excludePackages
+                )
+            }
+            normalized.contains("8443") || normalized.contains("trojan") -> {
+                val sni = customSni?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: "static.194.8.29.2.clients.your-server.de"
+                ClientConfig(
+                    name = "Trojan-TLS Port 8443",
+                    protocol = Protocol.TROJAN_TLS,
+                    serverHost = host,
+                    serverPort = if (serverPort == 443) DEFAULT_TROJAN_PORT else serverPort,
+                    sniHost = sni,
+                    trojanPassword = trojanPassword,
+                    utlsFingerprint = "chrome",
+                    mtu = 1280,
+                    strictRoute = true,
+                    excludePackages = excludePackages
+                )
+            }
+            else -> {
+                val sni = customSni?.trim()?.takeIf { it.isNotEmpty() } ?: DEFAULT_REALITY_SNI
+                ClientConfig(
+                    name = "Hetzner Frankfurt (Default)",
+                    protocol = Protocol.VLESS_REALITY,
+                    serverHost = host,
+                    serverPort = if (serverPort in 1..65535) serverPort else DEFAULT_VLESS_PORT,
+                    sniHost = sni,
+                    uuid = uuid,
+                    realityPublicKey = realityPublicKey,
+                    realityShortId = realityShortId,
+                    utlsFingerprint = "chrome",
+                    mtu = DEFAULT_TUN_MTU,
+                    strictRoute = true,
+                    excludePackages = excludePackages
+                )
+            }
+        }
+    }
+
     fun parseClientConfigFromJson(
         rawJson: String,
         fallbackHost: String = DEFAULT_SERVER_HOST,
@@ -254,9 +335,6 @@ object SingBoxConfigBuilder {
             val port = proxy.optInt("server_port", fallbackPort).coerceIn(1, 65535)
             val tls = proxy.optJSONObject("tls")
             val sni = tls?.optString("server_name", fallbackSni)?.ifBlank { fallbackSni } ?: fallbackSni
-            val fragment = tls?.optBoolean("fragment", true) ?: true
-            val recordFragment = tls?.optBoolean("record_fragment", true) ?: true
-            val fallbackDelay = tls?.optString("fragment_fallback_delay", "500ms") ?: "500ms"
             val utlsFp = tls?.optJSONObject("utls")?.optString("fingerprint", "chrome") ?: "chrome"
             val realityObj = tls?.optJSONObject("reality")
             val transportObj = proxy.optJSONObject("transport")
@@ -288,9 +366,6 @@ object SingBoxConfigBuilder {
                 wsHost = wsHost,
                 wsPath = wsPath,
                 utlsFingerprint = utlsFp,
-                tlsFragmentEnabled = fragment,
-                tlsRecordFragmentEnabled = recordFragment,
-                fragmentFallbackDelay = fallbackDelay,
                 tunAddressCidr = tunCidr,
                 mtu = mtu,
                 strictRoute = true,
@@ -318,9 +393,6 @@ object SingBoxConfigBuilder {
         val tlsObject = JSONObject().apply {
             put("enabled", true)
             put("server_name", effectiveSni)
-            put("fragment", config.tlsFragmentEnabled)
-            put("fragment_fallback_delay", config.fragmentFallbackDelay)
-            put("record_fragment", config.tlsRecordFragmentEnabled)
             put(
                 "utls",
                 JSONObject().apply {
@@ -397,7 +469,7 @@ object SingBoxConfigBuilder {
                     put("tag", "proxy")
                     put("server", effectiveHost)
                     put("server_port", effectivePort)
-                    put("password", config.trojanPassword.ifEmpty { "<TROJAN_PASSWORD>" })
+                    put("password", config.trojanPassword.ifEmpty { "e1a9c372f8b54d60a1e2f3b4c5d6e7f8" })
                     put("tls", tlsObject)
                 }
             }
@@ -424,19 +496,22 @@ object SingBoxConfigBuilder {
                     put(
                         JSONObject().apply {
                             put("tag", "remote-dns")
-                            put("type", "udp")
-                            put("server", config.dnsServer)
+                            put("address", "udp://${config.dnsServer.trim().ifEmpty { DEFAULT_DNS_SERVER }}")
+                            put("address_resolver", "local-dns")
+                            put("strategy", "prefer_ipv4")
                             put("detour", "proxy")
                         }
                     )
                     put(
                         JSONObject().apply {
                             put("tag", "local-dns")
-                            put("type", "local")
+                            put("address", "local")
+                            put("detour", "direct")
                         }
                     )
                 }
             )
+            put("strategy", "prefer_ipv4")
             put("final", "remote-dns")
         }
 
@@ -459,9 +534,8 @@ object SingBoxConfigBuilder {
                     )
                 }
             )
-            put("final", "proxy")
             put("auto_detect_interface", true)
-            put("default_domain_resolver", "local-dns")
+            put("final", "proxy")
         }
 
         val root = JSONObject().apply {

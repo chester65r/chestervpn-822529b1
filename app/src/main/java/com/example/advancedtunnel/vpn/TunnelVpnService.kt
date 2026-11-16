@@ -25,14 +25,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * Foreground Android [VpnService] backed by the native Go `sing-box` core (`io.nekohasekai.libbox`):
- * - Creates the OS TUN interface inside [LibboxPlatformBridge.openTun] (`172.19.0.1/30`, MTU 1500, `auto_route`, `strict_route`)
- * - Terminates Layer 3 IPv4/IPv6 TCP + UDP/DNS traffic inside gVisor in native Go
- * - Protects outbound sockets via `VpnService.protect(fd)` (`autoDetectInterfaceControl`)
- * - Pre-configured for the active Hetzner Frankfurt endpoint (`2.29.8.194:443`) using
- *   VLESS + XTLS-Vision + Reality (`www.microsoft.com`) with uTLS (`chrome`) and ClientHello fragmentation.
- */
 class TunnelVpnService : VpnService() {
 
     private val serviceJob = SupervisorJob()
@@ -59,9 +51,8 @@ class TunnelVpnService : VpnService() {
     private var activeRealityShortId = SingBoxConfigBuilder.DEFAULT_REALITY_SHORT_ID
     private var activeTrojanPassword = ""
     private var activeUtlsFingerprint = "chrome"
-    private var activeFragmentEnabled = true
-    private var activeRecordFragmentEnabled = true
-    private var activeCarrierProfileId = "hetzner-vless-reality"
+    private var activeDnsServer = SingBoxConfigBuilder.DEFAULT_DNS_SERVER
+    private var activeServerName = "Hetzner Frankfurt (Default)"
 
     private val reconnectionMonitor: ReconnectionMonitor by lazy {
         ReconnectionMonitor(
@@ -88,7 +79,7 @@ class TunnelVpnService : VpnService() {
                 startTrafficStatsSampler()
                 updateNotification(
                     "ChesterVPN Protected",
-                    "Connected to Hetzner Frankfurt ($activeHost)"
+                    "Connected to $activeServerName ($activeHost)"
                 )
             },
             onReconnectExhausted = { errorMessage ->
@@ -121,8 +112,8 @@ class TunnelVpnService : VpnService() {
         const val EXTRA_REALITY_SHORT_ID = "extra_reality_short_id"
         const val EXTRA_TROJAN_PASSWORD = "extra_trojan_password"
         const val EXTRA_UTLS_FINGERPRINT = "extra_utls_fingerprint"
-        const val EXTRA_FRAGMENT_ENABLED = "extra_fragment_enabled"
-        const val EXTRA_RECORD_FRAGMENT_ENABLED = "extra_record_fragment_enabled"
+        const val EXTRA_DNS_SERVER = "extra_dns_server"
+        const val EXTRA_SERVER_NAME = "extra_server_name"
 
         const val DEFAULT_HOST = SingBoxConfigBuilder.DEFAULT_SERVER_HOST
         const val DEFAULT_PORT = SingBoxConfigBuilder.DEFAULT_VLESS_PORT
@@ -181,12 +172,13 @@ class TunnelVpnService : VpnService() {
                     incoming.getStringExtra(EXTRA_UTLS_FINGERPRINT)?.takeIf { it.isNotBlank() }?.let {
                         activeUtlsFingerprint = SingBoxConfigBuilder.mapFingerprintProfileToUtls(it)
                     }
-                    activeFragmentEnabled = incoming.getBooleanExtra(EXTRA_FRAGMENT_ENABLED, activeFragmentEnabled)
-                    activeRecordFragmentEnabled =
-                        incoming.getBooleanExtra(EXTRA_RECORD_FRAGMENT_ENABLED, activeRecordFragmentEnabled)
-
-                    val profileId = incoming.getStringExtra(EXTRA_PROFILE_ID)
-                    if (!profileId.isNullOrBlank()) activeCarrierProfileId = profileId.trim()
+                    incoming.getStringExtra(EXTRA_DNS_SERVER)?.takeIf { it.isNotBlank() }?.let {
+                        activeDnsServer = it.trim()
+                    }
+                    incoming.getStringExtra(EXTRA_SERVER_NAME)?.takeIf { it.isNotBlank() }?.let {
+                        activeServerName = it.trim()
+                        TunnelStateHolder.setActiveServerName(activeServerName)
+                    }
                 }
                 startVpn()
             }
@@ -195,16 +187,8 @@ class TunnelVpnService : VpnService() {
     }
 
     private fun buildSingBoxClientConfig(): SingBoxConfigBuilder.ClientConfig {
-        val parsed = SingBoxConfigBuilder.parseClientConfigFromJson(
-            rawJson = activePayloadJson,
-            fallbackHost = activeHost,
-            fallbackPort = activePort,
-            fallbackSni = activeSni,
-            excludePackages = listOf(packageName)
-        )
-        if (parsed != null) return parsed
-
         return SingBoxConfigBuilder.ClientConfig(
+            name = activeServerName,
             protocol = activeProtocol,
             serverHost = activeHost,
             serverPort = activePort,
@@ -216,10 +200,9 @@ class TunnelVpnService : VpnService() {
             wsHost = activeCdnHost,
             wsPath = activeWsPath,
             utlsFingerprint = activeUtlsFingerprint,
-            tlsFragmentEnabled = activeFragmentEnabled,
-            tlsRecordFragmentEnabled = activeRecordFragmentEnabled,
             mtu = activeMtu,
             strictRoute = true,
+            dnsServer = activeDnsServer,
             excludePackages = listOf(packageName)
         )
     }
@@ -235,7 +218,7 @@ class TunnelVpnService : VpnService() {
         createNotificationChannel()
         val notification = buildNotification(
             "ChesterVPN Connecting…",
-            "Hetzner Frankfurt ($activeHost:$activePort)"
+            "$activeServerName ($activeHost:$activePort)"
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -264,7 +247,11 @@ class TunnelVpnService : VpnService() {
                 vpnService = this@TunnelVpnService,
                 context = applicationContext,
                 clientConfig = buildSingBoxClientConfig(),
-                onCoreLog = { line -> Log.i(TAG, "[libbox] $line") },
+                overrideConfigJson = activePayloadJson.takeIf { it.isNotBlank() },
+                onCoreLog = { line ->
+                    Log.i(TAG, "[libbox] $line")
+                    TunnelStateHolder.appendLog(line)
+                },
                 onNotification = { title, body -> updateNotification(title, body) }
             )
             activeSession = session
@@ -273,13 +260,14 @@ class TunnelVpnService : VpnService() {
             startTrafficStatsSampler()
             updateNotification(
                 "ChesterVPN Protected",
-                "Connected to Hetzner Frankfurt ($activeHost)"
+                "Connected to $activeServerName ($activeHost)"
             )
             true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "libbox tunnel failed: ${e.message}", e)
+            TunnelStateHolder.appendLog("[error] libbox startup: ${e.message}")
             tearDownTunnelResources()
             if (!isReconnectAttempt && !manualDisconnect.get() && isRunning.get()) {
                 TunnelStateHolder.setConnectionState(TunnelConnectionState.Reconnecting)

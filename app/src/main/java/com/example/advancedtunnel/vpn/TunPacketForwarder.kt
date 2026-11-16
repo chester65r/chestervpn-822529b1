@@ -7,15 +7,6 @@ import io.nekohasekai.libbox.BoxService
 import io.nekohasekai.libbox.Libbox
 import java.io.IOException
 
-/**
- * Lifecycle wrapper for the real native Go `sing-box` core (`io.nekohasekai.libbox`).
- *
- * Replaces all manual Layer-3 TUN stream loops with `Libbox.newService(configJson, platformBridge)`.
- * `libbox` creates the TUN via [LibboxPlatformBridge.openTun], terminates TCP/UDP packets in
- * userspace gVisor, protects outbound sockets via `VpnService.protect(fd)`, and multiplexes traffic
- * over VLESS+Reality (`xtls-rprx-vision`) or Trojan over TLS 443 with uTLS (Chrome/iOS) and
- * ClientHello record fragmentation.
- */
 object TunPacketForwarder {
 
     private const val TAG = "SingBoxCoreRunner"
@@ -41,12 +32,17 @@ object TunPacketForwarder {
         vpnService: VpnService,
         context: Context,
         clientConfig: SingBoxConfigBuilder.ClientConfig,
+        overrideConfigJson: String? = null,
         onCoreLog: (String) -> Unit = { Log.i(TAG, it) },
         onNotification: (title: String, body: String) -> Unit = { _, _ -> }
     ): RunningSession {
         try {
             LibboxPlatformBridge.ensureCoreInitialized(context)
-            val configJson = SingBoxConfigBuilder.buildClientConfigJson(clientConfig)
+            val configJson = if (!overrideConfigJson.isNullOrBlank()) {
+                overrideConfigJson
+            } else {
+                SingBoxConfigBuilder.buildClientConfigJson(clientConfig)
+            }
             Libbox.checkConfig(configJson)
 
             val bridge = LibboxPlatformBridge(

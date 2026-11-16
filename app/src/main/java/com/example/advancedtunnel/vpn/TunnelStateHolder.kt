@@ -17,34 +17,28 @@ object TunnelStateHolder {
 
     private val _connectionState =
         MutableStateFlow<TunnelConnectionState>(TunnelConnectionState.Disconnected)
-
-    val connectionState: StateFlow<TunnelConnectionState> =
-        _connectionState.asStateFlow()
+    val connectionState: StateFlow<TunnelConnectionState> = _connectionState.asStateFlow()
 
     private val _reconnectPhase = MutableStateFlow<String?>(null)
-
-    val reconnectPhase: StateFlow<String?> =
-        _reconnectPhase.asStateFlow()
+    val reconnectPhase: StateFlow<String?> = _reconnectPhase.asStateFlow()
 
     private val _dataTransferred = MutableStateFlow(0L)
-
-    val dataTransferred: StateFlow<Long> =
-        _dataTransferred.asStateFlow()
+    val dataTransferred: StateFlow<Long> = _dataTransferred.asStateFlow()
 
     private val _connectedAtMillis = MutableStateFlow<Long?>(null)
-
-    val connectedAtMillis: StateFlow<Long?> =
-        _connectedAtMillis.asStateFlow()
+    val connectedAtMillis: StateFlow<Long?> = _connectedAtMillis.asStateFlow()
 
     private val _downloadBytesPerSec = MutableStateFlow(0L)
-
-    val downloadBytesPerSec: StateFlow<Long> =
-        _downloadBytesPerSec.asStateFlow()
+    val downloadBytesPerSec: StateFlow<Long> = _downloadBytesPerSec.asStateFlow()
 
     private val _uploadBytesPerSec = MutableStateFlow(0L)
+    val uploadBytesPerSec: StateFlow<Long> = _uploadBytesPerSec.asStateFlow()
 
-    val uploadBytesPerSec: StateFlow<Long> =
-        _uploadBytesPerSec.asStateFlow()
+    private val _liveLogs = MutableStateFlow<List<String>>(emptyList())
+    val liveLogs: StateFlow<List<String>> = _liveLogs.asStateFlow()
+
+    private val _activeServerName = MutableStateFlow("Hetzner Frankfurt (Default)")
+    val activeServerName: StateFlow<String> = _activeServerName.asStateFlow()
 
     fun setConnectionState(state: TunnelConnectionState) {
         _connectionState.value = state
@@ -76,6 +70,10 @@ object TunnelStateHolder {
         }
     }
 
+    fun setActiveServerName(name: String) {
+        _activeServerName.value = name
+    }
+
     fun updateSpeeds(downloadBps: Long, uploadBps: Long) {
         _downloadBytesPerSec.value = downloadBps.coerceAtLeast(0L)
         _uploadBytesPerSec.value = uploadBps.coerceAtLeast(0L)
@@ -83,6 +81,19 @@ object TunnelStateHolder {
 
     fun addData(bytes: Long) {
         _dataTransferred.value += bytes
+    }
+
+    fun appendLog(line: String) {
+        val current = _liveLogs.value.toMutableList()
+        if (current.size > 250) {
+            current.removeAt(0)
+        }
+        current.add(line)
+        _liveLogs.value = current
+    }
+
+    fun clearLogs() {
+        _liveLogs.value = emptyList()
     }
 
     fun resetData() {
