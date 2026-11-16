@@ -7,16 +7,12 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.net.VpnService
 import android.os.Build
-import android.os.ParcelFileDescriptor
 import android.util.Log
-import com.example.advancedtunnel.vpn.DesyncSocketWrapper
 import com.example.advancedtunnel.vpn.KeepAliveManager
-import com.example.advancedtunnel.vpn.TlsFingerprintEngine
+import com.example.advancedtunnel.vpn.SingBoxConfigBuilder
 import com.example.advancedtunnel.vpn.TlsFragmentConfig
 import com.example.advancedtunnel.vpn.TlsFragmentMode
-import com.example.advancedtunnel.vpn.TlsFragmentationEngine
 import com.example.advancedtunnel.vpn.TunPacketForwarder
 import com.example.advancedtunnel.vpn.VpnManager
 import com.example.advancedtunnel.wireguard.WireGuardManager
@@ -26,65 +22,47 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import java.io.BufferedInputStream
-import java.io.BufferedOutputStream
-import java.io.DataInputStream
-import java.io.DataOutputStream
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.io.IOException
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import javax.net.ssl.SSLSocket
-import javax.net.ssl.SSLSocketFactory
 
 /**
  * Unified Foreground VpnService (`AdvancedVpnService`) managing:
- * - Virtual TUN interface (`tun0`, MTU 1500, IPv4 `10.0.0.2/24`, IPv6 `fd00:1234:5678::2/64`)
- * - Full-tunnel routing (`0.0.0.0/0`, `::/0`) with `addDisallowedApplication` & Killswitch (`setBlocking`)
- * - Outbound TLS + custom SNI + TLS Record Fragmentation (`DesyncSocketWrapper`) + JA3/JA4 Fingerprint Spoofing (`TlsFingerprintEngine`)
+ * - Native `sing-box` / `libbox` (`io.nekohasekai.libbox`) gVisor TUN + VLESS-Reality (`xtls-rprx-vision`)
+ *   or Trojan over TLS 443 with uTLS (Chrome/iOS) and ClientHello record fragmentation
  * - Official WireGuard `GoBackend.VpnService` integration for standard `wg-quick` `.conf` tunnels
- * - `KeepAliveManager` (`PARTIAL_WAKE_LOCK`, `WIFI_MODE_FULL_LOW_LATENCY`, adaptive TCP/UDP heartbeats)
+ * - `KeepAliveManager` (`PARTIAL_WAKE_LOCK`, `WIFI_MODE_FULL_LOW_LATENCY`)
  * - Android 14+ (`UPSIDE_DOWN_CAKE`) `FOREGROUND_SERVICE_TYPE_SPECIAL_USE` compliance
  */
-class AdvancedVpnService : GoBackend.VpnService(), Runnable {
+class AdvancedVpnService : GoBackend.VpnService() {
 
     companion object {
         private const val TAG = "AdvancedVpnService"
         private const val NOTIFICATION_CHANNEL_ID = "tunnel_console_vpn_channel"
         private const val NOTIFICATION_ID = 1001
-        private const val BUFFER_SIZE = 32768
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile
-    private var vpnInterface: ParcelFileDescriptor? = null
-    @Volatile
-    private var activeRawSocket: Socket? = null
-    @Volatile
-    private var activeSecureSocket: SSLSocket? = null
-    private var tunnelThread: Thread? = null
+    private var singBoxSession: TunPacketForwarder.RunningSession? = null
     private val isRunning = AtomicBoolean(false)
     private val sessionIdGenerator = AtomicLong(0L)
     private var keepAliveManager: KeepAliveManager? = null
 
-    private var serverIp = ""
-    private var serverPort = 443
-    private var sniHost = ""
-    private var rawPayload = ""
-    private var protocol = "tls"
-    private var socksHost = ""
-    private var socksPort = 10808
+    private var serverIp = SingBoxConfigBuilder.DEFAULT_SERVER_HOST
+    private var serverPort = SingBoxConfigBuilder.DEFAULT_VLESS_PORT
+    private var sniHost = SingBoxConfigBuilder.DEFAULT_REALITY_SNI
+    private var protocol = "vless-reality"
+    private var cdnHost = SingBoxConfigBuilder.DEFAULT_MOBILY_CDN_HOST
+    private var wsPath = SingBoxConfigBuilder.DEFAULT_MOBILY_WS_PATH
+    private var rawPayloadJson = ""
+    private var uuid = ""
+    private var realityPublicKey = ""
+    private var realityShortId = ""
+    private var trojanPassword = ""
     private var killswitchEnabled = false
     private var disallowedApps = ArrayList<String>()
     private var tlsFragmentConfig = TlsFragmentConfig()
-
-    private var totalBytesSent: Long = 0
-    private var totalBytesReceived: Long = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -104,7 +82,7 @@ class AdvancedVpnService : GoBackend.VpnService(), Runnable {
             return START_NOT_STICKY
         }
 
-        protocol = intent?.getStringExtra("PROTOCOL") ?: "tls"
+        protocol = intent?.getStringExtra("PROTOCOL") ?: "vless-reality"
 
         if (protocol == "wireguard") {
             val wgConfigText = intent?.getStringExtra("WG_CONFIG_TEXT") ?: ""
@@ -115,7 +93,6 @@ class AdvancedVpnService : GoBackend.VpnService(), Runnable {
             }
             if (isRunning.get()) {
                 closeActiveResources()
-                tunnelThread?.interrupt()
                 WireGuardManager.stopTunnelBlocking(applicationContext)
             }
             isRunning.set(true)
@@ -142,21 +119,28 @@ class AdvancedVpnService : GoBackend.VpnService(), Runnable {
             return START_STICKY
         }
 
-        serverIp = intent?.getStringExtra("SERVER_IP") ?: ""
-        serverPort = intent?.getIntExtra("SERVER_PORT", 443) ?: 443
-        sniHost = intent?.getStringExtra("SNI_HOST") ?: ""
-        rawPayload = intent?.getStringExtra("PAYLOAD") ?: ""
-        socksHost = intent?.getStringExtra("SOCKS_HOST") ?: ""
-        socksPort = intent?.getIntExtra("SOCKS_PORT", 10808) ?: 10808
+        serverIp = intent?.getStringExtra("SERVER_IP")?.ifBlank { SingBoxConfigBuilder.DEFAULT_SERVER_HOST }
+            ?: SingBoxConfigBuilder.DEFAULT_SERVER_HOST
+        serverPort = intent?.getIntExtra("SERVER_PORT", SingBoxConfigBuilder.DEFAULT_VLESS_PORT)
+            ?: SingBoxConfigBuilder.DEFAULT_VLESS_PORT
+        sniHost = intent?.getStringExtra("SNI_HOST")?.ifBlank { SingBoxConfigBuilder.DEFAULT_REALITY_SNI }
+            ?: SingBoxConfigBuilder.DEFAULT_REALITY_SNI
+        cdnHost = intent?.getStringExtra("CDN_HOST")?.ifBlank { SingBoxConfigBuilder.DEFAULT_MOBILY_CDN_HOST }
+            ?: SingBoxConfigBuilder.DEFAULT_MOBILY_CDN_HOST
+        wsPath = intent?.getStringExtra("WS_PATH")?.ifBlank { SingBoxConfigBuilder.DEFAULT_MOBILY_WS_PATH }
+            ?: SingBoxConfigBuilder.DEFAULT_MOBILY_WS_PATH
+        rawPayloadJson = intent?.getStringExtra("PAYLOAD") ?: ""
+        uuid = intent?.getStringExtra("UUID") ?: ""
+        realityPublicKey = intent?.getStringExtra("REALITY_PUBLIC_KEY") ?: ""
+        realityShortId = intent?.getStringExtra("REALITY_SHORT_ID") ?: ""
+        trojanPassword = intent?.getStringExtra("TROJAN_PASSWORD") ?: ""
         killswitchEnabled = intent?.getBooleanExtra("KILLSWITCH_ENABLED", false) ?: false
         disallowedApps = intent?.getStringArrayListExtra("DISALLOWED_APPS") ?: ArrayList()
 
         val fragEnabled = intent?.getBooleanExtra("TLS_FRAG_ENABLED", true) ?: true
-        val fragModeId = intent?.getStringExtra("TLS_FRAG_MODE") ?: TlsFragmentMode.TLS_RECORD_AND_TCP.id
+        val fragModeId = intent?.getStringExtra("TLS_FRAG_MODE") ?: TlsFragmentMode.SNI_BOUNDARY_SPLIT.id
         val minChunk = intent?.getIntExtra("TLS_FRAG_MIN_CHUNK", 5) ?: 5
         val maxChunk = intent?.getIntExtra("TLS_FRAG_MAX_CHUNK", 15) ?: 15
-        val minJitter = intent?.getIntExtra("TLS_FRAG_MIN_JITTER", 3) ?: 3
-        val maxJitter = intent?.getIntExtra("TLS_FRAG_MAX_JITTER", 12) ?: 12
         val ja3ProfileId = intent?.getStringExtra("TLS_JA3_PROFILE_ID") ?: "chrome_128_android"
         val alpnEnabled = intent?.getBooleanExtra("TLS_ALPN_ENABLED", true) ?: true
 
@@ -165,20 +149,20 @@ class AdvancedVpnService : GoBackend.VpnService(), Runnable {
             mode = TlsFragmentMode.fromId(fragModeId),
             minChunkBytes = minChunk,
             maxChunkBytes = maxChunk,
-            minJitterMs = minJitter,
-            maxJitterMs = maxJitter,
             fingerprintProfileId = ja3ProfileId,
             alpnEnabled = alpnEnabled
         )
 
-        // Always-On VPN support: if started by Android OS without extras, load persisted profile
-        if (serverIp.isBlank()) {
+        if (intent == null || intent.getStringExtra("SERVER_IP").isNullOrBlank()) {
             val repo = com.example.advancedtunnel.data.TunnelRepository(applicationContext)
             val (savedProfile, _) = repo.loadActiveProfile()
-            serverIp = savedProfile.ip
-            serverPort = savedProfile.port.toIntOrNull() ?: 443
-            sniHost = savedProfile.sni
-            rawPayload = savedProfile.payload
+            if (savedProfile.ip.isNotBlank()) serverIp = savedProfile.ip
+            serverPort = savedProfile.port.toIntOrNull() ?: serverPort
+            if (savedProfile.sni.isNotBlank()) sniHost = savedProfile.sni
+            if (savedProfile.protocol.isNotBlank()) protocol = savedProfile.protocol
+            if (savedProfile.cdnHost.isNotBlank()) cdnHost = savedProfile.cdnHost
+            if (savedProfile.wsPath.isNotBlank()) wsPath = savedProfile.wsPath
+            if (savedProfile.payload.isNotBlank()) rawPayloadJson = savedProfile.payload
             killswitchEnabled = repo.loadKillswitchEnabled()
             tlsFragmentConfig = repo.loadTlsFragmentConfig()
             if (repo.loadSplitTunnelingEnabled()) {
@@ -186,323 +170,100 @@ class AdvancedVpnService : GoBackend.VpnService(), Runnable {
             }
             VpnManager.appendTelemetryLog(
                 "INFO",
-                "Always-On VPN start triggered using stored profile ($serverIp:$serverPort)"
+                "Always-On VPN start triggered using stored profile ($serverIp:$serverPort, protocol=$protocol)"
             )
         }
 
-        if (serverIp.isBlank()) {
-            Log.e(TAG, "No server IP provided")
-            VpnManager.onServiceStopped("Server IP is required")
-            stopSelf()
-            return START_NOT_STICKY
-        }
-
         if (isRunning.get()) {
-            Log.w(TAG, "Tunnel already running; stopping previous session before reconnect")
+            Log.w(TAG, "Tunnel already running; closing previous libbox session before reconnect")
             closeActiveResources()
-            tunnelThread?.interrupt()
         }
 
-        totalBytesSent = 0
-        totalBytesReceived = 0
         isRunning.set(true)
         keepAliveManager?.acquireLocks()
         val currentSession = sessionIdGenerator.incrementAndGet()
-        showForegroundNotification("Connecting to $serverIp:$serverPort...")
-        tunnelThread = Thread({ runSession(currentSession) }, "RealVpnTunnelThread-$currentSession").apply {
-            start()
+        showForegroundNotification("Connecting sing-box -> $serverIp:$serverPort…")
+
+        serviceScope.launch {
+            runSingBoxSession(currentSession)
         }
 
         return START_STICKY
     }
 
-    override fun run() {
-        runSession(sessionIdGenerator.get())
-    }
-
-    /**
-     * Performs an RFC 1928 SOCKS5 handshake + CONNECT command over a protected socket when
-     * `protocol == "socks5"`.
-     */
-    @Throws(IOException::class)
-    private fun connectSocks5Channel(
-        proxyHost: String,
-        proxyPort: Int,
-        targetHost: String,
-        targetPort: Int,
-        timeoutMs: Int = 7000
-    ): Socket {
-        val socket = Socket()
-        if (!protect(socket)) {
-            Log.w(TAG, "VpnService.protect(socket) returned false for SOCKS5 socket")
-        }
-        socket.tcpNoDelay = true
-        socket.keepAlive = true
-        socket.soTimeout = 20_000
-        socket.connect(InetSocketAddress(proxyHost, proxyPort), timeoutMs)
-
-        val input = DataInputStream(BufferedInputStream(socket.getInputStream()))
-        val output = DataOutputStream(BufferedOutputStream(socket.getOutputStream()))
-
-        output.write(byteArrayOf(0x05, 0x01, 0x00))
-        output.flush()
-
-        val version = input.readByte()
-        val method = input.readByte()
-        if (version != 0x05.toByte() || method != 0x00.toByte()) {
-            socket.close()
-            throw IOException("SOCKS5 negotiation failed (ver=$version, method=$method)")
-        }
-
-        val hostBytes = targetHost.toByteArray(Charsets.US_ASCII)
-        val reqBuf = ByteBuffer.allocate(4 + 1 + hostBytes.size + 2)
-        reqBuf.put(0x05.toByte())
-        reqBuf.put(0x01.toByte())
-        reqBuf.put(0x00.toByte())
-        reqBuf.put(0x03.toByte())
-        reqBuf.put(hostBytes.size.toByte())
-        reqBuf.put(hostBytes)
-        reqBuf.putShort(targetPort.toShort())
-
-        output.write(reqBuf.array())
-        output.flush()
-
-        val repVer = input.readByte()
-        val repStatus = input.readByte()
-        input.readByte()
-        val atyp = input.readByte().toInt() and 0xFF
-
-        if (repVer != 0x05.toByte() || repStatus != 0x00.toByte()) {
-            socket.close()
-            throw IOException("SOCKS5 CONNECT rejected with status=0x${repStatus.toString(16)}")
-        }
-
-        when (atyp) {
-            0x01 -> input.skipBytes(4 + 2)
-            0x03 -> {
-                val len = input.readByte().toInt() and 0xFF
-                input.skipBytes(len + 2)
-            }
-            0x04 -> input.skipBytes(16 + 2)
-            else -> throw IOException("Unsupported SOCKS5 ATYP: $atyp")
-        }
-
-        return socket
-    }
-
-    private fun runSession(mySessionId: Long) {
-        var rawSocket: Socket? = null
-        var secureSocket: SSLSocket? = null
-        var vpnInput: FileInputStream? = null
-        var vpnOutput: FileOutputStream? = null
-        var localVpnInterface: ParcelFileDescriptor? = null
-
+    private fun runSingBoxSession(mySessionId: Long) {
         try {
-            Log.d(TAG, "Initializing real VPN tunnel to $serverIp:$serverPort (SNI: $sniHost)")
-            showForegroundNotification("Connecting to $serverIp:$serverPort…")
+            val sbProtocol = SingBoxConfigBuilder.Protocol.fromId(protocol)
+            val utlsFp = SingBoxConfigBuilder.mapFingerprintProfileToUtls(tlsFragmentConfig.fingerprintProfileId)
+            val excludeList = (disallowedApps + packageName).distinct()
 
-            // 1. Create and protect the outbound socket FIRST to avoid establishing TUN on failure
-            if (protocol.equals("socks5", ignoreCase = true) && socksHost.isNotBlank()) {
-                rawSocket = connectSocks5Channel(socksHost, socksPort, serverIp, serverPort, 7000)
-                activeRawSocket = rawSocket
-            } else {
-                rawSocket = Socket()
-                activeRawSocket = rawSocket
-                val protected = protect(rawSocket)
-                if (!protected) {
-                    Log.w(TAG, "Warning: Could not protect raw socket from VPN routing table.")
-                }
-
-                rawSocket.soTimeout = 20000
-                rawSocket.keepAlive = true
-                rawSocket.tcpNoDelay = true
-
-                // Connect to server with a 7-second timeout for responsive feedback
-                rawSocket.connect(InetSocketAddress(serverIp, serverPort), 7000)
-            }
-
-            // 2. Wrap underlying TCP socket with DesyncSocketWrapper for TLS Record Fragmentation
-            val effectiveSni = sniHost.ifBlank { serverIp }
-            val desyncSocket = DesyncSocketWrapper(
-                delegate = rawSocket,
-                sniHost = effectiveSni,
-                config = tlsFragmentConfig,
-                onStatsRecorded = { stats ->
-                    VpnManager.appendTelemetryLog(
-                        "DESYNC",
-                        "ClientHello desynchronized: ${stats.originalBytes}B -> ${stats.tlsRecordCount} TLS records, ${stats.tcpWriteChunks} TCP chunks (SNI split @ +${stats.sniSplitOffset}B, jitter ${stats.totalJitterDelayMs}ms)"
-                    )
-                }
+            val parsedFromPayload = SingBoxConfigBuilder.parseClientConfigFromJson(
+                rawJson = rawPayloadJson,
+                fallbackHost = serverIp,
+                fallbackPort = serverPort,
+                fallbackSni = sniHost,
+                excludePackages = excludeList
             )
 
-            // 3. Establish TLS with JA3/JA4 Fingerprint Spoofing & SNI
-            val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
-            secureSocket = factory.createSocket(desyncSocket, serverIp, serverPort, true) as SSLSocket
-            activeSecureSocket = secureSocket
-
-            val appliedFp = TlsFingerprintEngine.applyFingerprintToSocket(
-                sslSocket = secureSocket,
-                profileId = tlsFragmentConfig.fingerprintProfileId,
+            val clientConfig = parsedFromPayload ?: SingBoxConfigBuilder.ClientConfig(
+                protocol = sbProtocol,
+                serverHost = serverIp,
+                serverPort = serverPort,
                 sniHost = sniHost,
-                alpnEnabled = tlsFragmentConfig.alpnEnabled
+                uuid = uuid,
+                realityPublicKey = realityPublicKey,
+                realityShortId = realityShortId,
+                trojanPassword = trojanPassword,
+                wsHost = cdnHost,
+                wsPath = wsPath,
+                utlsFingerprint = utlsFp,
+                tlsFragmentEnabled = tlsFragmentConfig.useFragment(),
+                tlsRecordFragmentEnabled = tlsFragmentConfig.useRecordFragment(),
+                sniSplitMinBytes = tlsFragmentConfig.normalizedMinChunk(),
+                sniSplitMaxBytes = tlsFragmentConfig.normalizedMaxChunk(),
+                strictRoute = true,
+                excludePackages = excludeList
             )
+
             VpnManager.appendTelemetryLog(
-                "JA3/JA4",
-                "Applied ${appliedFp.profileName} • JA4=${appliedFp.ja4String} • JA3=${appliedFp.ja3HashMd5.take(12)}…"
+                "INFO",
+                "Starting native libbox (sing-box gVisor TUN): ${clientConfig.protocol.id} -> ${clientConfig.serverHost}:${clientConfig.serverPort} (SNI=${clientConfig.sniHost}, uTLS=${clientConfig.utlsFingerprint}, fragment=${clientConfig.tlsFragmentEnabled}, record_fragment=${clientConfig.tlsRecordFragmentEnabled})"
             )
 
-            secureSocket.startHandshake()
-            desyncSocket.markHandshakeCompleted()
-
-            Log.i(TAG, "TLS handshake successfully verified with $sniHost")
-            VpnManager.appendTelemetryLog("SUCCESS", "TLS handshake verified (SNI=$effectiveSni, Cipher=${secureSocket.session?.cipherSuite ?: "AEAD"})")
-
-            // 4. Send chunked handshake protocol payload via CarrierTunnelOptimizer ([host], [host_port], [crlf], [split])
-            if (rawPayload.isNotBlank()) {
-                val browserProfile = TlsFingerprintEngine.resolveProfile(tlsFragmentConfig.fingerprintProfileId)
-                val handshakeResult = com.example.advancedtunnel.vpn.CarrierTunnelOptimizer.performUpgradedHandshake(
-                    socket = secureSocket,
-                    rawTemplate = rawPayload,
-                    host = serverIp,
-                    port = serverPort,
-                    sni = effectiveSni,
-                    userAgent = browserProfile.userAgent,
-                    config = com.example.advancedtunnel.vpn.HandshakeStreamConfig(
-                        minSegmentBytes = 6,
-                        maxSegmentBytes = 12,
-                        interSegmentDelayMs = tlsFragmentConfig.normalizedMinJitter().toLong().coerceAtLeast(2L),
-                        expectHttpUpgradeResponse = false
-                    )
-                )
-                Log.d(TAG, "Handshake payload transmitted (${handshakeResult.bytesTransmitted} bytes in ${handshakeResult.segmentsFlushed} chunks).")
-                VpnManager.appendTelemetryLog(
-                    "INFO",
-                    "CarrierTunnelOptimizer flushed ${handshakeResult.bytesTransmitted}B across ${handshakeResult.segmentsFlushed} segments (${handshakeResult.statusLine})"
-                )
-            }
-
-            val serverIn = secureSocket.inputStream
-            val serverOut = secureSocket.outputStream
-
-            // 5. Remote connection succeeded! NOW establish the OS TUN interface
-            val builder = Builder()
-                .setSession("Tunnel Console")
-                .setMtu(1500)
-                .addAddress("10.0.0.2", 24)
-                .addRoute("0.0.0.0", 0) // Full IPv4 tunnel route
-                .addDnsServer("1.1.1.1") // Cloudflare secure DNS
-                .addDnsServer("8.8.8.8") // Google secure DNS
-
-            // IPv6 support and leak prevention
-            try {
-                builder.addAddress("fd00:1234:5678::2", 64)
-                    .addRoute("::", 0)
-                    .addDnsServer("2606:4700:4700::1111")
-            } catch (e: Exception) {
-                Log.w(TAG, "IPv6 address allocation skipped: ${e.message}")
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                builder.setMetered(false)
-                if (killswitchEnabled) {
-                    try {
-                        builder.setBlocking(true)
-                        Log.i(TAG, "Killswitch enabled: blocking traffic outside VPN")
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Killswitch setBlocking skipped: ${e.message}")
-                    }
-                }
-            }
-
-            try {
-                builder.addDisallowedApplication(packageName)
-            } catch (_: Exception) {
-            }
-
-            disallowedApps.forEach { pkg ->
-                try {
-                    builder.addDisallowedApplication(pkg)
-                    Log.d(TAG, "Split Tunneling: Excluded app $pkg from VPN route")
-                } catch (e: Exception) {
-                    Log.w(TAG, "Split Tunneling: Could not exclude app $pkg: ${e.message}")
-                }
-            }
-
-            localVpnInterface = builder.establish()
-            vpnInterface = localVpnInterface
-            if (localVpnInterface == null) {
-                throw IllegalStateException("VPN interface could not be established by Android OS.")
-            }
-
-            // بعد نجاح إنشاء الـ localVpnInterface وبدء الاتصال الآمن:
-            vpnInput = FileInputStream(localVpnInterface.fileDescriptor)
-            vpnOutput = FileOutputStream(localVpnInterface.fileDescriptor)
-
-            // Update state: genuinely CONNECTED only now!
-            VpnManager.onServiceConnected("$serverIp:$serverPort")
-            showForegroundNotification("Connected to $serverIp:$serverPort")
-            keepAliveManager?.startMonitoring(
-                socketProvider = { activeSecureSocket ?: activeRawSocket },
-                probeTargetHost = serverIp,
-                probeTargetPort = serverPort
-            )
-
-            // تشغيل جسر نقل الحزم الفعلي بين واجهة النظام والنفق المشفر
-            TunPacketForwarder.startBridging(
-                vpnInput = vpnInput,
-                vpnOutput = vpnOutput,
-                secureSocket = secureSocket,
-                isRunning = isRunning,
-                onBytesTransferred = { rx, tx ->
-                    if (sessionIdGenerator.get() == mySessionId) {
-                        totalBytesReceived = rx
-                        totalBytesSent = tx
-                        VpnManager.updateTelemetry(rx, tx)
-                        keepAliveManager?.recordTrafficActivity()
-                    }
+            val session = TunPacketForwarder.startSingBoxCore(
+                vpnService = this@AdvancedVpnService,
+                context = applicationContext,
+                clientConfig = clientConfig,
+                onCoreLog = { line ->
+                    VpnManager.appendTelemetryLog("CORE", line)
+                },
+                onNotification = { title, body ->
+                    showForegroundNotification("$title: $body")
                 }
             )
 
-        } catch (e: java.net.UnknownHostException) {
-            val msg = "Cannot resolve '$serverIp'. Enter a valid server IP or domain."
-            Log.e(TAG, "DNS resolution failed: $msg", e)
-            if (sessionIdGenerator.get() == mySessionId) VpnManager.onServiceStopped(msg)
-        } catch (e: java.net.SocketTimeoutException) {
-            val msg = "Connection to $serverIp:$serverPort timed out after 7s. Check firewall rules."
-            Log.e(TAG, "Connection timeout: $msg", e)
-            if (sessionIdGenerator.get() == mySessionId) VpnManager.onServiceStopped(msg)
-        } catch (e: java.net.ConnectException) {
-            val msg = "Connection refused by $serverIp:$serverPort. Check if your tunnel service is active."
-            Log.e(TAG, "Connection refused: $msg", e)
-            if (sessionIdGenerator.get() == mySessionId) VpnManager.onServiceStopped(msg)
-        } catch (e: javax.net.ssl.SSLHandshakeException) {
-            val msg = "TLS Handshake failed with $sniHost: ${e.localizedMessage ?: "Certificate mismatch"}"
-            Log.e(TAG, "TLS error: $msg", e)
-            if (sessionIdGenerator.get() == mySessionId) VpnManager.onServiceStopped(msg)
-        } catch (e: Exception) {
-            if (isRunning.get() && sessionIdGenerator.get() == mySessionId) {
-                Log.e(TAG, "Tunnel session terminated: ${e.message}", e)
-                VpnManager.onServiceStopped("Connection error: ${e.localizedMessage ?: e.javaClass.simpleName}")
+            if (sessionIdGenerator.get() != mySessionId || !isRunning.get()) {
+                TunPacketForwarder.stopSingBoxCore(session)
+                return
             }
-        } finally {
-            try { secureSocket?.close() } catch (_: Exception) {}
-            try { rawSocket?.close() } catch (_: Exception) {}
-            try { vpnInput?.close() } catch (_: Exception) {}
-            try { vpnOutput?.close() } catch (_: Exception) {}
-            try { localVpnInterface?.close() } catch (_: Exception) {}
+
+            singBoxSession = session
+            VpnManager.onServiceConnected("sing-box (${sbProtocol.id}) • $serverIp:$serverPort")
+            showForegroundNotification("Connected (${sbProtocol.id}) -> $serverIp:$serverPort")
+        } catch (err: Throwable) {
+            Log.e(TAG, "libbox core startup failed: ${err.message}", err)
             if (sessionIdGenerator.get() == mySessionId) {
-                stopTunnel(stopService = true)
+                stopTunnel(
+                    reason = err.localizedMessage ?: "Failed to start native libbox core",
+                    stopService = true
+                )
             }
         }
     }
 
     private fun closeActiveResources() {
-        try { activeSecureSocket?.close() } catch (_: Exception) {}
-        try { activeRawSocket?.close() } catch (_: Exception) {}
-        try { vpnInterface?.close() } catch (_: Exception) {}
-        activeSecureSocket = null
-        activeRawSocket = null
-        vpnInterface = null
+        TunPacketForwarder.stopSingBoxCore(singBoxSession)
+        singBoxSession = null
     }
 
     private fun showForegroundNotification(statusText: String) {
@@ -537,7 +298,7 @@ class AdvancedVpnService : GoBackend.VpnService(), Runnable {
         }
 
         val notification = builder
-            .setContentTitle("Tunnel Console VPN")
+            .setContentTitle("Tunnel Console VPN (sing-box)")
             .setContentText(statusText)
             .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
             .setContentIntent(pendingIntent)
@@ -562,8 +323,6 @@ class AdvancedVpnService : GoBackend.VpnService(), Runnable {
         }
         keepAliveManager?.stopMonitoringAndReleaseLocks()
         closeActiveResources()
-        tunnelThread?.interrupt()
-        tunnelThread = null
         if (wasRunning || reason != null) {
             VpnManager.onServiceStopped(reason)
         }

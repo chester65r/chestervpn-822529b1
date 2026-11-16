@@ -2,6 +2,7 @@ package com.example.advancedtunnel
 
 import com.example.advancedtunnel.model.TunnelProfile
 import com.example.advancedtunnel.model.TunnelUtils
+import com.example.advancedtunnel.vpn.SingBoxConfigBuilder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -11,11 +12,18 @@ class NetworkDiagnosticsTest {
 
     @Test
     fun testProfileValidation_validProfile() {
+        val stcJson = SingBoxConfigBuilder.buildCarrierConfigJson(
+            carrierId = "stc",
+            serverHost = "2.29.8.194",
+            serverPort = 443,
+            customSni = "www.stc.com.sa"
+        )
         val profile = TunnelProfile(
-            ip = "1.1.1.1",
+            ip = "2.29.8.194",
             port = "443",
-            sni = "cloudflare.com",
-            payload = "GET / HTTP/1.1[crlf]Host: [host][crlf][crlf]"
+            sni = "www.stc.com.sa",
+            payload = stcJson,
+            protocol = "vless-reality"
         )
         val errors = TunnelUtils.validateProfile(profile)
         assertTrue("Valid profile should produce no validation errors", errors.isEmpty())
@@ -36,11 +44,22 @@ class NetworkDiagnosticsTest {
 
     @Test
     fun testProfileExportImportRoundtrip() {
+        val mobilyJson = SingBoxConfigBuilder.buildCarrierConfigJson(
+            carrierId = "mobily",
+            serverHost = "2.29.8.194",
+            serverPort = 443,
+            customSni = "www.mobily.com.sa",
+            customCdnHost = "cdn.mobily.com.sa",
+            customWsPath = "/cdn-ws"
+        )
         val original = TunnelProfile(
-            ip = "203.0.113.5",
-            port = "8443",
-            sni = "tunnel.example.com",
-            payload = "CONNECT [host] HTTP/1.1[crlf][crlf]"
+            ip = "2.29.8.194",
+            port = "443",
+            sni = "www.mobily.com.sa",
+            payload = mobilyJson,
+            protocol = "vless-ws-tls",
+            cdnHost = "cdn.mobily.com.sa",
+            wsPath = "/cdn-ws"
         )
         val code = TunnelUtils.exportProfile(original)
         assertNotNull("Exported code should not be null", code)
@@ -51,17 +70,23 @@ class NetworkDiagnosticsTest {
         assertEquals("IP should match after import", original.ip, imported?.ip)
         assertEquals("Port should match after import", original.port, imported?.port)
         assertEquals("SNI should match after import", original.sni, imported?.sni)
+        assertEquals("Protocol should match after import", original.protocol, imported?.protocol)
         assertEquals("Payload should match after import", original.payload, imported?.payload)
     }
 
     @Test
     fun testPayloadVisualization() {
-        val rawPayload = "GET / HTTP/1.1[crlf]Host: [host][crlf][crlf]"
-        val sni = "example.com"
+        val rawPayload = SingBoxConfigBuilder.buildCarrierConfigJson(
+            carrierId = "stc",
+            serverHost = "2.29.8.194",
+            serverPort = 443,
+            customSni = "www.stc.com.sa"
+        )
+        val sni = "www.stc.com.sa"
         val parsed = TunnelUtils.parsePayload(rawPayload, sni)
         val visual = TunnelUtils.visualizePayload(parsed)
 
-        assertTrue("Visual preview should show CR LF escape labels", visual.contains("\\r\\n"))
-        assertTrue("Visual preview should replace [host] with actual SNI", visual.contains(sni))
+        assertTrue("Visual preview should contain valid sing-box outbounds JSON", visual.contains("\"outbounds\""))
+        assertTrue("Visual preview should include configured SNI", visual.contains(sni))
     }
 }

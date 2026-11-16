@@ -20,6 +20,7 @@ import {
   NETWORK_PROVIDER_PROFILES,
   ROUTE_PRESETS,
   SAVED_PROFILES_KEY,
+  buildValidatedOutboundPayloadJson,
   exportProfile,
   bytesPerSecToMbps,
   importProfile,
@@ -70,9 +71,9 @@ const STORAGE_KEY = "tunnel-console-profile";
 function Index() {
   const [tab, setTab] = useState<Tab>("home");
   const [profile, setProfile] = useState<TunnelProfile>(HETZNER_DEFAULT_PROFILE);
-  const [presetId, setPresetId] = useState("custom");
+  const [presetId, setPresetId] = useState("stc");
   const [networkProfileId, setNetworkProfileId] = useState<string>(
-    NETWORK_PROVIDER_PROFILES[0]?.id ?? "hetzner-tls-direct",
+    NETWORK_PROVIDER_PROFILES[0]?.id ?? "stc-ksa-5g-cgnat",
   );
   const [errors, setErrors] = useState<ProfileErrors>({});
   const [exported, setExported] = useState<string | null>(null);
@@ -127,7 +128,24 @@ function Index() {
   };
 
   const change = (patch: Partial<TunnelProfile>) => {
-    setProfile((p) => ({ ...p, ...patch }));
+    setProfile((p) => {
+      const merged: TunnelProfile = { ...p, ...patch };
+      if (!("payload" in patch) && ("ip" in patch || "port" in patch || "sni" in patch || "protocol" in patch || "cdnHost" in patch || "wsPath" in patch)) {
+        const proto = merged.protocol ?? (Number(merged.port) === 8443 ? "trojan-tls" : "vless-reality");
+        merged.payload = buildValidatedOutboundPayloadJson({
+          protocol: proto,
+          serverHost: merged.ip.trim() || "2.29.8.194",
+          serverPort: Number(merged.port) || 443,
+          sni: merged.sni.trim() || "www.stc.com.sa",
+          cdnHost: merged.cdnHost || merged.sni || "cdn.mobily.com.sa",
+          wsPath: merged.wsPath || "/cdn-ws",
+          utlsFingerprint: merged.utlsFingerprint ?? "chrome",
+          sniSplitMinBytes: merged.sniSplitMinBytes ?? 5,
+          sniSplitMaxBytes: merged.sniSplitMaxBytes ?? 15,
+        });
+      }
+      return merged;
+    });
     setErrors((e) => {
       const next = { ...e };
       (Object.keys(patch) as (keyof TunnelProfile)[]).forEach((k) => delete next[k]);
@@ -139,8 +157,39 @@ function Index() {
   const choosePreset = (id: string) => {
     setPresetId(id);
     const preset = ROUTE_PRESETS.find((p) => p.id === id);
-    if (preset) {
-      setProfile((p) => ({ ...p, sni: preset.sni }));
+    if (preset && preset.sni) {
+      if (id === "stc") setNetworkProfileId("stc-ksa-5g-cgnat");
+      if (id === "mobily") setNetworkProfileId("mobily-ksa-lte-bypass");
+      setProfile((p) => {
+        const nextProto = preset.protocol ?? "vless-reality";
+        const nextSni = preset.sni;
+        const nextCdnHost = preset.cdnHost || nextSni;
+        const nextWsPath = preset.wsPath || "/cdn-ws";
+        const nextUtls = preset.utlsFingerprint ?? "chrome";
+        const nextSplitMin = preset.sniSplitMinBytes ?? 5;
+        const nextSplitMax = preset.sniSplitMaxBytes ?? 15;
+        return {
+          ...p,
+          sni: nextSni,
+          protocol: nextProto,
+          cdnHost: nextCdnHost,
+          wsPath: nextWsPath,
+          utlsFingerprint: nextUtls,
+          sniSplitMinBytes: nextSplitMin,
+          sniSplitMaxBytes: nextSplitMax,
+          payload: buildValidatedOutboundPayloadJson({
+            protocol: nextProto,
+            serverHost: p.ip.trim() || "2.29.8.194",
+            serverPort: Number(p.port) || 443,
+            sni: nextSni,
+            cdnHost: nextCdnHost,
+            wsPath: nextWsPath,
+            utlsFingerprint: nextUtls,
+            sniSplitMinBytes: nextSplitMin,
+            sniSplitMaxBytes: nextSplitMax,
+          }),
+        };
+      });
       setErrors((e) => {
         const { sni: _omit, ...rest } = e;
         return rest;
@@ -152,7 +201,13 @@ function Index() {
     if (!canEdit()) return;
     setNetworkProfileId(netProfile.id);
     setProfile(netProfile.profile);
-    setPresetId("custom");
+    if (netProfile.id === "stc-ksa-5g-cgnat") {
+      setPresetId("stc");
+    } else if (netProfile.id === "mobily-ksa-lte-bypass") {
+      setPresetId("mobily");
+    } else {
+      setPresetId("custom");
+    }
     setErrors({});
     toast.success(`Applied ${netProfile.name}`, {
       description: `Target: ${netProfile.profile.ip}:${netProfile.profile.port} · MTU ${netProfile.recommendedMtu}`,

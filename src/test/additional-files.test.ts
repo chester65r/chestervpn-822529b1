@@ -17,6 +17,9 @@ afterEach(() => vi.unstubAllGlobals());
 
 /** jsdom Blobs have no .text(); FileReader is the portable read in this environment. */
 function blobText(blob: Blob): Promise<string> {
+  if (typeof blob.text === 'function') {
+    return blob.text();
+  }
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));

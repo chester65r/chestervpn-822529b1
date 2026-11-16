@@ -3,25 +3,59 @@ export type TunnelProfile = {
   port: string;
   sni: string;
   payload: string;
+  protocol?: "vless-reality" | "vless-ws-tls" | "trojan-tls";
+  cdnHost?: string;
+  wsPath?: string;
+  utlsFingerprint?: "chrome" | "ios" | "firefox" | "safari" | "randomized";
+  sniSplitMinBytes?: number;
+  sniSplitMaxBytes?: number;
 };
 
 export type RoutePreset = {
   id: string;
   label: string;
   sni: string;
+  protocol?: "vless-reality" | "vless-ws-tls" | "trojan-tls";
+  cdnHost?: string;
+  wsPath?: string;
+  utlsFingerprint?: "chrome" | "ios";
+  sniSplitMinBytes?: number;
+  sniSplitMaxBytes?: number;
 };
 
 export const ROUTE_PRESETS: RoutePreset[] = [
-  { id: "alpha", label: "Route Preset Alpha (TLS Virtualization)", sni: "alpha.example.com" },
-  { id: "beta", label: "Route Preset Beta (Edge CDN Routing)", sni: "beta.example.com" },
-  { id: "gamma", label: "Route Preset Gamma (Cloud Delivery)", sni: "gamma.example.com" },
-  { id: "custom", label: "Custom Infrastructure Gateway", sni: "" },
+  {
+    id: "stc",
+    label: "STC KSA (VLESS + Reality · 5-15B SNI Split)",
+    sni: "www.stc.com.sa",
+    protocol: "vless-reality",
+    utlsFingerprint: "chrome",
+    sniSplitMinBytes: 5,
+    sniSplitMaxBytes: 15,
+  },
+  {
+    id: "mobily",
+    label: "Mobily KSA (WSS + CDN Fronted · Chrome JA4)",
+    sni: "www.mobily.com.sa",
+    protocol: "vless-ws-tls",
+    cdnHost: "cdn.mobily.com.sa",
+    wsPath: "/cdn-ws",
+    utlsFingerprint: "chrome",
+    sniSplitMinBytes: 5,
+    sniSplitMaxBytes: 15,
+  },
+  { id: "alpha", label: "Route Preset Alpha (VLESS + Reality)", sni: "alpha.example.com", protocol: "vless-reality" },
+  {
+    id: "beta",
+    label: "Route Preset Beta (WSS + CDN Routing)",
+    sni: "beta.example.com",
+    protocol: "vless-ws-tls",
+    cdnHost: "cdn.beta.example.com",
+    wsPath: "/cdn-ws",
+  },
+  { id: "gamma", label: "Route Preset Gamma (Trojan + TLS)", sni: "gamma.example.com", protocol: "trojan-tls" },
+  { id: "custom", label: "Custom Infrastructure Gateway", sni: "", protocol: "vless-reality" },
 ];
-
-export const DEFAULT_PAYLOAD_TEMPLATE =
-  "GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]";
-
-export const EMPTY_PROFILE: TunnelProfile = { ip: "", port: "443", sni: "", payload: "" };
 
 /**
  * Production Hetzner Ubuntu VPS infrastructure specification
@@ -52,11 +86,166 @@ export const HETZNER_SERVER_SPEC = {
   tunSubnet: "10.8.0.0/24",
 } as const;
 
+/**
+ * Builds a full, validated `sing-box` (`libbox`) outbound JSON configuration
+ * mapped directly to the VPN core engine for STC (VLESS+Reality with 5-15B SNI split),
+ * Mobily (WSS over CDN with custom Host header & uTLS Chrome JA4), or Trojan-TLS.
+ */
+export function buildValidatedOutboundPayloadJson(options: {
+  protocol?: "vless-reality" | "vless-ws-tls" | "trojan-tls";
+  serverHost?: string;
+  serverPort?: number;
+  sni?: string;
+  cdnHost?: string;
+  wsPath?: string;
+  utlsFingerprint?: "chrome" | "ios" | "firefox" | "safari" | "randomized";
+  mtu?: number;
+  sniSplitMinBytes?: number;
+  sniSplitMaxBytes?: number;
+}): string {
+  const protocol = options.protocol ?? "vless-reality";
+  const server = (options.serverHost ?? HETZNER_SERVER_SPEC.ip).trim() || HETZNER_SERVER_SPEC.ip;
+  const serverPort = options.serverPort ?? (protocol === "trojan-tls" ? 8443 : 443);
+  const sni =
+    (options.sni ?? "").trim() ||
+    (protocol === "vless-ws-tls"
+      ? "www.mobily.com.sa"
+      : protocol === "vless-reality"
+        ? "www.stc.com.sa"
+        : HETZNER_SERVER_SPEC.reverseDns);
+  const utlsFp = options.utlsFingerprint ?? "chrome";
+  const mtu = options.mtu ?? 1280;
+
+  const tlsBlock: Record<string, unknown> = {
+    enabled: true,
+    server_name: sni,
+    fragment: true,
+    fragment_fallback_delay: "500ms",
+    record_fragment: true,
+    utls: {
+      enabled: true,
+      fingerprint: utlsFp,
+    },
+  };
+
+  if (protocol === "vless-reality") {
+    tlsBlock["reality"] = {
+      enabled: true,
+      public_key: "<REALITY_PUBLIC_KEY>",
+      short_id: "<REALITY_SHORT_ID>",
+    };
+  } else if (protocol === "vless-ws-tls") {
+    tlsBlock["alpn"] = ["http/1.1"];
+  } else {
+    tlsBlock["alpn"] = ["h2", "http/1.1"];
+  }
+
+  let proxyOutbound: Record<string, unknown>;
+  if (protocol === "vless-reality") {
+    proxyOutbound = {
+      type: "vless",
+      tag: "proxy",
+      server,
+      server_port: serverPort,
+      uuid: "<SERVER_UUID>",
+      flow: "xtls-rprx-vision",
+      packet_encoding: "xudp",
+      tls: tlsBlock,
+    };
+  } else if (protocol === "vless-ws-tls") {
+    const cdnHost = (options.cdnHost ?? "cdn.mobily.com.sa").trim() || sni;
+    const rawPath = (options.wsPath ?? "/cdn-ws").trim() || "/cdn-ws";
+    const wsPath = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
+    proxyOutbound = {
+      type: "vless",
+      tag: "proxy",
+      server,
+      server_port: serverPort,
+      uuid: "<SERVER_UUID>",
+      packet_encoding: "xudp",
+      tls: tlsBlock,
+      transport: {
+        type: "ws",
+        path: wsPath,
+        headers: {
+          Host: cdnHost,
+        },
+        max_early_data: 2048,
+        early_data_header_name: "Sec-WebSocket-Protocol",
+      },
+    };
+  } else {
+    proxyOutbound = {
+      type: "trojan",
+      tag: "proxy",
+      server,
+      server_port: serverPort,
+      password: "<TROJAN_PASSWORD>",
+      tls: tlsBlock,
+    };
+  }
+
+  return JSON.stringify(
+    {
+      log: { disabled: false, level: "info", timestamp: true },
+      dns: {
+        servers: [
+          { tag: "remote-dns", type: "udp", server: "1.1.1.1", detour: "proxy" },
+          { tag: "local-dns", type: "local" },
+        ],
+        final: "remote-dns",
+      },
+      inbounds: [
+        {
+          type: "tun",
+          tag: "tun-in",
+          address: ["172.19.0.1/30"],
+          mtu,
+          auto_route: true,
+          strict_route: true,
+          stack: "gvisor",
+          sniff: true,
+        },
+      ],
+      outbounds: [proxyOutbound, { type: "direct", tag: "direct" }],
+      route: {
+        rules: [
+          { action: "sniff" },
+          { protocol: "dns", action: "hijack-dns" },
+          { ip_is_private: true, outbound: "direct" },
+        ],
+        final: "proxy",
+        auto_detect_interface: true,
+        default_domain_resolver: "local-dns",
+      },
+    },
+    null,
+    2,
+  );
+}
+
+export const DEFAULT_PAYLOAD_TEMPLATE = buildValidatedOutboundPayloadJson({
+  protocol: "vless-reality",
+  serverHost: HETZNER_SERVER_SPEC.ip,
+  serverPort: 443,
+  sni: "www.stc.com.sa",
+  utlsFingerprint: "chrome",
+  mtu: 1280,
+  sniSplitMinBytes: 5,
+  sniSplitMaxBytes: 15,
+});
+
+export const EMPTY_PROFILE: TunnelProfile = { ip: "", port: "443", sni: "", payload: "" };
+
 export const HETZNER_DEFAULT_PROFILE: TunnelProfile = {
   ip: HETZNER_SERVER_SPEC.ip,
   port: String(HETZNER_SERVER_SPEC.tlsPort),
-  sni: HETZNER_SERVER_SPEC.reverseDns,
+  sni: "www.stc.com.sa",
   payload: DEFAULT_PAYLOAD_TEMPLATE,
+  protocol: "vless-reality",
+  utlsFingerprint: "chrome",
+  sniSplitMinBytes: 5,
+  sniSplitMaxBytes: 15,
 };
 
 export type NetworkProviderProfile = {
@@ -66,30 +255,98 @@ export type NetworkProviderProfile = {
   description: string;
   recommendedMtu: number;
   keepAliveIntervalSec: number;
-  transportMode: "tls-ws" | "wireguard-udp" | "carrier-cgnat-safe" | "alt-tls-8443";
+  transportMode: "vless-reality" | "vless-ws-tls" | "wireguard-udp" | "trojan-tls-8443";
   profile: TunnelProfile;
 };
 
 /**
- * Legitimate network & telecom-provider optimization profiles configured for
- * the Hetzner CX23 (ahmed-docker-manager / 2.29.8.194 / Helsinki eu-central) VPN and relay server.
+ * Modern carrier & telecom-provider routing profiles mapped directly to the native
+ * `sing-box` (`libbox`) VPN core engine for Hetzner CX23 (ahmed-docker-manager / 2.29.8.194).
  */
 export const NETWORK_PROVIDER_PROFILES: NetworkProviderProfile[] = [
   {
-    id: "hetzner-tls-direct",
-    name: "Hetzner CX23 Direct (TLS 1.3 + WebSocket)",
-    networkType: "Fiber / Broadband / Wi-Fi (Helsinki eu-central)",
+    id: "stc-ksa-5g-cgnat",
+    name: "STC KSA 4G/5G (VLESS + Reality · SNI Split)",
+    networkType: "Saudi Telecom (STC KSA 5G/LTE — VLESS + Reality Port 443)",
     description:
-      "Direct TLS 1.3 handshake to ahmed-docker-manager (2.29.8.194:443) with RFC 6455 WebSocket upgrade and standard 1420 MTU.",
-    recommendedMtu: 1420,
-    keepAliveIntervalSec: 25,
-    transportMode: "tls-ws",
+      "VLESS + XTLS-Vision + Reality over port 443 with TLS 1.3 handshake to operator SNI (www.stc.com.sa) and ClientHello fragmentation at the SNI boundary (offset 5–15 bytes) to defeat stateful DPI.",
+    recommendedMtu: 1280,
+    keepAliveIntervalSec: 12,
+    transportMode: "vless-reality",
     profile: {
       ip: HETZNER_SERVER_SPEC.ip,
       port: "443",
-      sni: HETZNER_SERVER_SPEC.ip,
-      payload:
-        "GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]X-Tunnel-Profile: hetzner-tls-direct[crlf]",
+      sni: "www.stc.com.sa",
+      protocol: "vless-reality",
+      utlsFingerprint: "chrome",
+      sniSplitMinBytes: 5,
+      sniSplitMaxBytes: 15,
+      payload: buildValidatedOutboundPayloadJson({
+        protocol: "vless-reality",
+        serverHost: HETZNER_SERVER_SPEC.ip,
+        serverPort: 443,
+        sni: "www.stc.com.sa",
+        utlsFingerprint: "chrome",
+        mtu: 1280,
+        sniSplitMinBytes: 5,
+        sniSplitMaxBytes: 15,
+      }),
+    },
+  },
+  {
+    id: "mobily-ksa-lte-bypass",
+    name: "Mobily KSA (WebSocket + TLS CDN · Chrome JA4)",
+    networkType: "Mobily KSA (Etihad Etisalat — WSS Fronted by Cloudflare/Fastly)",
+    description:
+      "VLESS over WebSocket + TLS 1.3 (WSS) fronted by CDN edge on port 443 with explicit Host header (cdn.mobily.com.sa), path /cdn-ws, and enforced uTLS Chrome JA4 fingerprint.",
+    recommendedMtu: 1280,
+    keepAliveIntervalSec: 15,
+    transportMode: "vless-ws-tls",
+    profile: {
+      ip: HETZNER_SERVER_SPEC.ip,
+      port: "443",
+      sni: "www.mobily.com.sa",
+      protocol: "vless-ws-tls",
+      cdnHost: "cdn.mobily.com.sa",
+      wsPath: "/cdn-ws",
+      utlsFingerprint: "chrome",
+      sniSplitMinBytes: 5,
+      sniSplitMaxBytes: 15,
+      payload: buildValidatedOutboundPayloadJson({
+        protocol: "vless-ws-tls",
+        serverHost: HETZNER_SERVER_SPEC.ip,
+        serverPort: 443,
+        sni: "www.mobily.com.sa",
+        cdnHost: "cdn.mobily.com.sa",
+        wsPath: "/cdn-ws",
+        utlsFingerprint: "chrome",
+        mtu: 1280,
+      }),
+    },
+  },
+  {
+    id: "hetzner-tls-direct",
+    name: "Hetzner CX23 Direct (VLESS + Reality 443)",
+    networkType: "Fiber / Broadband / Wi-Fi (Helsinki eu-central)",
+    description:
+      "Direct VLESS + Reality TLS 1.3 handshake to ahmed-docker-manager (2.29.8.194:443) with uTLS Chrome JA4 and 1420 MTU.",
+    recommendedMtu: 1420,
+    keepAliveIntervalSec: 25,
+    transportMode: "vless-reality",
+    profile: {
+      ip: HETZNER_SERVER_SPEC.ip,
+      port: "443",
+      sni: HETZNER_SERVER_SPEC.reverseDns,
+      protocol: "vless-reality",
+      utlsFingerprint: "chrome",
+      payload: buildValidatedOutboundPayloadJson({
+        protocol: "vless-reality",
+        serverHost: HETZNER_SERVER_SPEC.ip,
+        serverPort: 443,
+        sni: HETZNER_SERVER_SPEC.reverseDns,
+        utlsFingerprint: "chrome",
+        mtu: 1420,
+      }),
     },
   },
   {
@@ -97,16 +354,26 @@ export const NETWORK_PROVIDER_PROFILES: NetworkProviderProfile[] = [
     name: "Mobile Carrier / 4G & 5G CGNAT Safe",
     networkType: "Telecom Mobile Data (5G VoLTE / Carrier NAT)",
     description:
-      "Clamped 1280 MTU, 15s NAT keepalive, and chunked TLS handshake for carrier-grade NAT and strict mobile packet inspection.",
+      "Clamped 1280 MTU, 15s NAT keepalive, and VLESS + Reality ClientHello SNI boundary split (5-15B) for carrier-grade NAT.",
     recommendedMtu: 1280,
     keepAliveIntervalSec: 15,
-    transportMode: "carrier-cgnat-safe",
+    transportMode: "vless-reality",
     profile: {
       ip: HETZNER_SERVER_SPEC.ip,
       port: "443",
-      sni: HETZNER_SERVER_SPEC.ip,
-      payload:
-        "GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade, Keep-Alive[crlf]Upgrade: websocket[crlf]X-Tunnel-MTU: 1280[crlf]X-Tunnel-Profile: telecom-mobile-cgnat[crlf]",
+      sni: "www.stc.com.sa",
+      protocol: "vless-reality",
+      utlsFingerprint: "ios",
+      sniSplitMinBytes: 5,
+      sniSplitMaxBytes: 15,
+      payload: buildValidatedOutboundPayloadJson({
+        protocol: "vless-reality",
+        serverHost: HETZNER_SERVER_SPEC.ip,
+        serverPort: 443,
+        sni: "www.stc.com.sa",
+        utlsFingerprint: "ios",
+        mtu: 1280,
+      }),
     },
   },
   {
@@ -114,84 +381,53 @@ export const NETWORK_PROVIDER_PROFILES: NetworkProviderProfile[] = [
     name: "Reverse-DNS SNI Relay (clients.your-server.de)",
     networkType: "Restricted Firewall / Corporate Wi-Fi (UDP Blocked)",
     description:
-      "Uses Hetzner's official reverse DNS hostname (static.194.8.29.2.clients.your-server.de) as TLS SNI over TCP 443.",
+      "Uses Hetzner's official reverse DNS hostname (static.194.8.29.2.clients.your-server.de) with VLESS over WSS TLS 443.",
     recommendedMtu: 1360,
     keepAliveIntervalSec: 20,
-    transportMode: "tls-ws",
+    transportMode: "vless-ws-tls",
     profile: {
       ip: HETZNER_SERVER_SPEC.ip,
       port: "443",
       sni: HETZNER_SERVER_SPEC.reverseDns,
-      payload:
-        "GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]Cache-Control: no-cache[crlf]X-Tunnel-Profile: enterprise-firewall-443[crlf]",
+      protocol: "vless-ws-tls",
+      cdnHost: HETZNER_SERVER_SPEC.reverseDns,
+      wsPath: "/cdn-ws",
+      utlsFingerprint: "chrome",
+      payload: buildValidatedOutboundPayloadJson({
+        protocol: "vless-ws-tls",
+        serverHost: HETZNER_SERVER_SPEC.ip,
+        serverPort: 443,
+        sni: HETZNER_SERVER_SPEC.reverseDns,
+        cdnHost: HETZNER_SERVER_SPEC.reverseDns,
+        wsPath: "/cdn-ws",
+        utlsFingerprint: "chrome",
+        mtu: 1360,
+      }),
     },
   },
   {
     id: "hetzner-alt-8443",
-    name: "Hetzner CX23 Alternate TLS Port (8443)",
+    name: "Hetzner CX23 Trojan + TLS (Port 8443)",
     networkType: "Alternate Port / Middlebox Fallback",
     description:
-      "Connects to the secondary TLS listener on 2.29.8.194:8443 when middleboxes throttle standard port 443.",
+      "Connects to the secondary Trojan + TLS 1.3 listener on 2.29.8.194:8443 when middleboxes throttle standard port 443.",
     recommendedMtu: 1280,
     keepAliveIntervalSec: 20,
-    transportMode: "alt-tls-8443",
+    transportMode: "trojan-tls-8443",
     profile: {
       ip: HETZNER_SERVER_SPEC.ip,
       port: "8443",
-      sni: HETZNER_SERVER_SPEC.ip,
-      payload:
-        "GET / HTTP/1.1[crlf]Host: [host]:8443[crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]X-Tunnel-Profile: hetzner-alt-8443[crlf]",
-    },
-  },
-  {
-    id: "strict-dpi-bypass",
-    name: "Strict Deep Packet Inspection (DPI) Bypass & Obfuscated SNI",
-    networkType: "Restricted ISP / Censored Firewall / DPI Bypass",
-    description:
-      "Advanced anti-DPI obfuscation profile utilizing fragmented TLS SNI headers, custom User-Agent spoofing, and randomized keepalive padding targeting the Hetzner CX23 gateway.",
-    recommendedMtu: 1280,
-    keepAliveIntervalSec: 10,
-    transportMode: "tls-ws",
-    profile: {
-      ip: HETZNER_SERVER_SPEC.ip,
-      port: "443",
       sni: HETZNER_SERVER_SPEC.reverseDns,
-      payload:
-        "GET /cdn/websocket HTTP/1.1[crlf]Host: [host][crlf]User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36[crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]Sec-WebSocket-Protocol: tunnel-v2[crlf]X-Bypass-DPI: true[crlf]",
-    },
-  },
-  {
-    id: "stc-ksa-5g-cgnat",
-    name: "STC KSA 4G/5G (Saudi Telecom Carrier NAT Optimized)",
-    networkType: "Saudi Telecom (STC KSA Mobile Data & Fiber)",
-    description:
-      "Specialized profile optimized for STC KSA network gateways (AS25019 / AS39386) with 1280 MTU, aggressive 12s keepalive, and reverse-DNS SNI over port 443.",
-    recommendedMtu: 1280,
-    keepAliveIntervalSec: 12,
-    transportMode: "carrier-cgnat-safe",
-    profile: {
-      ip: HETZNER_SERVER_SPEC.ip,
-      port: "443",
-      sni: HETZNER_SERVER_SPEC.reverseDns,
-      payload:
-        "GET /stc/v2/stream HTTP/1.1[crlf]Host: [host][crlf]X-Carrier: STC-KSA[crlf]Connection: Upgrade, Keep-Alive[crlf]Upgrade: websocket[crlf]Cache-Control: no-store[crlf]",
-    },
-  },
-  {
-    id: "mobily-ksa-lte-bypass",
-    name: "Mobily KSA (Etihad Etisalat Mobile Data & CGNAT)",
-    networkType: "Mobily KSA (Etihad Etisalat Mobile & Broadband)",
-    description:
-      "Tuned specifically for Mobily KSA infrastructure (AS2914 / AS39386) featuring chunked HTTP header padding, 1280 MTU, and 15s persistent keepalive to defeat middlebox throttling.",
-    recommendedMtu: 1280,
-    keepAliveIntervalSec: 15,
-    transportMode: "carrier-cgnat-safe",
-    profile: {
-      ip: HETZNER_SERVER_SPEC.ip,
-      port: "443",
-      sni: HETZNER_SERVER_SPEC.reverseDns,
-      payload:
-        "GET /mobily/ws/connect HTTP/1.1[crlf]Host: [host][crlf]X-Operator: Mobily-KSA[crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]Sec-WebSocket-Version: 13[crlf]",
+      protocol: "trojan-tls",
+      utlsFingerprint: "chrome",
+      payload: buildValidatedOutboundPayloadJson({
+        protocol: "trojan-tls",
+        serverHost: HETZNER_SERVER_SPEC.ip,
+        serverPort: 8443,
+        sni: HETZNER_SERVER_SPEC.reverseDns,
+        utlsFingerprint: "chrome",
+        mtu: 1280,
+      }),
     },
   },
 ];
@@ -223,36 +459,60 @@ export function parseActiveProfile(json: string | null): { profile: TunnelProfil
 
 /**
  * Resolves the active profile on workspace hydration, defaulting to the
- * production Hetzner CX23 (2.29.8.194) profile when no saved draft is present.
+ * production Hetzner CX23 (2.29.8.194) STC VLESS+Reality profile when no saved draft is present.
  */
 export function resolveInitialActiveProfile(json: string | null): { profile: TunnelProfile; presetId: string } {
   if (!json) {
-    return { profile: HETZNER_DEFAULT_PROFILE, presetId: "custom" };
+    return { profile: HETZNER_DEFAULT_PROFILE, presetId: "stc" };
   }
   const parsed = parseActiveProfile(json);
   if (!parsed.profile.ip && !parsed.profile.sni && !parsed.profile.payload) {
-    return { profile: HETZNER_DEFAULT_PROFILE, presetId: "custom" };
+    return { profile: HETZNER_DEFAULT_PROFILE, presetId: "stc" };
   }
   return parsed;
 }
 
 export const PROFILE_PREFIX = "TUNNEL://";
 
-/** Expands [host] / [crlf] macros into the raw handshake text sent after the TLS handshake. */
+/**
+ * Resolves the active `sing-box` outbound JSON configuration for the given profile & SNI host.
+ */
 export function parsePayload(raw: string, host: string): string {
-  const template = raw.trim() === "" ? DEFAULT_PAYLOAD_TEMPLATE : raw;
-  let out = template
-    .replace(/\[host\]/gi, host)
-    .replace(/\[crlf\]/gi, "\r\n")
-    .replace(/\\r\\n/g, "\r\n");
-  if (out.endsWith("\r\n\r\n")) return out;
-  out += out.endsWith("\r\n") ? "\r\n" : "\r\n\r\n";
-  return out;
+  const cleanHost = host.trim() || "www.stc.com.sa";
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      const outbounds = Array.isArray(parsed["outbounds"]) ? parsed["outbounds"] : [];
+      for (const item of outbounds) {
+        if (typeof item === "object" && item !== null) {
+          const outObj = item as Record<string, unknown>;
+          const tlsObj = outObj["tls"] as Record<string, unknown> | undefined;
+          if (tlsObj && host.trim()) {
+            tlsObj["server_name"] = cleanHost;
+          }
+        }
+      }
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      // Fall through to build validated outbound JSON
+    }
+  }
+  const isMobily = cleanHost.toLowerCase().includes("mobily");
+  return buildValidatedOutboundPayloadJson({
+    protocol: isMobily ? "vless-ws-tls" : "vless-reality",
+    serverHost: HETZNER_SERVER_SPEC.ip,
+    serverPort: 443,
+    sni: cleanHost,
+    ...(isMobily ? { cdnHost: "cdn.mobily.com.sa", wsPath: "/cdn-ws" } : {}),
+    utlsFingerprint: "chrome",
+    mtu: 1280,
+  });
 }
 
-/** Makes CR/LF visible for the live preview. */
+/** Formats the parsed sing-box JSON payload for live preview. */
 export function visualizePayload(parsed: string): string {
-  return parsed.replace(/\r\n/g, "\\r\\n\n");
+  return parsed.trim();
 }
 
 const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
@@ -297,13 +557,20 @@ function fromBase64(b64: string): string {
 }
 
 export function exportProfile(p: TunnelProfile): string {
-  const json = JSON.stringify({
+  const payloadObj: Record<string, unknown> = {
     ip: p.ip.trim(),
     port: Number(p.port),
     sni: p.sni.trim(),
     payload: p.payload,
-  });
-  return PROFILE_PREFIX + toBase64(json);
+  };
+  if (p.protocol) payloadObj["protocol"] = p.protocol;
+  if (p.cdnHost) payloadObj["cdnHost"] = p.cdnHost;
+  if (p.wsPath) payloadObj["wsPath"] = p.wsPath;
+  if (p.utlsFingerprint) payloadObj["utlsFingerprint"] = p.utlsFingerprint;
+  if (p.sniSplitMinBytes !== undefined) payloadObj["sniSplitMinBytes"] = p.sniSplitMinBytes;
+  if (p.sniSplitMaxBytes !== undefined) payloadObj["sniSplitMaxBytes"] = p.sniSplitMaxBytes;
+
+  return PROFILE_PREFIX + toBase64(JSON.stringify(payloadObj));
 }
 
 export function importProfile(code: string): TunnelProfile | null {
@@ -318,7 +585,18 @@ export function importProfile(code: string): TunnelProfile | null {
       !Number.isInteger(data?.port)
     )
       return null;
-    const profile = { ip: data.ip, port: String(data.port), sni: data.sni, payload: data.payload };
+    const profile: TunnelProfile = {
+      ip: data.ip,
+      port: String(data.port),
+      sni: data.sni,
+      payload: data.payload,
+      ...(typeof data.protocol === "string" ? { protocol: data.protocol } : {}),
+      ...(typeof data.cdnHost === "string" ? { cdnHost: data.cdnHost } : {}),
+      ...(typeof data.wsPath === "string" ? { wsPath: data.wsPath } : {}),
+      ...(typeof data.utlsFingerprint === "string" ? { utlsFingerprint: data.utlsFingerprint } : {}),
+      ...(typeof data.sniSplitMinBytes === "number" ? { sniSplitMinBytes: data.sniSplitMinBytes } : {}),
+      ...(typeof data.sniSplitMaxBytes === "number" ? { sniSplitMaxBytes: data.sniSplitMaxBytes } : {}),
+    };
     return Object.keys(validateProfile(profile)).length === 0 ? profile : null;
   } catch {
     return null;

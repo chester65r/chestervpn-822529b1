@@ -169,12 +169,17 @@ object VpnManager {
         )
         registerNetworkMonitoring(context, profile)
 
+        val resolvedProtocol = profile.protocol.ifBlank {
+            if (profile.port.toIntOrNull() == 8443) "trojan-tls" else "vless-reality"
+        }
         val intent = Intent(context, AdvancedVpnService::class.java).apply {
             putExtra("SERVER_IP", profile.ip)
             putExtra("SERVER_PORT", profile.port.toIntOrNull() ?: 443)
             putExtra("SNI_HOST", profile.sni)
             putExtra("PAYLOAD", profile.payload)
-            putExtra("PROTOCOL", "tls")
+            putExtra("PROTOCOL", resolvedProtocol)
+            putExtra("CDN_HOST", profile.cdnHost)
+            putExtra("WS_PATH", profile.wsPath)
             putExtra("KILLSWITCH_ENABLED", killswitchEnabled)
             putStringArrayListExtra("DISALLOWED_APPS", ArrayList(disallowedApps))
             putExtra("TLS_FRAG_ENABLED", tlsFragmentConfig.enabled)

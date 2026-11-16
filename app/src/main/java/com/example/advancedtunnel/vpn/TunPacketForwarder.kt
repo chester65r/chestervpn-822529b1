@@ -1,84 +1,83 @@
 package com.example.advancedtunnel.vpn
 
+import android.content.Context
+import android.net.VpnService
 import android.util.Log
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.nio.ByteBuffer
-import java.util.concurrent.atomic.AtomicBoolean
-import javax.net.ssl.SSLSocket
+import io.nekohasekai.libbox.BoxService
+import io.nekohasekai.libbox.Libbox
+import java.io.IOException
 
+/**
+ * Lifecycle wrapper for the real native Go `sing-box` core (`io.nekohasekai.libbox`).
+ *
+ * Replaces all manual Layer-3 TUN stream loops with `Libbox.newService(configJson, platformBridge)`.
+ * `libbox` creates the TUN via [LibboxPlatformBridge.openTun], terminates TCP/UDP packets in
+ * userspace gVisor, protects outbound sockets via `VpnService.protect(fd)`, and multiplexes traffic
+ * over VLESS+Reality (`xtls-rprx-vision`) or Trojan over TLS 443 with uTLS (Chrome/iOS) and
+ * ClientHello record fragmentation.
+ */
 object TunPacketForwarder {
-    private const val TAG = "TunPacketForwarder"
-    private const val BUFFER_SIZE = 32767
 
-    /**
-     * Bridges the virtual TUN interface file descriptor with the secure TLS/Proxy socket.
-     * Reads Layer 3 IP packets from OS TUN, parses/processes them, and streams them 
-     * through the secure tunnel socket, while proxying responses back to TUN.
-     */
-    fun startBridging(
-        vpnInput: FileInputStream,
-        vpnOutput: FileOutputStream,
-        secureSocket: SSLSocket,
-        isRunning: AtomicBoolean,
-        onBytesTransferred: (rx: Long, tx: Long) -> Unit
-    ) {
-        val serverIn = secureSocket.inputStream
-        val serverOut = secureSocket.outputStream
+    private const val TAG = "SingBoxCoreRunner"
 
-        var totalRx = 0L
-        var totalTx = 0L
+    data class RunningSession(
+        val boxService: BoxService,
+        val platformBridge: LibboxPlatformBridge,
+        val configJson: String
+    )
 
-        // Downstream Thread: Server -> OS TUN
-        val downstreamThread = Thread({
-            val buffer = ByteArray(BUFFER_SIZE)
-            try {
-                while (isRunning.get()) {
-                    val n = serverIn.read(buffer)
-                    if (n > 0) {
-                        vpnOutput.write(buffer, 0, n)
-                        vpnOutput.flush()
-                        totalRx += n
-                        onBytesTransferred(totalRx, totalTx)
-                    } else if (n < 0) {
-                        Log.i(TAG, "Server closed downstream tunnel stream.")
-                        break
-                    }
-                }
-            } catch (e: Exception) {
-                if (isRunning.get()) {
-                    Log.e(TAG, "Downstream bridging error: ${e.message}")
-                }
-            }
-        }, "TunDownstreamBridge")
-
-        downstreamThread.start()
-
-        // Upstream Loop: OS TUN -> Server
-        val upBuffer = ByteArray(BUFFER_SIZE)
+    @Throws(IOException::class)
+    fun validateConfigJson(context: Context, configJson: String) {
         try {
-            while (isRunning.get()) {
-                val length = vpnInput.read(upBuffer)
-                if (length > 0) {
-                    // Optional: Inspect IP packet header version / destination if needed
-                    // For standard full-tunnel encapsulation, stream raw IP payload bytes directly:
-                    serverOut.write(upBuffer, 0, length)
-                    serverOut.flush()
-                    totalTx += length
-                    onBytesTransferred(totalRx, totalTx)
-                } else if (length < 0) {
-                    Log.i(TAG, "OS TUN interface closed upstream.")
-                    break
-                }
-            }
-        } catch (e: Exception) {
-            if (isRunning.get()) {
-                Log.e(TAG, "Upstream bridging error: ${e.message}")
-            }
+            LibboxPlatformBridge.ensureCoreInitialized(context)
+            Libbox.checkConfig(configJson)
+        } catch (err: Exception) {
+            throw IOException("sing-box config validation failed: ${err.message}", err)
+        }
+    }
+
+    @Throws(IOException::class)
+    fun startSingBoxCore(
+        vpnService: VpnService,
+        context: Context,
+        clientConfig: SingBoxConfigBuilder.ClientConfig,
+        onCoreLog: (String) -> Unit = { Log.i(TAG, it) },
+        onNotification: (title: String, body: String) -> Unit = { _, _ -> }
+    ): RunningSession {
+        try {
+            LibboxPlatformBridge.ensureCoreInitialized(context)
+            val configJson = SingBoxConfigBuilder.buildClientConfigJson(clientConfig)
+            Libbox.checkConfig(configJson)
+
+            val bridge = LibboxPlatformBridge(
+                vpnService = vpnService,
+                context = context,
+                onCoreLog = onCoreLog,
+                onNotification = onNotification
+            )
+            val service = Libbox.newService(configJson, bridge)
+                ?: throw IOException("Libbox.newService returned null")
+            service.start()
+
+            return RunningSession(
+                boxService = service,
+                platformBridge = bridge,
+                configJson = configJson
+            )
+        } catch (err: Throwable) {
+            if (err is IOException) throw err
+            throw IOException("Failed to start libbox sing-box core: ${err.message}", err)
+        }
+    }
+
+    fun stopSingBoxCore(session: RunningSession?) {
+        if (session == null) return
+        try {
+            session.boxService.close()
+        } catch (err: Exception) {
+            Log.w(TAG, "Error closing BoxService: ${err.message}")
         } finally {
-            try {
-                downstreamThread.interrupt()
-            } catch (_: Exception) {}
+            session.platformBridge.closeTunDescriptor()
         }
     }
 }

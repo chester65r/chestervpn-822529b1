@@ -3,20 +3,6 @@
 # Safe, Non-Destructive Deployment & Atomic Rollback Script for Hetzner CX23
 # Target Infrastructure: Hetzner Ubuntu VPS (2.29.8.194 — 2 vCPU, 4 GB RAM, 40 GB)
 # ==============================================================================
-# Modes:
-#   1. sudo ./deploy-hetzner.sh bootstrap-user "<SSH_PUBLIC_KEY>"
-#      Creates dedicated limited-permission user 'tunneldeploy', configures
-#      narrow sudoers rules, and opens minimum required UFW ports (22/tcp, 443/tcp, 51820/udp).
-#   2. ./deploy-hetzner.sh deploy [PUBLIC_HOST]
-#      Stages a new immutable release under /opt/tunnel-relay/releases/<TIMESTAMP>,
-#      atomically updates /opt/tunnel-relay/current, restarts the container while
-#      preserving WireGuard & TLS volumes, and runs health checks (auto-rolling back on failure).
-#   3. ./deploy-hetzner.sh rollback [RELEASE_ID]
-#      Atomically switches /opt/tunnel-relay/current back to the previous release
-#      (or a specified RELEASE_ID) without deleting any existing release directory.
-#   4. ./deploy-hetzner.sh status
-#      Prints active release symlink, available releases, container health, and wg0 status.
-# ==============================================================================
 set -euo pipefail
 
 BASE_DIR="/opt/tunnel-relay"
@@ -55,15 +41,16 @@ bootstrap_user() {
   cat > "/etc/sudoers.d/${DEPLOY_USER}" <<EOF
 ${DEPLOY_USER} ALL=(root) NOPASSWD: /usr/bin/docker compose -f /opt/tunnel-relay/current/docker-compose.yml up -d --build
 ${DEPLOY_USER} ALL=(root) NOPASSWD: /usr/bin/docker compose -f /opt/tunnel-relay/current/docker-compose.yml ps
-${DEPLOY_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl status docker
+${DEPLOY_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl status sing-box
 EOF
   chmod 440 "/etc/sudoers.d/${DEPLOY_USER}"
   visudo -cf "/etc/sudoers.d/${DEPLOY_USER}"
 
-  echo "[hetzner-setup] Configuring minimum required UFW ports (22/tcp, 443/tcp, 51820/udp)..."
+  echo "[hetzner-setup] Configuring minimum required UFW ports (22/tcp, 443/tcp, 8443/tcp, 51820/udp)..."
   if command -v ufw >/dev/null 2>&1; then
     ufw allow 22/tcp comment "SSH Management"
-    ufw allow 443/tcp comment "Tunnel Relay TLS/WebSocket Gateway"
+    ufw allow 443/tcp comment "sing-box VLESS-Reality"
+    ufw allow 8443/tcp comment "sing-box Trojan-TLS"
     ufw allow 51820/udp comment "Tunnel Relay WireGuard VPN"
   fi
 
@@ -74,8 +61,9 @@ verify_health() {
   local attempts=10
   local i=1
   while [ "${i}" -le "${attempts}" ]; do
-    if curl -kfsS --max-time 4 "https://127.0.0.1:443/health" >/dev/null 2>&1; then
-      echo "[hetzner-deploy] Health check passed on https://127.0.0.1:443/health"
+    if docker exec tunnel-relay-all-in-one sing-box check -c /etc/sing-box/config.json >/dev/null 2>&1 && \
+       docker exec tunnel-relay-all-in-one pgrep -x sing-box >/dev/null 2>&1; then
+      echo "[hetzner-deploy] sing-box VLESS-Reality & Trojan-TLS verified running"
       docker exec tunnel-relay-all-in-one wg show wg0 2>/dev/null || true
       return 0
     fi
@@ -100,10 +88,12 @@ deploy_release() {
   cp "${SCRIPT_DIR}/Dockerfile" \
      "${SCRIPT_DIR}/docker-compose.yml" \
      "${SCRIPT_DIR}/entrypoint.sh" \
-     "${SCRIPT_DIR}/gateway.mjs" \
+     "${SCRIPT_DIR}/config.json" \
+     "${SCRIPT_DIR}/sing-box.service" \
+     "${SCRIPT_DIR}/setup-singbox.sh" \
      "${SCRIPT_DIR}/peer-admin.py" \
      "${target_dir}/"
-  chmod +x "${target_dir}/entrypoint.sh" "${target_dir}/peer-admin.py"
+  chmod +x "${target_dir}/entrypoint.sh" "${target_dir}/setup-singbox.sh" "${target_dir}/peer-admin.py"
 
   ln -sfn "${target_dir}" "${CURRENT_LINK}"
   echo "[hetzner-deploy] Activated release ${release_id} -> ${CURRENT_LINK} (PUBLIC_HOST=${public_host})"
@@ -130,7 +120,6 @@ rollback_release() {
   if [ -n "${requested_id}" ]; then
     target_dir="${RELEASES_DIR}/${requested_id}"
   else
-    # Pick the second most recent release directory
     target_dir="$(ls -1dt "${RELEASES_DIR}"/* 2>/dev/null | sed -n '2p' || true)"
   fi
 
@@ -152,9 +141,8 @@ show_status() {
   ls -1dt "${RELEASES_DIR}"/* 2>/dev/null || echo "  (none)"
   echo "Container status:"
   docker ps --filter "name=tunnel-relay-all-in-one" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || true
-  echo "Gateway /health:"
-  curl -kfsS --max-time 3 "https://127.0.0.1:443/health" || echo "  unreachable"
-  echo ""
+  echo "sing-box check:"
+  docker exec tunnel-relay-all-in-one sing-box check -c /etc/sing-box/config.json 2>/dev/null && echo "  OK" || echo "  not running in container"
 }
 
 case "${ACTION}" in

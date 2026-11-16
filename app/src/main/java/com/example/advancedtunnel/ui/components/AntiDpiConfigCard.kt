@@ -560,20 +560,20 @@ fun AntiDpiConfigCard(
                 )
             }
 
-            // Dry-Run Packet Desynchronization Simulator Button & Output
+            // Real sing-box JSON & Libbox.checkConfig Validation
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Verify record framing & SNI split offset:",
+                    text = "Verify sing-box gVisor TUN & TLS config:",
                     fontFamily = StarlinkSansFontFamily,
                     fontSize = 11.sp,
                     color = TextSecondary
                 )
                 OutlinedButton(
-                    onClick = { viewModel.runClientHelloDesyncSimulation() },
+                    onClick = { viewModel.validateSingBoxConfig() },
                     border = BorderStroke(1.dp, CyanPrimary),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.testTag("test_tls_desync_button")
@@ -586,7 +586,7 @@ fun AntiDpiConfigCard(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "TEST DESYNC FRAMING",
+                        text = "VERIFY SING-BOX CONFIG",
                         fontFamily = StarlinkMonoFontFamily,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
@@ -606,7 +606,7 @@ fun AntiDpiConfigCard(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = "CLIENT HELLO DESYNC TRACE (${stats.originalBytes}B -> ${stats.emittedBytes}B)",
+                        text = "SING-BOX CLIENT CONFIG (${stats.emittedBytes} BYTES)",
                         fontFamily = StarlinkMonoFontFamily,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
@@ -614,7 +614,7 @@ fun AntiDpiConfigCard(
                         letterSpacing = 1.2.sp
                     )
                     Text(
-                        text = "TLS 0x16 Records: ${stats.tlsRecordCount} • TCP Segments: ${stats.tcpWriteChunks} • SNI Split @ +${stats.sniSplitOffset}B • Jitter: ${stats.totalJitterDelayMs}ms",
+                        text = "gVisor TUN (172.19.0.1/30) • fragment=${config.useFragment()} • record_fragment=${config.useRecordFragment()}",
                         fontSize = 10.sp,
                         fontFamily = StarlinkMonoFontFamily,
                         color = SuccessGreen

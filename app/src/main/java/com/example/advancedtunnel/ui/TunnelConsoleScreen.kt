@@ -53,7 +53,10 @@ fun TunnelConsoleScreen(
 
     var ip by remember { mutableStateOf(com.example.advancedtunnel.model.HETZNER_SERVER_IP) }
     var port by remember { mutableStateOf("443") }
-    var sni by remember { mutableStateOf("static.194.8.29.2.clients.your-server.de") }
+    var sni by remember { mutableStateOf("www.stc.com.sa") }
+    var protocol by remember { mutableStateOf("vless-reality") }
+    var cdnHost by remember { mutableStateOf("cdn.mobily.com.sa") }
+    var wsPath by remember { mutableStateOf("/cdn-ws") }
     var payload by remember { mutableStateOf(com.example.advancedtunnel.model.DEFAULT_PAYLOAD_TEMPLATE) }
 
     var trustedServerKey by remember { mutableStateOf("") }
@@ -142,39 +145,61 @@ fun TunnelConsoleScreen(
                     onClick = {
                         ip = com.example.advancedtunnel.model.HETZNER_SERVER_IP
                         port = "443"
-                        sni = com.example.advancedtunnel.model.HETZNER_SERVER_IP
-                        payload = "GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]X-Tunnel-Profile: hetzner-tls-direct[crlf]"
+                        sni = "www.stc.com.sa"
+                        protocol = "vless-reality"
+                        payload = com.example.advancedtunnel.vpn.SingBoxConfigBuilder.buildCarrierConfigJson(
+                            carrierId = "stc",
+                            serverHost = ip,
+                            serverPort = 443,
+                            customSni = sni
+                        )
                     },
                     enabled = !isEstablished && !isBusy,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Direct TLS 443")
+                    Text("STC Reality")
                 }
 
                 OutlinedButton(
                     onClick = {
                         ip = com.example.advancedtunnel.model.HETZNER_SERVER_IP
                         port = "443"
-                        sni = com.example.advancedtunnel.model.HETZNER_SERVER_IP
-                        payload = "GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade, Keep-Alive[crlf]Upgrade: websocket[crlf]X-Tunnel-MTU: 1280[crlf]X-Tunnel-Profile: telecom-mobile-cgnat[crlf]"
+                        sni = "www.mobily.com.sa"
+                        protocol = "vless-ws-tls"
+                        cdnHost = "cdn.mobily.com.sa"
+                        wsPath = "/cdn-ws"
+                        payload = com.example.advancedtunnel.vpn.SingBoxConfigBuilder.buildCarrierConfigJson(
+                            carrierId = "mobily",
+                            serverHost = ip,
+                            serverPort = 443,
+                            customSni = sni,
+                            customCdnHost = cdnHost,
+                            customWsPath = wsPath
+                        )
                     },
                     enabled = !isEstablished && !isBusy,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Mobile CGNAT")
+                    Text("Mobily WSS")
                 }
 
                 OutlinedButton(
                     onClick = {
                         ip = com.example.advancedtunnel.model.HETZNER_SERVER_IP
-                        port = "443"
+                        port = "8443"
                         sni = "static.194.8.29.2.clients.your-server.de"
-                        payload = "GET / HTTP/1.1[crlf]Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]X-Tunnel-Profile: enterprise-firewall-443[crlf]"
+                        protocol = "trojan-tls"
+                        payload = com.example.advancedtunnel.vpn.SingBoxConfigBuilder.buildCarrierConfigJson(
+                            carrierId = "trojan",
+                            serverHost = ip,
+                            serverPort = 8443,
+                            customSni = sni
+                        )
                     },
                     enabled = !isEstablished && !isBusy,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("rDNS SNI")
+                    Text("Trojan 8443")
                 }
             }
 
@@ -197,7 +222,7 @@ fun TunnelConsoleScreen(
             OutlinedTextField(
                 value = sni,
                 onValueChange = { sni = it },
-                label = { Text("SNI Host") },
+                label = { Text("SNI Host (TLS 1.3)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -205,9 +230,9 @@ fun TunnelConsoleScreen(
             OutlinedTextField(
                 value = payload,
                 onValueChange = { payload = it },
-                label = { Text("Custom Payload") },
+                label = { Text("sing-box Core Outbound JSON") },
                 placeholder = {
-                    Text("GET / HTTP/1.1[crlf]Host: [host][crlf]...")
+                    Text("{ \"outbounds\": [ { \"type\": \"vless\", ... } ] }")
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -224,14 +249,17 @@ fun TunnelConsoleScreen(
                             ip = ip.trim(),
                             port = port.trim(),
                             sni = sni.trim(),
-                            payload = payload.trim()
+                            payload = payload.trim(),
+                            protocol = protocol,
+                            cdnHost = cdnHost,
+                            wsPath = wsPath
                         )
                         onConnect(profile)
                     },
                     enabled = !isEstablished && !isBusy,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Connect TLS/WS")
+                    Text("Connect sing-box")
                 }
 
                 Spacer(modifier = Modifier.width(12.dp))

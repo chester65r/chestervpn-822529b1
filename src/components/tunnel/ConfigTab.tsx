@@ -128,33 +128,74 @@ export function ConfigTab({
         </Field>
       </div>
 
-      <Field label="SERVER NAME (SNI)" error={errors.sni}>
-        <input
-          className={fieldClass}
-          placeholder="2.29.8.194"
-          value={profile.sni}
-          disabled={disabled}
-          onChange={(e) => onChange({ sni: e.target.value })}
-        />
-      </Field>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="SERVER NAME (TLS 1.3 SNI)" error={errors.sni}>
+          <input
+            className={fieldClass}
+            placeholder="www.stc.com.sa"
+            value={profile.sni}
+            disabled={disabled}
+            onChange={(e) => onChange({ sni: e.target.value })}
+          />
+        </Field>
+        <Field label="SING-BOX OUTBOUND PROTOCOL">
+          <select
+            className={fieldClass}
+            value={profile.protocol ?? (networkProfileId === "mobily-ksa-lte-bypass" ? "vless-ws-tls" : "vless-reality")}
+            disabled={disabled}
+            onChange={(e) =>
+              onChange({
+                protocol: e.target.value as "vless-reality" | "vless-ws-tls" | "trojan-tls",
+              })
+            }
+          >
+            <option value="vless-reality">STC: VLESS + Reality (443 · 5-15B SNI Split)</option>
+            <option value="vless-ws-tls">Mobily: VLESS + WSS CDN (443 · uTLS Chrome JA4)</option>
+            <option value="trojan-tls">Trojan + TLS Fragment (8443)</option>
+          </select>
+        </Field>
+      </div>
 
-      <Field label="HANDSHAKE PAYLOAD">
+      {(profile.protocol === "vless-ws-tls" || networkProfileId === "mobily-ksa-lte-bypass") && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="CDN EDGE HOST HEADER (CLOUDFLARE / FASTLY)">
+            <input
+              className={fieldClass}
+              placeholder="cdn.mobily.com.sa"
+              value={profile.cdnHost ?? "cdn.mobily.com.sa"}
+              disabled={disabled}
+              onChange={(e) => onChange({ cdnHost: e.target.value })}
+            />
+          </Field>
+          <Field label="WEBSOCKET PATH (WSS)">
+            <input
+              className={fieldClass}
+              placeholder="/cdn-ws"
+              value={profile.wsPath ?? "/cdn-ws"}
+              disabled={disabled}
+              onChange={(e) => onChange({ wsPath: e.target.value })}
+            />
+          </Field>
+        </div>
+      )}
+
+      <Field label="SING-BOX CORE OUTBOUND JSON">
         <textarea
-          className={`${fieldClass} min-h-24 font-mono text-xs`}
+          className={`${fieldClass} min-h-28 font-mono text-xs`}
           placeholder={DEFAULT_PAYLOAD_TEMPLATE}
           value={profile.payload}
           disabled={disabled}
           onChange={(e) => onChange({ payload: e.target.value })}
         />
         <span className="mt-1 block text-xs text-muted-foreground">
-          Macros: <code className="font-mono text-primary">[host]</code>{" "}
-          <code className="font-mono text-primary">[crlf]</code>. Leave blank for the default template.
+          Validated <code className="font-mono text-primary">sing-box</code> /{" "}
+          <code className="font-mono text-primary">libbox</code> outbound JSON configuration (no plain-text HTTP header injection).
         </span>
       </Field>
 
       <div>
-        <p className="tc-label">LIVE PARSED PREVIEW</p>
-        <pre className="tc-code overflow-x-auto whitespace-pre-wrap break-all p-3 text-xs leading-relaxed text-primary">
+        <p className="tc-label">VALIDATED SING-BOX CORE PREVIEW</p>
+        <pre className="tc-code max-h-48 overflow-x-auto whitespace-pre-wrap break-all p-3 text-xs leading-relaxed text-primary">
           {preview}
         </pre>
       </div>

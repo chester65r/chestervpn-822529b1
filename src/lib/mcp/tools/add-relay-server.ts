@@ -2,6 +2,7 @@ import { defineTool, ToolError } from "@lovable.dev/mcp-js";
 import { z } from "zod";
 import { supabaseForUser } from "../supabase";
 import { isHostOrIp } from "@/lib/tunnel";
+import { recordAuditEvent } from "@/lib/audit";
 
 export default defineTool({
   name: "add_relay_server",
@@ -18,7 +19,15 @@ export default defineTool({
   handler: async (args, ctx) => {
     const client = supabaseForUser(ctx);
     const userId = ctx.getUserId();
-    if (!userId) throw new ToolError("Authentication required to add a relay server.");
+    if (!userId) {
+      recordAuditEvent({
+        actorId: "anonymous",
+        action: "mcp.add_relay_server",
+        target: args.host,
+        status: "unauthorized",
+      });
+      throw new ToolError("Authentication required to add a relay server.");
+    }
 
     const { name, host, port, transport, notes } = args;
 
@@ -31,10 +40,27 @@ export default defineTool({
       notes: notes?.trim() ?? "",
     }).select("id,name,host,port,transport,notes,created_at");
 
-    if (error) throw new ToolError(`Could not add relay server: ${error.message}`);
+    if (error) {
+      recordAuditEvent({
+        actorId: userId,
+        action: "mcp.add_relay_server",
+        target: `${host.trim()}:${port}`,
+        status: "failure",
+        details: { error: error.message },
+      });
+      throw new ToolError(`Could not add relay server: ${error.message}`);
+    }
 
     const server = data?.[0];
     if (!server) throw new ToolError("Server was not created");
+
+    recordAuditEvent({
+      actorId: userId,
+      action: "mcp.add_relay_server",
+      target: `${server.host}:${server.port}`,
+      status: "success",
+      details: { id: String(server.id), transport: server.transport },
+    });
 
     return {
       content: [{ type: "text", text: `Added relay server: ${name} (${host}:${port})` }],

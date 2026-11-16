@@ -27,6 +27,7 @@ import com.example.advancedtunnel.vpn.NodeBenchmarkMetric
 import com.example.advancedtunnel.vpn.NodeHealthTier
 import com.example.advancedtunnel.vpn.RealVpnState
 import com.example.advancedtunnel.vpn.ServerHealthMonitor
+import com.example.advancedtunnel.vpn.SingBoxConfigBuilder
 import com.example.advancedtunnel.vpn.TelemetryLogEntry
 import com.example.advancedtunnel.vpn.TlsFingerprintEngine
 import com.example.advancedtunnel.vpn.TlsFragmentConfig
@@ -230,14 +231,42 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
         ip: String? = null,
         port: String? = null,
         sni: String? = null,
-        payload: String? = null
+        payload: String? = null,
+        protocol: String? = null,
+        cdnHost: String? = null,
+        wsPath: String? = null
     ) {
         val cur = _profile.value
+        val nextIp = ip ?: cur.ip
+        val nextPort = port ?: cur.port
+        val nextSni = sni ?: cur.sni
+        val nextProtocol = protocol ?: cur.protocol
+        val nextCdnHost = cdnHost ?: cur.cdnHost
+        val nextWsPath = wsPath ?: cur.wsPath
+        val nextPayload = payload ?: SingBoxConfigBuilder.buildClientConfigJson(
+            SingBoxConfigBuilder.ClientConfig(
+                protocol = SingBoxConfigBuilder.Protocol.fromId(nextProtocol),
+                serverHost = nextIp.ifBlank { SingBoxConfigBuilder.DEFAULT_SERVER_HOST },
+                serverPort = nextPort.toIntOrNull() ?: SingBoxConfigBuilder.DEFAULT_VLESS_PORT,
+                sniHost = nextSni.ifBlank { SingBoxConfigBuilder.DEFAULT_STC_SNI },
+                wsHost = nextCdnHost.ifBlank { SingBoxConfigBuilder.DEFAULT_MOBILY_CDN_HOST },
+                wsPath = nextWsPath.ifBlank { SingBoxConfigBuilder.DEFAULT_MOBILY_WS_PATH },
+                utlsFingerprint = cur.utlsFingerprint.ifBlank { "chrome" },
+                tlsFragmentEnabled = _tlsFragmentConfig.value.useFragment(),
+                tlsRecordFragmentEnabled = _tlsFragmentConfig.value.useRecordFragment(),
+                sniSplitMinBytes = cur.sniSplitMinBytes,
+                sniSplitMaxBytes = cur.sniSplitMaxBytes,
+                mtu = 1280
+            )
+        )
         val updated = cur.copy(
-            ip = ip ?: cur.ip,
-            port = port ?: cur.port,
-            sni = sni ?: cur.sni,
-            payload = payload ?: cur.payload
+            ip = nextIp,
+            port = nextPort,
+            sni = nextSni,
+            payload = nextPayload,
+            protocol = nextProtocol,
+            cdnHost = nextCdnHost,
+            wsPath = nextWsPath
         )
         _profile.value = updated
         if (sni != null && sni != cur.sni) {
@@ -251,18 +280,60 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
         _presetId.value = id
         val preset = ROUTE_PRESETS.find { it.id == id }
         if (preset != null && preset.sni.isNotEmpty()) {
-            val presetPayload = when (id.lowercase()) {
-                "stc" -> "GET http://[host]/ HTTP/1.1[crlf]Host: [host][crlf]X-Online-Host: [host][crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf]"
-                "mobily" -> "CONNECT [host_port] HTTP/1.1[crlf]Host: [host][crlf]Proxy-Connection: Keep-Alive[crlf]Connection: Keep-Alive[crlf]"
-                else -> _profile.value.payload
+            val cur = _profile.value
+            val host = cur.ip.ifBlank { SingBoxConfigBuilder.DEFAULT_SERVER_HOST }
+            val portNum = if (preset.protocol == "trojan-tls") 8443 else (cur.port.toIntOrNull() ?: 443)
+            val carrierCfg = SingBoxConfigBuilder.buildCarrierProfileConfig(
+                carrierId = id,
+                serverHost = host,
+                serverPort = portNum,
+                customSni = preset.sni,
+                customCdnHost = preset.cdnHost.ifBlank { cur.cdnHost },
+                customWsPath = preset.wsPath.ifBlank { cur.wsPath }
+            )
+            val outboundJson = SingBoxConfigBuilder.buildClientConfigJson(carrierCfg)
+
+            // Apply carrier-specific TLS fragmentation & uTLS fingerprint parameters to the engine
+            val updatedFrag = when (id.lowercase()) {
+                "stc" -> _tlsFragmentConfig.value.copy(
+                    enabled = true,
+                    mode = TlsFragmentMode.SNI_BOUNDARY_SPLIT,
+                    minChunkBytes = 5,
+                    maxChunkBytes = 15,
+                    fingerprintProfileId = "chrome_128_android",
+                    alpnEnabled = true
+                )
+                "mobily" -> _tlsFragmentConfig.value.copy(
+                    enabled = true,
+                    mode = TlsFragmentMode.TLS_RECORD_AND_TCP,
+                    minChunkBytes = 5,
+                    maxChunkBytes = 15,
+                    fingerprintProfileId = "chrome_128_android",
+                    alpnEnabled = true
+                )
+                else -> _tlsFragmentConfig.value
             }
-            val updated = _profile.value.copy(
+            _tlsFragmentConfig.value = updatedFrag
+            repository.saveTlsFragmentConfig(updatedFrag)
+
+            val updated = cur.copy(
+                port = portNum.toString(),
                 sni = preset.sni,
-                payload = presetPayload
+                payload = outboundJson,
+                protocol = carrierCfg.protocol.id,
+                cdnHost = carrierCfg.wsHost,
+                wsPath = carrierCfg.wsPath,
+                utlsFingerprint = carrierCfg.utlsFingerprint,
+                sniSplitMinBytes = carrierCfg.sniSplitMinBytes,
+                sniSplitMaxBytes = carrierCfg.sniSplitMaxBytes
             )
             _profile.value = updated
             _errors.value = emptyMap()
             repository.saveActiveProfile(updated, id)
+            VpnManager.appendTelemetryLog(
+                "CARRIER",
+                "Loaded ${preset.label} -> protocol=${carrierCfg.protocol.id}, SNI=${carrierCfg.sniHost}, uTLS=${carrierCfg.utlsFingerprint}, split=${carrierCfg.sniSplitMinBytes}-${carrierCfg.sniSplitMaxBytes}B"
+            )
         }
     }
 
@@ -449,14 +520,40 @@ class TunnelViewModel(application: Application) : AndroidViewModel(application) 
         )
     }
 
-    fun runClientHelloDesyncSimulation() {
-        val sni = _profile.value.sni.ifBlank { _profile.value.ip.ifBlank { "cloud.google.com" } }
+    fun validateSingBoxConfig() {
+        val prof = _profile.value
         val cfg = _tlsFragmentConfig.value
-        val stats = TlsFragmentationEngine.simulateClientHelloDesync(sni, cfg)
+        val sni = prof.sni.ifBlank { SingBoxConfigBuilder.DEFAULT_REALITY_SNI }
+        val resolvedProtocol = when {
+            prof.protocol.equals("vless-ws-tls", ignoreCase = true) -> SingBoxConfigBuilder.Protocol.VLESS_WS_TLS
+            prof.protocol.equals("trojan-tls", ignoreCase = true) || prof.port.toIntOrNull() == 8443 ->
+                SingBoxConfigBuilder.Protocol.TROJAN_TLS
+            else -> SingBoxConfigBuilder.Protocol.VLESS_REALITY
+        }
+        val parsedFromPayload = SingBoxConfigBuilder.parseClientConfigFromJson(
+            rawJson = prof.payload,
+            fallbackHost = prof.ip.ifBlank { SingBoxConfigBuilder.DEFAULT_SERVER_HOST },
+            fallbackPort = prof.port.toIntOrNull() ?: SingBoxConfigBuilder.DEFAULT_VLESS_PORT,
+            fallbackSni = sni
+        )
+        val clientConfig = parsedFromPayload ?: SingBoxConfigBuilder.ClientConfig(
+            protocol = resolvedProtocol,
+            serverHost = prof.ip.ifBlank { SingBoxConfigBuilder.DEFAULT_SERVER_HOST },
+            serverPort = prof.port.toIntOrNull() ?: SingBoxConfigBuilder.DEFAULT_VLESS_PORT,
+            sniHost = sni,
+            wsHost = prof.cdnHost.ifBlank { SingBoxConfigBuilder.DEFAULT_MOBILY_CDN_HOST },
+            wsPath = prof.wsPath.ifBlank { SingBoxConfigBuilder.DEFAULT_MOBILY_WS_PATH },
+            utlsFingerprint = SingBoxConfigBuilder.mapFingerprintProfileToUtls(cfg.fingerprintProfileId),
+            tlsFragmentEnabled = cfg.useFragment(),
+            tlsRecordFragmentEnabled = cfg.useRecordFragment(),
+            sniSplitMinBytes = cfg.normalizedMinChunk(),
+            sniSplitMaxBytes = cfg.normalizedMaxChunk()
+        )
+        val stats = TlsFragmentationEngine.validateSingBoxProfile(getApplication(), clientConfig)
         _lastDesyncSimStats.value = stats
         VpnManager.appendTelemetryLog(
-            "DESYNC",
-            "Dry-run ClientHello desync ($sni): ${stats.originalBytes}B -> ${stats.tlsRecordCount} records / ${stats.tcpWriteChunks} TCP chunks (SNI split @ +${stats.sniSplitOffset}B, total jitter ${stats.totalJitterDelayMs}ms)"
+            "SING-BOX",
+            "Validated libbox config (${clientConfig.protocol.id} -> ${clientConfig.serverHost}:${clientConfig.serverPort}, uTLS=${clientConfig.utlsFingerprint}): ${stats.chunkBreakdown.lastOrNull() ?: "OK"}"
         )
     }
 

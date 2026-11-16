@@ -59,16 +59,19 @@ describe("deployment commands", () => {
     expect(getRelayDeploymentCommand("docker", "")).toBe("");
   });
 
-  it("creates an all-in-one multi-transport container command and ships container files", () => {
+  it("creates a sing-box + systemd deployment command and ships sing-box server files", () => {
     const command = getRelayDeploymentCommand("multi-transport", "2.29.8.194");
-    expect(command).toContain("PUBLIC_HOST=2.29.8.194 docker compose -f relay-server/docker-compose.yml up -d --build");
+    expect(command).toContain("PUBLIC_HOST=2.29.8.194 bash relay-server/setup-singbox.sh");
     expect(command).toContain("443/tcp");
-    expect(command).toContain("1080/tcp");
+    expect(command).toContain("8443/tcp");
+    expect(command).toContain("51820/udp");
     expect(SERVER_CONTAINER_FILES.map((f) => f.name)).toEqual([
+      "config.json",
+      "sing-box.service",
+      "setup-singbox.sh",
       "Dockerfile",
       "docker-compose.yml",
       "entrypoint.sh",
-      "gateway.mjs",
       "deploy-hetzner.sh",
     ]);
     expect(SERVER_TRANSPORT_CAPABILITIES.length).toBeGreaterThanOrEqual(6);

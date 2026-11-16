@@ -5,40 +5,41 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
-    dnsmasq \
+    gnupg \
     iproute2 \
     iptables \
     kmod \
     nftables \
-    nodejs \
-    openssh-server \
     openssl \
     procps \
     python3 \
-    socat \
     wireguard-tools \
+  && mkdir -p /etc/apt/keyrings \
+  && curl -fsSL https://sing-box.app/gpg.key -o /etc/apt/keyrings/sagernet.asc \
+  && chmod a+r /etc/apt/keyrings/sagernet.asc \
+  && printf 'Types: deb\nURIs: https://deb.sagernet.org/\nSuites: *\nComponents: *\nEnabled: yes\nSigned-By: /etc/apt/keyrings/sagernet.asc\n' > /etc/apt/sources.list.d/sagernet.sources \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends sing-box \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/tunnel-relay
 
-COPY gateway.mjs /opt/tunnel-relay/gateway.mjs
+COPY config.json /opt/tunnel-relay/config.template.json
+COPY sing-box.service /opt/tunnel-relay/sing-box.service
+COPY setup-singbox.sh /opt/tunnel-relay/setup-singbox.sh
 COPY entrypoint.sh /opt/tunnel-relay/entrypoint.sh
 COPY peer-admin.py /opt/tunnel-relay/peer-admin.py
 
-RUN chmod +x /opt/tunnel-relay/entrypoint.sh /opt/tunnel-relay/peer-admin.py \
-  && mkdir -p /etc/wireguard /etc/tunnel-relay/tls /var/run/sshd
+RUN chmod +x /opt/tunnel-relay/entrypoint.sh /opt/tunnel-relay/setup-singbox.sh /opt/tunnel-relay/peer-admin.py \
+  && mkdir -p /etc/wireguard /etc/sing-box/tls
 
-# Expose all Tunnel Console transports:
-# - 51820/udp : WireGuard VPN
-# - 443/tcp   : TLS + SNI + HTTP Custom Payload / WebSocket Upgrade + /health
-# - 8443/tcp  : Alternate TLS + SNI + WebSocket + /health
-# - 80/tcp    : HTTP Custom Payload + BugHostProbeEngine corridor port
-# - 8080/tcp  : Alternate HTTP Custom Payload + corridor port
-# - 1080/tcp  : SOCKS5 Bridge Proxy
-# - 2222/tcp  : SSH Tunnel Transport
-EXPOSE 51820/udp 443/tcp 8443/tcp 80/tcp 8080/tcp 1080/tcp 2222/tcp
+# Expose production Anti-DPI & VPN transports:
+# - 443/tcp   : sing-box VLESS + Reality + XTLS-Vision (TLS 1.3 SNI masquerading)
+# - 8443/tcp  : sing-box Trojan over TLS (H2/HTTP1.1)
+# - 51820/udp : WireGuard VPN (wg0)
+EXPOSE 443/tcp 8443/tcp 51820/udp
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -kfsS https://127.0.0.1:443/health || exit 1
+  CMD sing-box check -c /etc/sing-box/config.json && pgrep -x sing-box >/dev/null || exit 1
 
 ENTRYPOINT ["/opt/tunnel-relay/entrypoint.sh"]

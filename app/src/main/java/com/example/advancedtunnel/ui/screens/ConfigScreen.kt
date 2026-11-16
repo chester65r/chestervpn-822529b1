@@ -343,8 +343,8 @@ fun ConfigScreen(
                             value = profile.sni,
                             onValueChange = { viewModel.updateProfile(sni = it) },
                             enabled = !isLocked,
-                            label = { Text("SERVER NAME INDICATION (SNI)", fontFamily = StarlinkMonoFontFamily, fontSize = 10.sp) },
-                            placeholder = { Text("cloud.google.com") },
+                            label = { Text("SERVER NAME INDICATION (TLS 1.3 SNI)", fontFamily = StarlinkMonoFontFamily, fontSize = 10.sp) },
+                            placeholder = { Text("www.stc.com.sa") },
                             isError = errors.containsKey("sni"),
                             supportingText = errors["sni"]?.let { { Text(it, color = DestructiveRed, fontSize = 11.sp) } },
                             modifier = Modifier
@@ -360,10 +360,53 @@ fun ConfigScreen(
                             shape = RoundedCornerShape(8.dp),
                             singleLine = true
                         )
+
+                        if (profile.protocol == "vless-ws-tls" || presetId == "mobily") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = profile.cdnHost,
+                                    onValueChange = { viewModel.updateProfile(cdnHost = it) },
+                                    enabled = !isLocked,
+                                    label = { Text("CDN EDGE HOST HEADER", fontFamily = StarlinkMonoFontFamily, fontSize = 10.sp) },
+                                    placeholder = { Text("cdn.mobily.com.sa") },
+                                    modifier = Modifier.weight(0.62f),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = CyanPrimary,
+                                        unfocusedBorderColor = BorderDark,
+                                        focusedContainerColor = BackgroundDark,
+                                        unfocusedContainerColor = BackgroundDark,
+                                        disabledContainerColor = BackgroundDark.copy(alpha = 0.5f)
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    singleLine = true
+                                )
+
+                                OutlinedTextField(
+                                    value = profile.wsPath,
+                                    onValueChange = { viewModel.updateProfile(wsPath = it) },
+                                    enabled = !isLocked,
+                                    label = { Text("WSS PATH", fontFamily = StarlinkMonoFontFamily, fontSize = 10.sp) },
+                                    placeholder = { Text("/cdn-ws") },
+                                    modifier = Modifier.weight(0.38f),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = CyanPrimary,
+                                        unfocusedBorderColor = BorderDark,
+                                        focusedContainerColor = BackgroundDark,
+                                        unfocusedContainerColor = BackgroundDark,
+                                        disabledContainerColor = BackgroundDark.copy(alpha = 0.5f)
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    singleLine = true
+                                )
+                            }
+                        }
                     }
                 }
 
-                // Handshake Payload Card
+                // Sing-Box Core Outbound JSON Card
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = CardBackground),
@@ -380,7 +423,7 @@ fun ConfigScreen(
                         ) {
                             Column {
                                 Text(
-                                    text = "HANDSHAKE PAYLOAD & MACROS",
+                                    text = "SING-BOX CORE OUTBOUND JSON",
                                     fontFamily = StarlinkMonoFontFamily,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
@@ -388,7 +431,7 @@ fun ConfigScreen(
                                     letterSpacing = 1.6.sp
                                 )
                                 Text(
-                                    text = "Custom HTTP/WS headers & socket split macros",
+                                    text = "VLESS+Reality (STC 5-15B split) & VLESS+WSS CDN (Mobily Chrome JA4)",
                                     fontFamily = StarlinkSansFontFamily,
                                     fontSize = 11.sp,
                                     color = TextSecondary
@@ -426,7 +469,7 @@ fun ConfigScreen(
                             placeholder = { Text(DEFAULT_PAYLOAD_TEMPLATE, fontSize = 11.sp) },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(104.dp)
+                                .height(130.dp)
                                 .testTag("payload_textarea"),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = CyanPrimary,
@@ -450,16 +493,20 @@ fun ConfigScreen(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            listOf("[host]", "[crlf]", "[split]", "[sni]").forEach { macro ->
+                            listOf(
+                                "stc" to "STC Reality (443)",
+                                "mobily" to "Mobily WSS CDN (443)",
+                                "hetzner" to "Hetzner Direct (443)"
+                            ).forEach { (presetKey, chipLabel) ->
                                 SuggestionChip(
                                     onClick = {
                                         if (!isLocked) {
-                                            viewModel.updateProfile(payload = profile.payload + macro)
+                                            viewModel.selectPreset(presetKey)
                                         }
                                     },
                                     label = {
                                         Text(
-                                            text = macro,
+                                            text = chipLabel,
                                             fontFamily = StarlinkMonoFontFamily,
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold
@@ -561,37 +608,34 @@ fun PayloadGeneratorDialog(
     onDismiss: () -> Unit,
     onApplyPayload: (String) -> Unit
 ) {
-    var urlHost by remember { mutableStateOf(initialHost.ifBlank { "[host]" }) }
-    var requestMethod by remember { mutableStateOf("GET") }
-    var injectionMode by remember { mutableStateOf("Normal") }
-    var enableWebSocket by remember { mutableStateOf(true) }
-    var enableKeepAlive by remember { mutableStateOf(true) }
-    var enableUserAgent by remember { mutableStateOf(true) }
-    var enableXForwardedFor by remember { mutableStateOf(false) }
-    var enableXOnlineHost by remember { mutableStateOf(false) }
-    var enableReferer by remember { mutableStateOf(false) }
-    var customHeaders by remember { mutableStateOf("") }
+    var carrierPreset by remember { mutableStateOf("stc") }
+    var protocol by remember { mutableStateOf("vless-reality") }
+    var sniHost by remember { mutableStateOf(initialHost.ifBlank { "www.stc.com.sa" }) }
+    var cdnHost by remember { mutableStateOf("cdn.mobily.com.sa") }
+    var wsPath by remember { mutableStateOf("/cdn-ws") }
+    var utlsFingerprint by remember { mutableStateOf("chrome") }
+    var enableTlsFragment by remember { mutableStateOf(true) }
+    var enableRecordFragment by remember { mutableStateOf(true) }
 
-    var methodDropdownExpanded by remember { mutableStateOf(false) }
-    var modeDropdownExpanded by remember { mutableStateOf(false) }
+    var protocolDropdownExpanded by remember { mutableStateOf(false) }
+    var carrierDropdownExpanded by remember { mutableStateOf(false) }
 
     val generatedPayload = remember(
-        urlHost, requestMethod, injectionMode, enableWebSocket,
-        enableKeepAlive, enableUserAgent, enableXForwardedFor,
-        enableXOnlineHost, enableReferer, customHeaders
+        carrierPreset, protocol, sniHost, cdnHost, wsPath,
+        utlsFingerprint, enableTlsFragment, enableRecordFragment
     ) {
         TunnelUtils.generatePayload(
             PayloadGeneratorConfig(
-                urlHost = urlHost,
-                requestMethod = requestMethod,
-                injectionMode = injectionMode,
-                enableWebSocket = enableWebSocket,
-                enableKeepAlive = enableKeepAlive,
-                enableUserAgent = enableUserAgent,
-                enableXForwardedFor = enableXForwardedFor,
-                enableXOnlineHost = enableXOnlineHost,
-                enableReferer = enableReferer,
-                customHeaders = customHeaders
+                carrierPreset = carrierPreset,
+                protocol = protocol,
+                sniHost = sniHost,
+                cdnHost = cdnHost,
+                wsPath = wsPath,
+                utlsFingerprint = utlsFingerprint,
+                enableTlsFragment = enableTlsFragment,
+                enableRecordFragment = enableRecordFragment,
+                sniSplitMinBytes = 5,
+                sniSplitMaxBytes = 15
             )
         )
     }
@@ -627,7 +671,7 @@ fun PayloadGeneratorDialog(
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
-                            text = "PAYLOAD BUILDER",
+                            text = "SING-BOX CARRIER CORE BUILDER",
                             fontFamily = StarlinkMonoFontFamily,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
@@ -645,11 +689,112 @@ fun PayloadGeneratorDialog(
                     }
                 }
 
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = carrierPreset.uppercase(),
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("CARRIER PROFILE", fontFamily = StarlinkMonoFontFamily, fontSize = 10.sp) },
+                            trailingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = null,
+                                    tint = CyanPrimary,
+                                    modifier = Modifier.clickable { carrierDropdownExpanded = true }
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { carrierDropdownExpanded = true },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = CyanPrimary,
+                                unfocusedBorderColor = BorderDark,
+                                focusedContainerColor = BackgroundDark,
+                                unfocusedContainerColor = BackgroundDark,
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+
+                        DropdownMenu(
+                            expanded = carrierDropdownExpanded,
+                            onDismissRequest = { carrierDropdownExpanded = false },
+                            modifier = Modifier.background(SurfaceVariantDark)
+                        ) {
+                            listOf(
+                                Triple("stc", "vless-reality", "www.stc.com.sa"),
+                                Triple("mobily", "vless-ws-tls", "www.mobily.com.sa"),
+                                Triple("hetzner", "trojan-tls", "static.194.8.29.2.clients.your-server.de")
+                            ).forEach { (cid, proto, defaultSni) ->
+                                DropdownMenuItem(
+                                    text = { Text("${cid.uppercase()} ($proto)", fontFamily = StarlinkMonoFontFamily, color = TextPrimary) },
+                                    onClick = {
+                                        carrierPreset = cid
+                                        protocol = proto
+                                        sniHost = defaultSni
+                                        carrierDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Box(modifier = Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = protocol,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("CORE PROTOCOL", fontFamily = StarlinkMonoFontFamily, fontSize = 10.sp) },
+                            trailingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = null,
+                                    tint = CyanPrimary,
+                                    modifier = Modifier.clickable { protocolDropdownExpanded = true }
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { protocolDropdownExpanded = true },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = CyanPrimary,
+                                unfocusedBorderColor = BorderDark,
+                                focusedContainerColor = BackgroundDark,
+                                unfocusedContainerColor = BackgroundDark,
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+
+                        DropdownMenu(
+                            expanded = protocolDropdownExpanded,
+                            onDismissRequest = { protocolDropdownExpanded = false },
+                            modifier = Modifier.background(SurfaceVariantDark)
+                        ) {
+                            listOf("vless-reality", "vless-ws-tls", "trojan-tls").forEach { proto ->
+                                DropdownMenuItem(
+                                    text = { Text(proto, fontFamily = StarlinkSansFontFamily, color = TextPrimary) },
+                                    onClick = {
+                                        protocol = proto
+                                        protocolDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
                 OutlinedTextField(
-                    value = urlHost,
-                    onValueChange = { urlHost = it },
-                    label = { Text("URL / HOST DOMAIN", fontFamily = StarlinkMonoFontFamily, fontSize = 10.sp) },
-                    placeholder = { Text("[host]") },
+                    value = sniHost,
+                    onValueChange = { sniHost = it },
+                    label = { Text("TLS 1.3 SNI SPOOF HOST", fontFamily = StarlinkMonoFontFamily, fontSize = 10.sp) },
+                    placeholder = { Text("www.stc.com.sa") },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -665,27 +810,18 @@ fun PayloadGeneratorDialog(
                     shape = RoundedCornerShape(8.dp)
                 )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(modifier = Modifier.weight(1f)) {
+                if (protocol == "vless-ws-tls") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         OutlinedTextField(
-                            value = requestMethod,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("METHOD", fontFamily = StarlinkMonoFontFamily, fontSize = 10.sp) },
-                            trailingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.ArrowDropDown,
-                                    contentDescription = null,
-                                    tint = CyanPrimary,
-                                    modifier = Modifier.clickable { methodDropdownExpanded = true }
-                                )
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { methodDropdownExpanded = true },
+                            value = cdnHost,
+                            onValueChange = { cdnHost = it },
+                            label = { Text("CDN EDGE HOST HEADER", fontFamily = StarlinkMonoFontFamily, fontSize = 10.sp) },
+                            placeholder = { Text("cdn.mobily.com.sa") },
+                            singleLine = true,
+                            modifier = Modifier.weight(0.6f),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = CyanPrimary,
                                 unfocusedBorderColor = BorderDark,
@@ -696,41 +832,13 @@ fun PayloadGeneratorDialog(
                             ),
                             shape = RoundedCornerShape(8.dp)
                         )
-
-                        DropdownMenu(
-                            expanded = methodDropdownExpanded,
-                            onDismissRequest = { methodDropdownExpanded = false },
-                            modifier = Modifier.background(SurfaceVariantDark)
-                        ) {
-                            listOf("GET", "POST", "CONNECT", "HEAD", "OPTIONS", "PUT").forEach { m ->
-                                DropdownMenuItem(
-                                    text = { Text(m, fontFamily = StarlinkMonoFontFamily, color = TextPrimary) },
-                                    onClick = {
-                                        requestMethod = m
-                                        methodDropdownExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    Box(modifier = Modifier.weight(1f)) {
                         OutlinedTextField(
-                            value = injectionMode,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("INJECTION MODE", fontFamily = StarlinkMonoFontFamily, fontSize = 10.sp) },
-                            trailingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.ArrowDropDown,
-                                    contentDescription = null,
-                                    tint = CyanPrimary,
-                                    modifier = Modifier.clickable { modeDropdownExpanded = true }
-                                )
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { modeDropdownExpanded = true },
+                            value = wsPath,
+                            onValueChange = { wsPath = it },
+                            label = { Text("WSS PATH", fontFamily = StarlinkMonoFontFamily, fontSize = 10.sp) },
+                            placeholder = { Text("/cdn-ws") },
+                            singleLine = true,
+                            modifier = Modifier.weight(0.4f),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = CyanPrimary,
                                 unfocusedBorderColor = BorderDark,
@@ -741,72 +849,32 @@ fun PayloadGeneratorDialog(
                             ),
                             shape = RoundedCornerShape(8.dp)
                         )
-
-                        DropdownMenu(
-                            expanded = modeDropdownExpanded,
-                            onDismissRequest = { modeDropdownExpanded = false },
-                            modifier = Modifier.background(SurfaceVariantDark)
-                        ) {
-                            listOf("Normal", "Front Query", "Back Query", "SSL SNI", "Dual Split").forEach { mode ->
-                                DropdownMenuItem(
-                                    text = { Text(mode, fontFamily = StarlinkSansFontFamily, color = TextPrimary) },
-                                    onClick = {
-                                        injectionMode = mode
-                                        modeDropdownExpanded = false
-                                    }
-                                )
-                            }
-                        }
                     }
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { enableWebSocket = !enableWebSocket }
+                        modifier = Modifier.clickable { enableTlsFragment = !enableTlsFragment }
                     ) {
                         Checkbox(
-                            checked = enableWebSocket,
-                            onCheckedChange = { enableWebSocket = it },
+                            checked = enableTlsFragment,
+                            onCheckedChange = { enableTlsFragment = it },
                             colors = CheckboxDefaults.colors(checkedColor = CyanPrimary)
                         )
-                        Text("WebSocket Upgrade", fontFamily = StarlinkSansFontFamily, fontSize = 12.sp, color = TextPrimary)
+                        Text("ClientHello SNI Boundary Split (Offset 5-15B)", fontFamily = StarlinkSansFontFamily, fontSize = 12.sp, color = TextPrimary)
                     }
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { enableKeepAlive = !enableKeepAlive }
+                        modifier = Modifier.clickable { enableRecordFragment = !enableRecordFragment }
                     ) {
                         Checkbox(
-                            checked = enableKeepAlive,
-                            onCheckedChange = { enableKeepAlive = it },
+                            checked = enableRecordFragment,
+                            onCheckedChange = { enableRecordFragment = it },
                             colors = CheckboxDefaults.colors(checkedColor = CyanPrimary)
                         )
-                        Text("Keep-Alive Header", fontFamily = StarlinkSansFontFamily, fontSize = 12.sp, color = TextPrimary)
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { enableUserAgent = !enableUserAgent }
-                    ) {
-                        Checkbox(
-                            checked = enableUserAgent,
-                            onCheckedChange = { enableUserAgent = it },
-                            colors = CheckboxDefaults.colors(checkedColor = CyanPrimary)
-                        )
-                        Text("Chrome User-Agent Header", fontFamily = StarlinkSansFontFamily, fontSize = 12.sp, color = TextPrimary)
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { enableXOnlineHost = !enableXOnlineHost }
-                    ) {
-                        Checkbox(
-                            checked = enableXOnlineHost,
-                            onCheckedChange = { enableXOnlineHost = it },
-                            colors = CheckboxDefaults.colors(checkedColor = CyanPrimary)
-                        )
-                        Text("X-Online-Host Header", fontFamily = StarlinkSansFontFamily, fontSize = 12.sp, color = TextPrimary)
+                        Text("TLS 1.3 Record Layer Fragmentation", fontFamily = StarlinkSansFontFamily, fontSize = 12.sp, color = TextPrimary)
                     }
                 }
 
@@ -860,7 +928,7 @@ fun PayloadGeneratorDialog(
                         modifier = Modifier.testTag("apply_generated_payload_button")
                     ) {
                         Text(
-                            text = "APPLY PAYLOAD",
+                            text = "APPLY CORE CONFIG",
                             fontFamily = StarlinkMonoFontFamily,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,

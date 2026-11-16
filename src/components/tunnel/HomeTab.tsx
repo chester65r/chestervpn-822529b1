@@ -26,8 +26,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ALL_IN_ONE_ANDROID_KOTLIN } from "@/lib/all-in-one-android";
 import { explainConnection, type ConnectionDiagnostics } from "@/lib/connection-help.functions";
-import { probeHetznerServer } from "@/lib/relay-control.functions";
+import { probeHetznerMultiPort, probeHetznerServer } from "@/lib/relay-control.functions";
+import { buildSingBoxClientConfig } from "@/lib/singbox";
 import { clientConfig, generateWireGuardKeyPair } from "@/lib/wireguard";
+import { AcodeSnippetsPanel } from "./AcodeSnippetsPanel";
+import { SecurityAuditPanel } from "./SecurityAuditPanel";
 import { SpeedGraph } from "./SpeedGraph";
 import {
   DEFAULT_PAYLOAD_TEMPLATE,
@@ -140,6 +143,7 @@ export function HomeTab({
   const [help, setHelp] = useState<{ text?: string; error?: string } | null>(null);
   const [asking, setAsking] = useState(false);
   const [probing, setProbing] = useState(false);
+  const [auditRefreshToken, setAuditRefreshToken] = useState(0);
   const [probeState, setProbeState] = useState<{
     status: "online" | "degraded" | "offline";
     latencyMs: number | null;
@@ -148,6 +152,9 @@ export function HomeTab({
     tcpReachable: boolean;
     checkedAt: string;
   } | null>(null);
+  const [portMatrix, setPortMatrix] = useState<
+    Awaited<ReturnType<typeof probeHetznerMultiPort>>["ports"] | null
+  >(null);
 
   // Inline Share / Save state
   const [saveName, setSaveName] = useState("");
@@ -160,7 +167,7 @@ export function HomeTab({
   const [wgServerPub, setWgServerPub] = useState("");
   const [wgPsk, setWgPsk] = useState("");
   const [wgAddress, setWgAddress] = useState("10.66.66.4/32");
-  const [previewTab, setPreviewTab] = useState<"none" | "android-kt" | "wg-conf" | "deploy-sh">("none");
+  const [previewTab, setPreviewTab] = useState<"none" | "android-kt" | "wg-conf" | "singbox-json" | "deploy-sh">("none");
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
 
   useEffect(() => {
@@ -200,15 +207,39 @@ export function HomeTab({
   const probeLiveServer = async () => {
     setProbing(true);
     try {
+      const targetHost = profile.ip.trim() || HETZNER_SERVER_SPEC.ip;
       const portNum = Number(profile.port) || HETZNER_SERVER_SPEC.tlsPort;
-      const res = await runHetznerProbe({
-        data: {
-          port: portNum,
-          sni: profile.sni || HETZNER_SERVER_SPEC.ip,
-          networkProfileId,
-        },
-      });
-      setProbeState(res);
+      const [res, multi] = await Promise.all([
+        runHetznerProbe({
+          data: {
+            host: targetHost,
+            port: portNum,
+            sni: profile.sni || targetHost,
+            networkProfileId,
+          },
+        }),
+        probeHetznerMultiPort({
+          data: {
+            host: targetHost,
+            sni: profile.sni || targetHost,
+          },
+        }).catch(() => null),
+      ]);
+      if (res && typeof res === "object" && typeof res.status === "string") {
+        setProbeState(res);
+      } else {
+        setProbeState({
+          status: "offline",
+          latencyMs: null,
+          errorCode: "PROBE_UNAVAILABLE",
+          tlsEstablished: false,
+          tcpReachable: false,
+          checkedAt: new Date().toISOString(),
+        });
+      }
+      if (multi && typeof multi === "object" && Array.isArray(multi.ports)) {
+        setPortMatrix(multi.ports);
+      }
     } catch {
       setProbeState({
         status: "offline",
@@ -220,8 +251,25 @@ export function HomeTab({
       });
     } finally {
       setProbing(false);
+      setAuditRefreshToken((t) => t + 1);
     }
   };
+
+  useEffect(() => {
+    void probeLiveServer();
+    // Run an initial live probe against the server endpoint on first mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (status !== "connected") return;
+    const id = window.setInterval(() => {
+      void probeLiveServer();
+    }, 10_000);
+    return () => window.clearInterval(id);
+    // Re-probe live server latency every 10s while connected
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, profile.ip, profile.port, profile.sni, networkProfileId]);
 
   const on = status === "connected";
   const busy = status === "connecting";
@@ -252,6 +300,37 @@ export function HomeTab({
   // preshared key the downloaded config carries, then persists the config.
   const wgAddressForCmd = wgAddress.trim() || "10.66.66.4/32";
   const hetznerDeployCmd = `ssh root@${HETZNER_SERVER_SPEC.ip} "umask 077; printf '%s' '${wgPsk}' > /root/.tc-psk; wg set wg0 peer '${wgPub}' preshared-key /root/.tc-psk allowed-ips ${wgAddressForCmd}; wg-quick save wg0; rm -f /root/.tc-psk"`;
+
+  const quickSingBoxProtocol =
+    profile.protocol ??
+    (networkProfileId === "mobily-ksa-lte-bypass"
+      ? "vless-ws-tls"
+      : Number(profile.port) === 8443
+        ? "trojan-tls"
+        : "vless-reality");
+  const quickSingBoxJson = JSON.stringify(
+    buildSingBoxClientConfig({
+      protocol: quickSingBoxProtocol,
+      serverHost: profile.ip.trim() || HETZNER_SERVER_SPEC.ip,
+      serverPort: Number(profile.port) || 443,
+      sni:
+        profile.sni.trim() ||
+        (quickSingBoxProtocol === "vless-reality"
+          ? "www.stc.com.sa"
+          : quickSingBoxProtocol === "vless-ws-tls"
+            ? "www.mobily.com.sa"
+            : HETZNER_SERVER_SPEC.reverseDns),
+      wsHost: profile.cdnHost || (quickSingBoxProtocol === "vless-ws-tls" ? "cdn.mobily.com.sa" : profile.sni.trim()),
+      wsPath: profile.wsPath || "/cdn-ws",
+      utlsFingerprint: profile.utlsFingerprint ?? "chrome",
+      fragmentEnabled: true,
+      recordFragmentEnabled: true,
+      sniSplitMinBytes: profile.sniSplitMinBytes ?? 5,
+      sniSplitMaxBytes: profile.sniSplitMaxBytes ?? 15,
+    }),
+    null,
+    2,
+  );
 
   return (
     <div className="space-y-5">
@@ -286,7 +365,12 @@ export function HomeTab({
             </p>
             <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{serverLabel}</p>
             <p className="mt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Simulated — no real tunnel in a browser
+              {probeState
+                ? `Live probe: ${probeState.tcpReachable ? "TCP open" : "TCP closed"} · ${probeState.tlsEstablished ? "TLS verified" : probeState.errorCode ?? "TLS pending"}${probeState.latencyMs !== null ? ` · ${probeState.latencyMs} ms` : ""}`
+                : "Probing live endpoint…"}
+            </p>
+            <p className="text-[10px] text-muted-foreground/80">
+              Bandwidth curve is a browser visual preview (OS VPN runs on Android / wg-quick)
             </p>
             {activeNetProfile && (
               <p className="mt-1 text-xs font-medium text-primary">
@@ -300,7 +384,12 @@ export function HomeTab({
 
           <button
             type="button"
-            onClick={onToggle}
+            onClick={() => {
+              if (status === "disconnected") {
+                void probeLiveServer();
+              }
+              onToggle();
+            }}
             disabled={busy}
             className={`mt-5 w-full py-4 text-base font-bold tracking-widest ${
               on ? "tc-btn-danger" : "tc-btn-primary"
@@ -315,16 +404,16 @@ export function HomeTab({
           <section className="grid grid-cols-2 gap-4">
             <div className="tc-card p-4">
               <p className="flex items-center gap-1.5 text-[11px] font-medium tracking-wider text-muted-foreground">
-                <ArrowDown className="h-3.5 w-3.5 text-primary" /> DOWNLOAD{" "}
-                <span className="font-normal">(simulated)</span>
+                <ArrowDown className="h-3.5 w-3.5 shrink-0 text-primary" />{" "}
+                <span className="truncate">DOWNLOAD <span className="font-normal">(sim)</span></span>
               </p>
               <p className="tnum mt-1.5 font-mono text-xl font-bold text-primary">{formatSpeed(downSpeed)}</p>
               <p className="tnum font-mono text-[11px] text-muted-foreground">{formatBytes(totals.rx)} total</p>
             </div>
             <div className="tc-card p-4">
               <p className="flex items-center gap-1.5 text-[11px] font-medium tracking-wider text-muted-foreground">
-                <ArrowUp className="h-3.5 w-3.5 text-chart-4" /> UPLOAD{" "}
-                <span className="font-normal">(simulated)</span>
+                <ArrowUp className="h-3.5 w-3.5 shrink-0 text-chart-4" />{" "}
+                <span className="truncate">UPLOAD <span className="font-normal">(sim)</span></span>
               </p>
               <p className="tnum mt-1.5 font-mono text-xl font-bold text-chart-4">{formatSpeed(upSpeed)}</p>
               <p className="tnum font-mono text-[11px] text-muted-foreground">{formatBytes(totals.tx)} total</p>
@@ -365,7 +454,7 @@ export function HomeTab({
               className="gap-1.5 text-xs"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${probing ? "animate-spin" : ""}`} />
-              {probing ? "Probing…" : "Probe 2.29.8.194"}
+              {probing ? "Probing…" : `Probe ${profile.ip.trim() || HETZNER_SERVER_SPEC.ip}`}
             </Button>
             <Button
               size="sm"
@@ -385,27 +474,55 @@ export function HomeTab({
         </div>
 
         {probeState && (
-          <div className="tc-code mt-3 flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
-            <span className="flex items-center gap-1.5 font-medium">
-              <Activity className="h-3.5 w-3.5 text-primary" />
-              Live Server Status:{" "}
-              <span
-                className={
-                  probeState.status === "online"
-                    ? "font-semibold text-primary"
-                    : probeState.status === "degraded"
-                      ? "font-semibold text-chart-4"
-                      : "font-semibold text-destructive"
-                }
-              >
-                {probeState.status.toUpperCase()}
+          <div className="tc-code mt-3 space-y-2 px-3 py-2 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="flex items-center gap-1.5 font-medium">
+                <Activity className="h-3.5 w-3.5 text-primary" />
+                Live Server Status:{" "}
+                <span
+                  className={
+                    probeState.status === "online"
+                      ? "font-semibold text-primary"
+                      : probeState.status === "degraded"
+                        ? "font-semibold text-chart-4"
+                        : "font-semibold text-destructive"
+                  }
+                >
+                  {probeState.status.toUpperCase()}
+                </span>
               </span>
-            </span>
-            <span className="font-mono text-[11px] text-muted-foreground">
-              {probeState.latencyMs !== null
-                ? `${probeState.latencyMs} ms`
-                : probeState.errorCode ?? "Unreachable (awaiting deploy)"}
-            </span>
+              <span className="font-mono text-[11px] text-muted-foreground">
+                {probeState.latencyMs !== null
+                  ? `${probeState.latencyMs} ms`
+                  : probeState.errorCode ?? "Unreachable (awaiting deploy)"}
+              </span>
+            </div>
+            {portMatrix && (
+              <div className="grid grid-cols-2 gap-1.5 pt-1 sm:grid-cols-5">
+                {portMatrix.map((entry) => (
+                  <div
+                    key={entry.port}
+                    className="rounded-lg border border-border/70 bg-background/60 px-2 py-1 font-mono text-[10px]"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-foreground">:{entry.port}</span>
+                      <span
+                        className={
+                          entry.tlsEstablished || (entry.tcpReachable && entry.port !== 443 && entry.port !== 8443)
+                            ? "text-primary"
+                            : entry.tcpReachable
+                              ? "text-chart-4"
+                              : "text-destructive"
+                        }
+                      >
+                        {entry.latencyMs !== null ? `${entry.latencyMs}ms` : entry.errorCode ?? "OFF"}
+                      </span>
+                    </div>
+                    <p className="truncate text-[9px] text-muted-foreground">{entry.service}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -507,12 +624,12 @@ export function HomeTab({
 
           <label className="block">
             <span className="tc-label">
-              HANDSHAKE PAYLOAD (<code className="font-mono text-primary">[host]</code>{" "}
-              <code className="font-mono text-primary">[crlf]</code>)
+              SING-BOX CORE OUTBOUND JSON (<code className="font-mono text-primary">vless-reality</code> /{" "}
+              <code className="font-mono text-primary">vless-ws-tls</code>)
             </span>
             <textarea
-              aria-label="Handshake Payload"
-              className={`${fieldClass} min-h-16 font-mono text-[11px]`}
+              aria-label="sing-box Core Outbound JSON"
+              className={`${fieldClass} min-h-20 font-mono text-[11px]`}
               placeholder={DEFAULT_PAYLOAD_TEMPLATE}
               value={profile.payload}
               disabled={disabledEdit}
@@ -521,8 +638,10 @@ export function HomeTab({
           </label>
 
           <div className="tc-code p-3">
-            <p className="mb-1 text-[10px] font-medium tracking-wider text-muted-foreground">LIVE PARSED PAYLOAD</p>
-            <pre className="max-h-20 overflow-x-auto whitespace-pre-wrap break-all text-[11px] text-primary">
+            <p className="mb-1 text-[10px] font-medium tracking-wider text-muted-foreground">
+              VALIDATED SING-BOX CORE OUTBOUND CONFIG ({quickSingBoxProtocol.toUpperCase()})
+            </p>
+            <pre className="max-h-24 overflow-x-auto whitespace-pre-wrap break-all text-[11px] text-primary">
               {payloadPreview}
             </pre>
           </div>
@@ -537,7 +656,8 @@ export function HomeTab({
                   <Smartphone className="h-3.5 w-3.5" /> ALL-IN-ONE ANDROID & WIREGUARD HUB
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  Merged single-file Android VPN engine (<code className="font-mono">AllInOneHetznerVpn.kt</code>) &{" "}
+                  Merged single-file Android VPN engine (<code className="font-mono">AllInOneHetznerVpn.kt</code>),{" "}
+                  <code className="font-mono">sing-box-config.json</code> &{" "}
                   <code className="font-mono">wg0.conf</code> for 2.29.8.194.
                 </p>
               </div>
@@ -552,6 +672,24 @@ export function HomeTab({
               >
                 <Code2 className="h-3.5 w-3.5" />
                 Copy All-in-One .kt
+              </Button>
+              <a
+                href={`/api/android-project.zip?host=${encodeURIComponent(profile.ip.trim() || HETZNER_SERVER_SPEC.ip)}&port=${encodeURIComponent(profile.port.trim() || "443")}&sni=${encodeURIComponent(profile.sni.trim() || HETZNER_SERVER_SPEC.reverseDns)}&profile=${encodeURIComponent(networkProfileId)}&serverKey=${encodeURIComponent(wgServerPub)}&protocol=${encodeURIComponent(quickSingBoxProtocol)}&utls=chrome`}
+                download="tunnel-console-android.zip"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary/15 px-3 text-xs font-medium text-primary transition-colors hover:bg-primary/25"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Android Studio (.zip)
+              </a>
+              <Button
+                size="sm"
+                variant="secondary"
+                type="button"
+                onClick={() => downloadFile("sing-box-config.json", quickSingBoxJson)}
+                className="gap-1.5 text-xs"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download sing-box.json
               </Button>
               <Button
                 size="sm"
@@ -568,7 +706,7 @@ export function HomeTab({
                 variant="secondary"
                 type="button"
                 onClick={() => downloadFile("ahmed-docker-manager-wg.conf", quickWgConf)}
-                className="col-span-2 gap-1.5 text-xs sm:col-span-1"
+                className="gap-1.5 text-xs"
               >
                 <KeyRound className="h-3.5 w-3.5" />
                 Download wg.conf
@@ -620,6 +758,15 @@ export function HomeTab({
               </Button>
               <Button
                 size="sm"
+                variant={previewTab === "singbox-json" ? "default" : "outline"}
+                type="button"
+                onClick={() => setPreviewTab(previewTab === "singbox-json" ? "none" : "singbox-json")}
+                className="h-7 px-2.5 font-mono text-[11px]"
+              >
+                {previewTab === "singbox-json" ? "Hide sing-box JSON" : "Preview sing-box-config.json"}
+              </Button>
+              <Button
+                size="sm"
                 variant={previewTab === "wg-conf" ? "default" : "outline"}
                 type="button"
                 onClick={() => setPreviewTab(previewTab === "wg-conf" ? "none" : "wg-conf")}
@@ -634,9 +781,11 @@ export function HomeTab({
                 <code>
                   {previewTab === "android-kt"
                     ? ALL_IN_ONE_ANDROID_KOTLIN
-                    : previewTab === "wg-conf"
-                      ? quickWgConf
-                      : hetznerDeployCmd}
+                    : previewTab === "singbox-json"
+                      ? quickSingBoxJson
+                      : previewTab === "wg-conf"
+                        ? quickWgConf
+                        : hetznerDeployCmd}
                 </code>
               </pre>
             )}
@@ -765,6 +914,10 @@ export function HomeTab({
           </p>
         )}
       </section>
+
+      <SecurityAuditPanel refreshToken={auditRefreshToken} />
+
+      <AcodeSnippetsPanel />
     </div>
   );
 }

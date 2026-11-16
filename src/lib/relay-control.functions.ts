@@ -2,6 +2,8 @@ import net from "node:net";
 import tls from "node:tls";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { getAuditLogs, recordAuditEvent } from "@/lib/audit";
+import { getSecurityHeaders } from "@/lib/security";
 import { HETZNER_SERVER_SPEC } from "@/lib/tunnel";
 
 const HEALTH_CHECK_WINDOW_MS = 60_000;
@@ -15,6 +17,7 @@ export type CheckRelayServerInput = {
 };
 
 export type ProbeHetznerInput = {
+  host?: string;
   port?: number;
   sni?: string;
   networkProfileId?: string;
@@ -227,22 +230,159 @@ async function notifyCircleCiDeployHook(payload: {
 export const probeHetznerServer = createServerFn({ method: "POST" })
   .inputValidator((d: ProbeHetznerInput) => d)
   .handler(async ({ data: input }) => {
+    const targetHost = input?.host?.trim() || HETZNER_SERVER_SPEC.ip;
+    if (isBlockedHost(targetHost)) {
+      recordAuditEvent({
+        actorId: "console-operator",
+        action: "relay.hetzner_probe",
+        target: targetHost,
+        status: "unauthorized",
+        details: { reason: "Blocked private or loopback host" },
+      });
+      throw new Error("Private and loopback hosts cannot be probed from the control plane.");
+    }
+
     const port =
       input?.port && Number.isInteger(input.port) && input.port >= 1 && input.port <= 65535
         ? input.port
         : HETZNER_SERVER_SPEC.tlsPort;
-    const sni = input?.sni?.trim() || HETZNER_SERVER_SPEC.ip;
+    const sni = input?.sni?.trim() || targetHost;
+    const networkProfileId = input?.networkProfileId ?? "hetzner-tls-direct";
 
-    const probe = await probeRelayEndpoint(HETZNER_SERVER_SPEC.ip, port, sni);
+    const probe = await probeRelayEndpoint(targetHost, port, sni);
+
+    recordAuditEvent({
+      actorId: "console-operator",
+      action: "relay.hetzner_probe",
+      target: `${targetHost}:${port}`,
+      status: probe.status === "offline" ? "failure" : "success",
+      details: {
+        sni,
+        networkProfileId,
+        latencyMs: probe.latencyMs,
+        tlsEstablished: probe.tlsEstablished,
+        errorCode: probe.errorCode,
+      },
+    });
+
     return {
-      host: HETZNER_SERVER_SPEC.ip,
+      host: targetHost,
       port,
       sni,
-      networkProfileId: input?.networkProfileId ?? "hetzner-tls-direct",
+      networkProfileId,
       checkedAt: new Date().toISOString(),
       ...probe,
     };
   });
+
+const RELAY_SERVICE_PORTS = [
+  { port: 443, service: "sing-box VLESS-Reality", useTls: true },
+  { port: 8443, service: "sing-box Trojan-TLS", useTls: true },
+  { port: 22, service: "SSH Management", useTls: false },
+] as const;
+
+function probeTcpPort(host: string, port: number): Promise<{ tcpReachable: boolean; latencyMs: number | null; errorCode: string | null }> {
+  return new Promise((resolve) => {
+    const started = performance.now();
+    let settled = false;
+    const finish = (val: { tcpReachable: boolean; latencyMs: number | null; errorCode: string | null }) => {
+      if (!settled) {
+        settled = true;
+        resolve(val);
+      }
+    };
+    const sock = net.connect({ host, port, timeout: 2_500 }, () => {
+      const latencyMs = Math.round(performance.now() - started);
+      sock.destroy();
+      finish({ tcpReachable: true, latencyMs, errorCode: null });
+    });
+    sock.on("timeout", () => {
+      sock.destroy();
+      finish({ tcpReachable: false, latencyMs: null, errorCode: "TIMEOUT" });
+    });
+    sock.on("error", (err: NodeJS.ErrnoException) => {
+      sock.destroy();
+      finish({
+        tcpReachable: false,
+        latencyMs: null,
+        errorCode: err.code === "ECONNREFUSED" ? "CONN_REFUSED" : "UNREACHABLE",
+      });
+    });
+  });
+}
+
+export const probeHetznerMultiPort = createServerFn({ method: "POST" })
+  .inputValidator((d: { host?: string; sni?: string }) => d)
+  .handler(async ({ data: input }) => {
+    const targetHost = input?.host?.trim() || HETZNER_SERVER_SPEC.ip;
+    if (isBlockedHost(targetHost)) {
+      throw new Error("Private and loopback hosts cannot be probed from the control plane.");
+    }
+    const sni = input?.sni?.trim() || targetHost;
+
+    const results = await Promise.all(
+      RELAY_SERVICE_PORTS.map(async (item) => {
+        if (item.useTls) {
+          const probe = await probeRelayEndpoint(targetHost, item.port, sni);
+          return {
+            port: item.port,
+            service: item.service,
+            status: probe.status,
+            latencyMs: probe.latencyMs,
+            tcpReachable: probe.tcpReachable,
+            tlsEstablished: probe.tlsEstablished,
+            errorCode: probe.errorCode,
+          };
+        }
+        const tcp = await probeTcpPort(targetHost, item.port);
+        return {
+          port: item.port,
+          service: item.service,
+          status: tcp.tcpReachable ? ("online" as const) : ("offline" as const),
+          latencyMs: tcp.latencyMs,
+          tcpReachable: tcp.tcpReachable,
+          tlsEstablished: false,
+          errorCode: tcp.errorCode,
+        };
+      }),
+    );
+
+    recordAuditEvent({
+      actorId: "console-operator",
+      action: "relay.multi_port_probe",
+      target: targetHost,
+      status: results.some((r) => r.tcpReachable) ? "success" : "failure",
+      details: {
+        openPorts: results.filter((r) => r.tcpReachable).map((r) => r.port).join(","),
+      },
+    });
+
+    return {
+      host: targetHost,
+      checkedAt: new Date().toISOString(),
+      ports: results,
+    };
+  });
+
+export const getSecurityAndAuditStatus = createServerFn({ method: "GET" }).handler(async () => {
+  const auditLogs = getAuditLogs()
+    .slice(-25)
+    .reverse()
+    .map((event) => ({
+      id: event.id,
+      timestamp: event.timestamp,
+      actorId: event.actorId,
+      action: event.action,
+      target: event.target,
+      status: event.status,
+      detailsSummary: event.details ? JSON.stringify(event.details) : null,
+    }));
+
+  return {
+    securityHeaders: getSecurityHeaders(),
+    auditLogs,
+  };
+});
 
 export const checkRelayServer = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -255,6 +395,13 @@ export const checkRelayServer = createServerFn({ method: "POST" })
       throw new Error("WireGuard health checks require a UDP probe and are not available from the web control plane yet.");
     }
     if (isBlockedHost(input.host)) {
+      recordAuditEvent({
+        actorId: context.userId,
+        action: "relay.health_check",
+        target: `${input.host}:${input.port}`,
+        status: "unauthorized",
+        details: { reason: "Blocked private or loopback host" },
+      });
       throw new Error("Private and loopback hosts cannot be checked from the control plane.");
     }
 
@@ -286,6 +433,14 @@ export const checkRelayServer = createServerFn({ method: "POST" })
       entity_type: "relay_server",
       entity_id: input.id,
       metadata: { status, latencyMs, errorCode },
+    });
+
+    recordAuditEvent({
+      actorId: context.userId,
+      action: "relay.health_check",
+      target: `${input.host}:${input.port}`,
+      status: status === "offline" ? "failure" : "success",
+      details: { relayId: input.id, latencyMs, errorCode },
     });
 
     await notifyCircleCiDeployHook({

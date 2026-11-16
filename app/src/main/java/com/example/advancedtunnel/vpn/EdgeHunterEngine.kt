@@ -207,7 +207,7 @@ object EdgeHunterEngine {
             out.write(probeRequest.toByteArray(Charsets.UTF_8))
             out.flush()
 
-            val (statusLine, statusCode, headers) = CarrierTunnelOptimizer.readHttpResponseHeaders(
+            val (statusLine, statusCode, headers) = readHttpResponseHeaders(
                 input = activeSocket.getInputStream(),
                 maxHeaderBytes = 4096
             )
@@ -251,6 +251,41 @@ object EdgeHunterEngine {
             try { activeSocket?.close() } catch (_: Exception) {}
             try { rawSocket?.close() } catch (_: Exception) {}
         }
+    }
+
+    private fun readHttpResponseHeaders(
+        input: java.io.InputStream,
+        maxHeaderBytes: Int = 4096
+    ): Triple<String, Int, Map<String, String>> {
+        val out = java.io.ByteArrayOutputStream()
+        var state = 0
+        while (out.size() < maxHeaderBytes) {
+            val b = input.read()
+            if (b == -1) break
+            out.write(b)
+            state = when {
+                state == 0 && b == '\r'.code -> 1
+                state == 1 && b == '\n'.code -> 2
+                state == 2 && b == '\r'.code -> 3
+                state == 3 && b == '\n'.code -> 4
+                else -> 0
+            }
+            if (state == 4) break
+        }
+        val rawText = out.toString(Charsets.UTF_8.name())
+        val lines = rawText.split("\r\n").filter { it.isNotBlank() }
+        val statusLine = lines.firstOrNull()?.trim() ?: "HTTP/1.1 200 OK"
+        val statusCode = statusLine.split(" ").getOrNull(1)?.toIntOrNull() ?: 200
+        val headers = mutableMapOf<String, String>()
+        for (line in lines.drop(1)) {
+            val colonIdx = line.indexOf(':')
+            if (colonIdx > 0) {
+                val key = line.substring(0, colonIdx).trim()
+                val value = line.substring(colonIdx + 1).trim()
+                headers[key] = value
+            }
+        }
+        return Triple(statusLine, statusCode, headers)
     }
 
     private fun statusRankScore(statusCode: Int): Int {

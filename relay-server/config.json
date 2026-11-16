@@ -1,0 +1,107 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "inbounds": [
+    {
+      "type": "vless",
+      "tag": "vless-reality-in",
+      "listen": "::",
+      "listen_port": 443,
+      "users": [
+        {
+          "name": "android-client",
+          "uuid": "<SERVER_UUID>",
+          "flow": "xtls-rprx-vision"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "www.stc.com.sa",
+        "reality": {
+          "enabled": true,
+          "handshake": {
+            "server": "www.stc.com.sa",
+            "server_port": 443
+          },
+          "private_key": "<REALITY_PRIVATE_KEY>",
+          "short_id": [
+            "<REALITY_SHORT_ID>"
+          ]
+        }
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "vless-ws-in",
+      "listen": "::",
+      "listen_port": 2053,
+      "users": [
+        {
+          "name": "android-mobily-wss-client",
+          "uuid": "<SERVER_UUID>"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "www.mobily.com.sa",
+        "alpn": [
+          "http/1.1"
+        ],
+        "certificate_path": "/etc/sing-box/tls/fullchain.pem",
+        "key_path": "/etc/sing-box/tls/privkey.pem"
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/cdn-ws",
+        "headers": {
+          "Host": "cdn.mobily.com.sa"
+        },
+        "max_early_data": 2048,
+        "early_data_header_name": "Sec-WebSocket-Protocol"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "trojan-tls-in",
+      "listen": "::",
+      "listen_port": 8443,
+      "users": [
+        {
+          "name": "android-trojan-client",
+          "password": "<TROJAN_PASSWORD>"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "static.194.8.29.2.clients.your-server.de",
+        "alpn": [
+          "h2",
+          "http/1.1"
+        ],
+        "certificate_path": "/etc/sing-box/tls/fullchain.pem",
+        "key_path": "/etc/sing-box/tls/privkey.pem"
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "ip_is_private": true,
+        "outbound": "block"
+      }
+    ],
+    "final": "direct"
+  }
+}

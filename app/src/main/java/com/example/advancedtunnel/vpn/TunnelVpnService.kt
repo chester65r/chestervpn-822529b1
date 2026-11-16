@@ -5,169 +5,329 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.VpnService
-import android.os.ParcelFileDescriptor
+import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.advancedtunnel.MainActivity
-import kotlinx.coroutines.*
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.net.InetSocketAddress
-import java.net.Socket
-import javax.net.ssl.SNIHostName
-import javax.net.ssl.SSLSocket
-import javax.net.ssl.SSLSocketFactory
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * Foreground Android [VpnService] backed by the real native Go `sing-box` core (`io.nekohasekai.libbox`):
+ * - Creates the OS TUN interface inside [LibboxPlatformBridge.openTun] (`172.19.0.1/30`, MTU 1500, `auto_route`, `strict_route`)
+ * - Terminates all Layer 3 IPv4/IPv6 TCP + UDP/DNS traffic inside gVisor in native Go
+ * - Protects outbound sockets via `VpnService.protect(fd)` (`autoDetectInterfaceControl`)
+ * - Connects to Hetzner CX23 (`2.29.8.194`) via VLESS + XTLS-Vision + Reality (port 443) or Trojan + TLS (port 8443)
+ *   with native uTLS (`chrome` / `ios`) and ClientHello fragmentation (`fragment` + `record_fragment`).
+ */
 class TunnelVpnService : VpnService() {
 
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
 
-    private var vpnInterface: ParcelFileDescriptor? = null
-    private var isRunning = false
+    @Volatile
+    private var activeSession: TunPacketForwarder.RunningSession? = null
+    private var activeTunnelJob: Job? = null
+
+    private val isRunning = AtomicBoolean(false)
+    private val manualDisconnect = AtomicBoolean(false)
+
+    private var activeHost = DEFAULT_HOST
+    private var activePort = DEFAULT_PORT
+    private var activeSni = DEFAULT_SNI
+    private var activeMtu = DEFAULT_MTU
+    private var activeProtocol = SingBoxConfigBuilder.Protocol.VLESS_REALITY
+    private var activeCdnHost = SingBoxConfigBuilder.DEFAULT_MOBILY_CDN_HOST
+    private var activeWsPath = SingBoxConfigBuilder.DEFAULT_MOBILY_WS_PATH
+    private var activePayloadJson = ""
+    private var activeUuid = ""
+    private var activeRealityPublicKey = ""
+    private var activeRealityShortId = ""
+    private var activeTrojanPassword = ""
+    private var activeUtlsFingerprint = "chrome"
+    private var activeFragmentEnabled = true
+    private var activeRecordFragmentEnabled = true
+    private var activeCarrierProfileId = "stc-ksa-5g-cgnat"
+
+    private val reconnectionMonitor: ReconnectionMonitor by lazy {
+        ReconnectionMonitor(
+            serviceScope = serviceScope,
+            isReconnectEnabled = { isRunning.get() && !manualDisconnect.get() },
+            isInterfaceDown = { activeSession?.platformBridge?.activeTunDescriptor == null },
+            isSocketDown = { activeSession == null },
+            onPrepareReconnect = { reason ->
+                tearDownTunnelResources()
+                updateNotification("Reconnecting…", reason)
+                TunnelStateHolder.setConnectionState(TunnelConnectionState.Reconnecting)
+                TunnelStateHolder.setReconnectPhase("Reconnecting: $reason")
+                true
+            },
+            onAttemptConnection = { attempt, maxAttempts ->
+                updateNotification(
+                    "Reconnecting ($attempt/$maxAttempts)",
+                    "Dialing $activeHost:$activePort via libbox (${activeProtocol.id})"
+                )
+                establishVpnTunnel(isReconnectAttempt = true)
+            },
+            onReconnectSucceeded = { attempt ->
+                TunnelStateHolder.setConnectionState(TunnelConnectionState.TunnelEstablished)
+                updateNotification(
+                    "Tunnel Console Active",
+                    "Recovered on attempt $attempt ($activeHost:$activePort)"
+                )
+            },
+            onReconnectExhausted = { errorMessage ->
+                TunnelStateHolder.setConnectionState(TunnelConnectionState.Error(errorMessage))
+                updateNotification("Connection Error", errorMessage)
+            },
+            onStatusUpdate = { statusText ->
+                updateNotification("Tunnel Reconnecting", statusText)
+            }
+        )
+    }
 
     companion object {
+        private const val TAG = "TunnelVpnService"
         const val ACTION_START = "com.example.advancedtunnel.START_VPN"
         const val ACTION_STOP = "com.example.advancedtunnel.STOP_VPN"
+        const val ACTION_CONNECT = "com.example.advancedtunnel.CONNECT"
+        const val ACTION_DISCONNECT = "com.example.advancedtunnel.DISCONNECT"
+
+        const val EXTRA_HOST = "extra_host"
+        const val EXTRA_PORT = "extra_port"
+        const val EXTRA_SNI = "extra_sni"
+        const val EXTRA_MTU = "extra_mtu"
+        const val EXTRA_PROFILE_ID = "extra_profile_id"
+        const val EXTRA_PROTOCOL = "extra_protocol"
+        const val EXTRA_CDN_HOST = "extra_cdn_host"
+        const val EXTRA_WS_PATH = "extra_ws_path"
+        const val EXTRA_UUID = "extra_uuid"
+        const val EXTRA_REALITY_PUBLIC_KEY = "extra_reality_public_key"
+        const val EXTRA_REALITY_SHORT_ID = "extra_reality_short_id"
+        const val EXTRA_TROJAN_PASSWORD = "extra_trojan_password"
+        const val EXTRA_UTLS_FINGERPRINT = "extra_utls_fingerprint"
+        const val EXTRA_FRAGMENT_ENABLED = "extra_fragment_enabled"
+        const val EXTRA_RECORD_FRAGMENT_ENABLED = "extra_record_fragment_enabled"
+
+        const val DEFAULT_HOST = SingBoxConfigBuilder.DEFAULT_SERVER_HOST
+        const val DEFAULT_PORT = SingBoxConfigBuilder.DEFAULT_VLESS_PORT
+        const val DEFAULT_SNI = SingBoxConfigBuilder.DEFAULT_REALITY_SNI
+        const val DEFAULT_MTU = SingBoxConfigBuilder.DEFAULT_TUN_MTU
+
         const val NOTIFICATION_CHANNEL_ID = "tunnel_console_channel"
         const val NOTIFICATION_ID = 1984
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> stopVpn()
-            else -> startVpn()
+            ACTION_STOP, ACTION_DISCONNECT -> stopVpn()
+            else -> {
+                intent?.let { incoming ->
+                    val host = incoming.getStringExtra(EXTRA_HOST)
+                        ?: incoming.getStringExtra("tunnel_ip")
+                    if (!host.isNullOrBlank()) activeHost = host.trim()
+
+                    val intPort = incoming.getIntExtra(EXTRA_PORT, -1)
+                    val strPort = incoming.getStringExtra("tunnel_port")?.toIntOrNull()
+                    activePort = when {
+                        intPort in 1..65535 -> intPort
+                        strPort != null && strPort in 1..65535 -> strPort
+                        else -> activePort
+                    }
+
+                    val sni = incoming.getStringExtra(EXTRA_SNI)
+                        ?: incoming.getStringExtra("tunnel_sni")
+                    if (!sni.isNullOrBlank()) activeSni = sni.trim()
+
+                    activeMtu = incoming.getIntExtra(EXTRA_MTU, activeMtu).coerceIn(1280, 1500)
+
+                    (incoming.getStringExtra(EXTRA_PROTOCOL) ?: incoming.getStringExtra("tunnel_protocol"))?.let {
+                        activeProtocol = SingBoxConfigBuilder.Protocol.fromId(it)
+                    }
+                    (incoming.getStringExtra(EXTRA_CDN_HOST) ?: incoming.getStringExtra("tunnel_cdn_host"))
+                        ?.takeIf { it.isNotBlank() }?.let { activeCdnHost = it.trim() }
+                    (incoming.getStringExtra(EXTRA_WS_PATH) ?: incoming.getStringExtra("tunnel_ws_path"))
+                        ?.takeIf { it.isNotBlank() }?.let { activeWsPath = it.trim() }
+                    incoming.getStringExtra("tunnel_payload")?.takeIf { it.isNotBlank() }?.let {
+                        activePayloadJson = it.trim()
+                    }
+                    incoming.getStringExtra(EXTRA_UUID)?.takeIf { it.isNotBlank() }?.let {
+                        activeUuid = it.trim()
+                    }
+                    incoming.getStringExtra(EXTRA_REALITY_PUBLIC_KEY)?.takeIf { it.isNotBlank() }?.let {
+                        activeRealityPublicKey = it.trim()
+                    }
+                    incoming.getStringExtra(EXTRA_REALITY_SHORT_ID)?.takeIf { it.isNotBlank() }?.let {
+                        activeRealityShortId = it.trim()
+                    }
+                    incoming.getStringExtra(EXTRA_TROJAN_PASSWORD)?.takeIf { it.isNotBlank() }?.let {
+                        activeTrojanPassword = it
+                    }
+                    incoming.getStringExtra(EXTRA_UTLS_FINGERPRINT)?.takeIf { it.isNotBlank() }?.let {
+                        activeUtlsFingerprint = SingBoxConfigBuilder.mapFingerprintProfileToUtls(it)
+                    }
+                    activeFragmentEnabled = incoming.getBooleanExtra(EXTRA_FRAGMENT_ENABLED, activeFragmentEnabled)
+                    activeRecordFragmentEnabled =
+                        incoming.getBooleanExtra(EXTRA_RECORD_FRAGMENT_ENABLED, activeRecordFragmentEnabled)
+
+                    val profileId = incoming.getStringExtra(EXTRA_PROFILE_ID)
+                    if (!profileId.isNullOrBlank()) activeCarrierProfileId = profileId.trim()
+                }
+                startVpn()
+            }
         }
         return START_STICKY
     }
 
+    private fun buildSingBoxClientConfig(): SingBoxConfigBuilder.ClientConfig {
+        val parsed = SingBoxConfigBuilder.parseClientConfigFromJson(
+            rawJson = activePayloadJson,
+            fallbackHost = activeHost,
+            fallbackPort = activePort,
+            fallbackSni = activeSni,
+            excludePackages = listOf(packageName)
+        )
+        if (parsed != null) return parsed
+
+        return SingBoxConfigBuilder.ClientConfig(
+            protocol = activeProtocol,
+            serverHost = activeHost,
+            serverPort = activePort,
+            sniHost = activeSni,
+            uuid = activeUuid,
+            realityPublicKey = activeRealityPublicKey,
+            realityShortId = activeRealityShortId,
+            trojanPassword = activeTrojanPassword,
+            wsHost = activeCdnHost,
+            wsPath = activeWsPath,
+            utlsFingerprint = activeUtlsFingerprint,
+            tlsFragmentEnabled = activeFragmentEnabled,
+            tlsRecordFragmentEnabled = activeRecordFragmentEnabled,
+            mtu = activeMtu,
+            strictRoute = true,
+            excludePackages = listOf(packageName)
+        )
+    }
+
     private fun startVpn() {
-        if (isRunning) return
-        isRunning = true
+        if (isRunning.get()) return
+        manualDisconnect.set(false)
+        isRunning.set(true)
+
+        TunnelStateHolder.resetData()
+        TunnelStateHolder.setConnectionState(TunnelConnectionState.Connecting)
 
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification("Tunnel Console Active", "Secure tunnel connected"))
+        val notification = buildNotification(
+            "Connecting sing-box (${activeProtocol.id})",
+            "$activeHost:$activePort ($activeSni)"
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
 
-        serviceScope.launch {
-            try {
-                establishVpnTunnel()
-            } catch (e: Exception) {
-                stopVpn()
+        activeTunnelJob = serviceScope.launch {
+            val established = establishVpnTunnel(isReconnectAttempt = false)
+            if (!established && isRunning.get() && !manualDisconnect.get()) {
+                reconnectionMonitor.start("Initial libbox start failed")
+            } else if (established) {
+                reconnectionMonitor.startWatchdog()
             }
         }
     }
 
-    private fun establishVpnTunnel() {
-        val builder = Builder()
-            .addAddress("10.66.66.2", 24)
-            .addRoute("0.0.0.0", 0)
-            .addDnsServer("1.1.1.1")
-            .setMtu(1280)
-            .setSession("TunnelConsoleSession")
-
-        vpnInterface = builder.establish()
-
-        vpnInterface?.let { pfd ->
-            val inputStream = FileInputStream(pfd.fileDescriptor)
-            val outputStream = FileOutputStream(pfd.fileDescriptor)
-
-            serviceScope.launch {
-                runBlockingLoop(inputStream, outputStream)
-            }
-        }
-    }
-
-    private suspend fun runBlockingLoop(input: FileInputStream, output: FileOutputStream) = withContext(Dispatchers.IO) {
-        val buffer = ByteArray(32768)
-        val serverHost = "2.29.8.194"
-        val serverPort = 443
-        val sniHost = "static.194.8.29.2.clients.your-server.de"
-
+    private suspend fun establishVpnTunnel(isReconnectAttempt: Boolean): Boolean = withContext(Dispatchers.IO) {
         try {
-            val rawSocket = Socket()
-            protect(rawSocket)
-            rawSocket.connect(InetSocketAddress(serverHost, serverPort), 10000)
-
-            val sslFactory = SSLSocketFactory.getDefault() as SSLSocketFactory
-            val sslSocket = sslFactory.createSocket(rawSocket, serverHost, serverPort, true) as SSLSocket
-
-            sslSocket.sslParameters.apply {
-                serverNames = listOf(SNIHostName(sniHost))
-            }
-            sslSocket.startHandshake()
-
-            val socketInput = sslSocket.inputStream
-            val socketOutput = sslSocket.outputStream
-
-            val readerJob = launch {
-                try {
-                    while (isActive && isRunning) {
-                        val bytesRead = socketInput.read(buffer)
-                        if (bytesRead > 0) {
-                            output.write(buffer, 0, bytesRead)
-                        } else if (bytesRead == -1) break
-                    }
-                } catch (_: Exception) {}
+            tearDownTunnelResources()
+            if (!isReconnectAttempt) {
+                TunnelStateHolder.setConnectionState(TunnelConnectionState.Authenticating)
             }
 
-            val writerJob = launch {
-                try {
-                    while (isActive && isRunning) {
-                        val bytesRead = input.read(buffer)
-                        if (bytesRead > 0) {
-                            socketOutput.write(buffer, 0, bytesRead)
-                            socketOutput.flush()
-                        } else if (bytesRead == -1) break
-                    }
-                } catch (_: Exception) {}
-            }
+            val session = TunPacketForwarder.startSingBoxCore(
+                vpnService = this@TunnelVpnService,
+                context = applicationContext,
+                clientConfig = buildSingBoxClientConfig(),
+                onCoreLog = { line -> Log.i(TAG, "[libbox] $line") },
+                onNotification = { title, body -> updateNotification(title, body) }
+            )
+            activeSession = session
 
-            // KeepAlive ping every 20 seconds
-            val keepAliveJob = launch {
-                while (isActive && isRunning) {
-                    delay(20000)
-                    try {
-                        socketOutput.write(byteArrayOf(0x00))
-                        socketOutput.flush()
-                    } catch (_: Exception) {
-                        break
-                    }
-                }
-            }
-
-            joinAll(readerJob, writerJob, keepAliveJob)
-            sslSocket.close()
+            TunnelStateHolder.setConnectionState(TunnelConnectionState.TunnelEstablished)
+            updateNotification(
+                "Tunnel Console Active (${activeProtocol.id})",
+                "$activeHost:$activePort · uTLS=$activeUtlsFingerprint"
+            )
+            true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            // Handle reconnection or error state
+            Log.e(TAG, "libbox tunnel failed: ${e.message}", e)
+            tearDownTunnelResources()
+            if (!isReconnectAttempt && !manualDisconnect.get() && isRunning.get()) {
+                TunnelStateHolder.setConnectionState(TunnelConnectionState.Reconnecting)
+                reconnectionMonitor.onIoException("sing-box startup error", e)
+            }
+            false
         }
+    }
+
+    private fun tearDownTunnelResources() {
+        TunPacketForwarder.stopSingBoxCore(activeSession)
+        activeSession = null
     }
 
     private fun stopVpn() {
-        isRunning = false
+        manualDisconnect.set(true)
+        isRunning.set(false)
+        reconnectionMonitor.stop()
+        activeTunnelJob?.cancel()
+        activeTunnelJob = null
         serviceJob.cancelChildren()
-        try {
-            vpnInterface?.close()
-        } catch (_: Exception) {}
-        vpnInterface = null
+        tearDownTunnelResources()
+        TunnelStateHolder.setConnectionState(TunnelConnectionState.Disconnected)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
+    override fun onRevoke() {
+        stopVpn()
+        super.onRevoke()
+    }
+
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            NOTIFICATION_CHANNEL_ID,
-            "Tunnel Console VPN Service",
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = "Maintains persistent secure foreground tunnel connection"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                "Tunnel Console VPN Service",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Maintains persistent native sing-box (libbox) gVisor TUN + Anti-DPI tunnel"
+            }
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(channel)
         }
+    }
+
+    private fun updateNotification(title: String, text: String) {
         val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(channel)
+        manager.notify(NOTIFICATION_ID, buildNotification(title, text))
     }
 
     private fun buildNotification(title: String, text: String): Notification {
         val pendingIntent = PendingIntent.getActivity(
-            this, 0,
+            this,
+            0,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE
         )
@@ -181,8 +341,8 @@ class TunnelVpnService : VpnService() {
     }
 
     override fun onDestroy() {
-        super.onDestroy()
         stopVpn()
         serviceJob.cancel()
+        super.onDestroy()
     }
 }

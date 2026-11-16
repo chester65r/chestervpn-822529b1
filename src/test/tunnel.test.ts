@@ -16,11 +16,14 @@ import {
   validateProfile,
   type SavedProfile,
 } from "@/lib/tunnel";
+import { validateSingBoxClientConfig } from "@/lib/singbox";
 
 describe("route presets", () => {
-  it("autofill the neutral example hosts and custom stays blank", () => {
+  it("provides STC (VLESS+Reality) and Mobily (VLESS+WSS CDN) carrier presets and keeps custom blank", () => {
     const sni = Object.fromEntries(ROUTE_PRESETS.map((p) => [p.id, p.sni]));
     expect(sni).toEqual({
+      stc: "www.stc.com.sa",
+      mobily: "www.mobily.com.sa",
       alpha: "alpha.example.com",
       beta: "beta.example.com",
       gamma: "gamma.example.com",
@@ -30,16 +33,17 @@ describe("route presets", () => {
 });
 
 describe("Hetzner CX23 (2.29.8.194 / ahmed-docker-manager #166592617) infrastructure & telecom profiles", () => {
-  it("defaults initial active profile to Hetzner CX23 2.29.8.194:443 when unconfigured", () => {
+  it("defaults initial active profile to Hetzner CX23 2.29.8.194:443 with STC VLESS+Reality", () => {
     const resolved = resolveInitialActiveProfile(null);
     expect(resolved.profile).toEqual(HETZNER_DEFAULT_PROFILE);
     expect(resolved.profile.ip).toBe("2.29.8.194");
     expect(resolved.profile.port).toBe("443");
-    expect(resolved.profile.sni).toBe("static.194.8.29.2.clients.your-server.de");
+    expect(resolved.profile.sni).toBe("www.stc.com.sa");
+    expect(resolved.profile.protocol).toBe("vless-reality");
     expect(validateProfile(resolved.profile)).toEqual({});
   });
 
-  it("provides valid legitimate network & telecom-provider profiles targeting 2.29.8.194", () => {
+  it("provides validated sing-box outbound JSON configurations for STC and Mobily carrier profiles targeting 2.29.8.194", () => {
     expect(HETZNER_SERVER_SPEC.serverName).toBe("ahmed-docker-manager");
     expect(HETZNER_SERVER_SPEC.serverId).toBe("166592617");
     expect(HETZNER_SERVER_SPEC.projectId).toBe("16098183");
@@ -52,28 +56,40 @@ describe("Hetzner CX23 (2.29.8.194 / ahmed-docker-manager #166592617) infrastruc
       expect(netProfile.profile.ip).toBe("2.29.8.194");
       expect(validateProfile(netProfile.profile)).toEqual({});
       const parsed = parsePayload(netProfile.profile.payload, netProfile.profile.sni);
-      expect(parsed).toContain(`Host: ${netProfile.profile.sni}`);
-      expect(parsed.endsWith("\r\n\r\n")).toBe(true);
+      const parsedJson = JSON.parse(parsed) as Record<string, unknown>;
+      expect(validateSingBoxClientConfig(parsedJson)).toEqual([]);
+      expect(parsed).toContain(`"server_name": "${netProfile.profile.sni}"`);
     }
-    expect(getNetworkProviderProfile("telecom-mobile-cgnat")?.recommendedMtu).toBe(1280);
-    expect(getNetworkProviderProfile("stc-ksa-5g-cgnat")?.recommendedMtu).toBe(1280);
-    expect(getNetworkProviderProfile("mobily-ksa-lte-bypass")?.recommendedMtu).toBe(1280);
-    expect(getNetworkProviderProfile("stc-ksa-5g-cgnat")?.profile.ip).toBe("2.29.8.194");
-    expect(getNetworkProviderProfile("mobily-ksa-lte-bypass")?.profile.ip).toBe("2.29.8.194");
+    const stc = getNetworkProviderProfile("stc-ksa-5g-cgnat");
+    expect(stc?.recommendedMtu).toBe(1280);
+    expect(stc?.profile.protocol).toBe("vless-reality");
+    expect(stc?.profile.sni).toBe("www.stc.com.sa");
+    expect(stc?.profile.payload).toContain('"xtls-rprx-vision"');
+    expect(stc?.profile.payload).toContain('"record_fragment": true');
+
+    const mobily = getNetworkProviderProfile("mobily-ksa-lte-bypass");
+    expect(mobily?.recommendedMtu).toBe(1280);
+    expect(mobily?.profile.protocol).toBe("vless-ws-tls");
+    expect(mobily?.profile.sni).toBe("www.mobily.com.sa");
+    expect(mobily?.profile.cdnHost).toBe("cdn.mobily.com.sa");
+    expect(mobily?.profile.wsPath).toBe("/cdn-ws");
+    expect(mobily?.profile.payload).toContain('"type": "ws"');
+    expect(mobily?.profile.payload).toContain('"Host": "cdn.mobily.com.sa"');
+    expect(mobily?.profile.payload).toContain('"fingerprint": "chrome"');
   });
 });
 
-describe("payload macros", () => {
-  it("replaces [host] and [crlf] and terminates the headers", () => {
-    expect(parsePayload("GET / HTTP/1.1[crlf]Host: [host][crlf]", "alpha.example.com")).toBe(
-      "GET / HTTP/1.1\r\nHost: alpha.example.com\r\n\r\n",
-    );
+describe("sing-box outbound payload generation", () => {
+  it("normalizes and updates server_name in a sing-box JSON configuration", () => {
+    const updated = parsePayload(DEFAULT_PAYLOAD_TEMPLATE, "portal.stc.com.sa");
+    const parsed = JSON.parse(updated) as Record<string, unknown>;
+    expect(validateSingBoxClientConfig(parsed)).toEqual([]);
+    expect(updated).toContain('"server_name": "portal.stc.com.sa"');
   });
 
-  it("falls back to the default template when blank", () => {
-    expect(parsePayload("  ", "h.example.com")).toBe(
-      parsePayload(DEFAULT_PAYLOAD_TEMPLATE, "h.example.com"),
-    );
+  it("falls back to a validated sing-box JSON config when blank", () => {
+    const out = parsePayload("  ", "www.stc.com.sa");
+    expect(validateSingBoxClientConfig(JSON.parse(out) as Record<string, unknown>)).toEqual([]);
   });
 });
 
@@ -99,7 +115,7 @@ describe("validation", () => {
 
 describe("TUNNEL:// codes", () => {
   it("round-trips a profile including non-ASCII payload text", () => {
-    const p = { ip: "vpn.example.com", port: "8443", sni: "beta.example.com", payload: "X: é[crlf]" };
+    const p = { ip: "vpn.example.com", port: "8443", sni: "beta.example.com", payload: '{"note":"é"}' };
     const code = exportProfile(p);
     expect(code.startsWith("TUNNEL://")).toBe(true);
     expect(importProfile(code)).toEqual(p);

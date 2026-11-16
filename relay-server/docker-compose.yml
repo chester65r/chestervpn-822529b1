@@ -16,27 +16,18 @@ services:
       - net.ipv6.conf.all.forwarding=1
     environment:
       - PUBLIC_HOST=${PUBLIC_HOST:-2.29.8.194}
-      - TUN_SUBNET=10.8.0.0/24
-      - TUN_SERVER_IP=10.8.0.1/24
+      - REALITY_SNI=${REALITY_SNI:-www.microsoft.com}
       - WG_SUBNET=10.66.66.0/24
       - WG_SERVER_IP=10.66.66.1/24
       - WG_PORT=51820
-      - TLS_PORTS=443,8443
-      - HTTP_PORTS=80,8080
-      - SOCKS5_PORT=1080
-      - SSH_PORT=2222
     ports:
-      - "51820:51820/udp"
       - "443:443/tcp"
       - "8443:8443/tcp"
-      - "80:80/tcp"
-      - "8080:8080/tcp"
-      - "1080:1080/tcp"
-      - "2222:2222/tcp"
+      - "51820:51820/udp"
     volumes:
       - tunnel-wireguard:/etc/wireguard
-      - tunnel-tls:/etc/tunnel-relay/tls
+      - tunnel-singbox:/etc/sing-box
 
 volumes:
   tunnel-wireguard:
-  tunnel-tls:
+  tunnel-singbox:

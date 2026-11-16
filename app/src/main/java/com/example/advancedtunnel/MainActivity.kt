@@ -192,6 +192,9 @@ class MainActivity : ComponentActivity() {
             putExtra("tunnel_port", profile.port)
             putExtra("tunnel_sni", profile.sni)
             putExtra("tunnel_payload", profile.payload)
+            putExtra("tunnel_protocol", profile.protocol)
+            putExtra("tunnel_cdn_host", profile.cdnHost)
+            putExtra("tunnel_ws_path", profile.wsPath)
         }
 
         ContextCompat.startForegroundService(this, intent)

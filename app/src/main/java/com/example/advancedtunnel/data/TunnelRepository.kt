@@ -21,6 +21,10 @@ class TunnelRepository(context: Context) {
         private const val KEY_ACTIVE_PROFILE_PORT = "active_port"
         private const val KEY_ACTIVE_PROFILE_SNI = "active_sni"
         private const val KEY_ACTIVE_PROFILE_PAYLOAD = "active_payload"
+        private const val KEY_ACTIVE_PROFILE_PROTOCOL = "active_protocol"
+        private const val KEY_ACTIVE_PROFILE_CDN_HOST = "active_cdn_host"
+        private const val KEY_ACTIVE_PROFILE_WS_PATH = "active_ws_path"
+        private const val KEY_ACTIVE_PROFILE_UTLS = "active_utls_fp"
         private const val KEY_ACTIVE_PRESET_ID = "active_preset_id"
         private const val KEY_KILLSWITCH = "killswitch_enabled"
         private const val KEY_SPLIT_TUNNELING = "split_tunneling_enabled"
@@ -67,8 +71,8 @@ class TunnelRepository(context: Context) {
 
     fun loadTlsFragmentConfig(): TlsFragmentConfig {
         val enabled = prefs.getBoolean(KEY_FRAG_ENABLED, true)
-        val modeId = prefs.getString(KEY_FRAG_MODE, TlsFragmentMode.TLS_RECORD_AND_TCP.id)
-            ?: TlsFragmentMode.TLS_RECORD_AND_TCP.id
+        val modeId = prefs.getString(KEY_FRAG_MODE, TlsFragmentMode.SNI_BOUNDARY_SPLIT.id)
+            ?: TlsFragmentMode.SNI_BOUNDARY_SPLIT.id
         val minChunk = prefs.getInt(KEY_FRAG_MIN_CHUNK, 5)
         val maxChunk = prefs.getInt(KEY_FRAG_MAX_CHUNK, 15)
         val minJitter = prefs.getInt(KEY_FRAG_MIN_JITTER, 3)
@@ -107,12 +111,42 @@ class TunnelRepository(context: Context) {
             ip = com.example.advancedtunnel.model.HETZNER_SERVER_IP
         }
         val port = prefs.getString(KEY_ACTIVE_PROFILE_PORT, "443") ?: "443"
-        val sni = prefs.getString(KEY_ACTIVE_PROFILE_SNI, com.example.advancedtunnel.model.HETZNER_SERVER_IP)
-            ?: com.example.advancedtunnel.model.HETZNER_SERVER_IP
-        val payload = prefs.getString(KEY_ACTIVE_PROFILE_PAYLOAD, com.example.advancedtunnel.model.DEFAULT_PAYLOAD_TEMPLATE)
-            ?: com.example.advancedtunnel.model.DEFAULT_PAYLOAD_TEMPLATE
-        val presetId = prefs.getString(KEY_ACTIVE_PRESET_ID, "hetzner") ?: "hetzner"
-        return Pair(TunnelProfile(ip, port, sni, payload), presetId)
+        val presetId = prefs.getString(KEY_ACTIVE_PRESET_ID, "stc") ?: "stc"
+        val defaultSni = if (presetId == "mobily") "www.mobily.com.sa" else "www.stc.com.sa"
+        val sni = prefs.getString(KEY_ACTIVE_PROFILE_SNI, defaultSni)?.ifBlank { defaultSni } ?: defaultSni
+        val protocol = prefs.getString(
+            KEY_ACTIVE_PROFILE_PROTOCOL,
+            if (presetId == "mobily") "vless-ws-tls" else "vless-reality"
+        ) ?: "vless-reality"
+        val cdnHost = prefs.getString(KEY_ACTIVE_PROFILE_CDN_HOST, "cdn.mobily.com.sa") ?: "cdn.mobily.com.sa"
+        val wsPath = prefs.getString(KEY_ACTIVE_PROFILE_WS_PATH, "/cdn-ws") ?: "/cdn-ws"
+        val utlsFp = prefs.getString(KEY_ACTIVE_PROFILE_UTLS, "chrome") ?: "chrome"
+        val rawPayload = prefs.getString(KEY_ACTIVE_PROFILE_PAYLOAD, null)
+        val payload = if (rawPayload.isNullOrBlank() || !rawPayload.trim().startsWith("{")) {
+            com.example.advancedtunnel.vpn.SingBoxConfigBuilder.buildCarrierConfigJson(
+                carrierId = presetId,
+                serverHost = ip,
+                serverPort = port.toIntOrNull() ?: 443,
+                customSni = sni,
+                customCdnHost = cdnHost,
+                customWsPath = wsPath
+            )
+        } else {
+            rawPayload
+        }
+        return Pair(
+            TunnelProfile(
+                ip = ip,
+                port = port,
+                sni = sni,
+                payload = payload,
+                protocol = protocol,
+                cdnHost = cdnHost,
+                wsPath = wsPath,
+                utlsFingerprint = utlsFp
+            ),
+            presetId
+        )
     }
 
     fun saveActiveProfile(profile: TunnelProfile, presetId: String) {
@@ -121,6 +155,10 @@ class TunnelRepository(context: Context) {
             .putString(KEY_ACTIVE_PROFILE_PORT, profile.port)
             .putString(KEY_ACTIVE_PROFILE_SNI, profile.sni)
             .putString(KEY_ACTIVE_PROFILE_PAYLOAD, profile.payload)
+            .putString(KEY_ACTIVE_PROFILE_PROTOCOL, profile.protocol)
+            .putString(KEY_ACTIVE_PROFILE_CDN_HOST, profile.cdnHost)
+            .putString(KEY_ACTIVE_PROFILE_WS_PATH, profile.wsPath)
+            .putString(KEY_ACTIVE_PROFILE_UTLS, profile.utlsFingerprint)
             .putString(KEY_ACTIVE_PRESET_ID, presetId)
             .apply()
     }
@@ -142,7 +180,13 @@ class TunnelRepository(context: Context) {
                             ip = profObj.getString("ip"),
                             port = profObj.getString("port"),
                             sni = profObj.getString("sni"),
-                            payload = profObj.optString("payload", "")
+                            payload = profObj.optString("payload", ""),
+                            protocol = profObj.optString("protocol", "vless-reality"),
+                            cdnHost = profObj.optString("cdnHost", "cdn.mobily.com.sa"),
+                            wsPath = profObj.optString("wsPath", "/cdn-ws"),
+                            utlsFingerprint = profObj.optString("utlsFingerprint", "chrome"),
+                            sniSplitMinBytes = profObj.optInt("sniSplitMinBytes", 5),
+                            sniSplitMaxBytes = profObj.optInt("sniSplitMaxBytes", 15)
                         ),
                         savedAt = obj.optLong("savedAt", System.currentTimeMillis())
                     )
@@ -167,6 +211,12 @@ class TunnelRepository(context: Context) {
                     put("port", p.profile.port)
                     put("sni", p.profile.sni)
                     put("payload", p.profile.payload)
+                    put("protocol", p.profile.protocol)
+                    put("cdnHost", p.profile.cdnHost)
+                    put("wsPath", p.profile.wsPath)
+                    put("utlsFingerprint", p.profile.utlsFingerprint)
+                    put("sniSplitMinBytes", p.profile.sniSplitMinBytes)
+                    put("sniSplitMaxBytes", p.profile.sniSplitMaxBytes)
                 })
             }
             array.put(obj)

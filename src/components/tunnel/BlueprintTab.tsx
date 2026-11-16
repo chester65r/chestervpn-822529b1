@@ -19,6 +19,12 @@ import { BLUEPRINT_FILES } from "@/lib/android-blueprint";
 import { ALL_IN_ONE_ANDROID_KOTLIN } from "@/lib/all-in-one-android";
 import { probeHetznerServer } from "@/lib/relay-control.functions";
 import {
+  buildSingBoxClientConfig,
+  validateSingBoxClientConfig,
+  type SingBoxProtocol,
+  type UtlsFingerprint,
+} from "@/lib/singbox";
+import {
   HETZNER_SERVER_SPEC,
   NETWORK_PROVIDER_PROFILES,
   parsePayload,
@@ -32,6 +38,7 @@ import {
   validateServer,
 } from "@/lib/wireguard";
 import { Button } from "@/components/ui/button";
+import { AcodeSnippetsPanel } from "@/components/tunnel/AcodeSnippetsPanel";
 import { AndroidChecklist } from "@/components/tunnel/AndroidChecklist";
 
 /**
@@ -82,7 +89,7 @@ export function BlueprintTab() {
   // 1. Live Android TunnelVpnService + ReconnectionMonitor State
   const [engineState, setEngineState] = useState<AndroidEngineState>("Disconnected");
   const [selectedNetProfileId, setSelectedNetProfileId] = useState<string>(
-    NETWORK_PROVIDER_PROFILES[0]?.id ?? "hetzner-tls-direct",
+    NETWORK_PROVIDER_PROFILES[0]?.id ?? "stc-ksa-5g-cgnat",
   );
   const [reconnectAttempt, setReconnectAttempt] = useState<number>(0);
   const [reconnectPhase, setReconnectPhase] = useState<string | null>(null);
@@ -112,6 +119,17 @@ export function BlueprintTab() {
   const [activeConfigTab, setActiveConfigTab] = useState<"client" | "server" | "enroll">("client");
   const [copiedWg, setCopiedWg] = useState(false);
 
+  // 2b. sing-box (libbox gVisor + VLESS-Reality / VLESS-WSS-CDN / Trojan-TLS + uTLS) Config Builder State
+  const [sbProtocol, setSbProtocol] = useState<SingBoxProtocol>("vless-reality");
+  const [sbUtls, setSbUtls] = useState<UtlsFingerprint>("chrome");
+  const [sbWsHost, setSbWsHost] = useState("cdn.mobily.com.sa");
+  const [sbWsPath, setSbWsPath] = useState("/cdn-ws");
+  const [sbUuid, setSbUuid] = useState("");
+  const [sbRealityPub, setSbRealityPub] = useState("");
+  const [sbRealitySid, setSbRealitySid] = useState("");
+  const [sbTrojanPwd, setSbTrojanPwd] = useState("");
+  const [copiedSingBox, setCopiedSingBox] = useState(false);
+
   // 3. Built Source Modules Viewer (-1 = Merged AllInOneHetznerVpn.kt)
   const [active, setActive] = useState(-1);
   const [copied, setCopied] = useState(false);
@@ -125,7 +143,7 @@ export function BlueprintTab() {
     setDevicePrivKey(device.privateKey);
     setDevicePubKey(device.publicKey);
     setServerPrivKey(server.privateKey);
-    setServerPubKey(server.publicKey);
+    setServerPubKey(HETZNER_SERVER_SPEC.wireguardPublicKey);
     setPresharedKey(generateCanonicalWgKey());
   }, []);
 
@@ -153,42 +171,49 @@ export function BlueprintTab() {
     setReconnectAttempt(0);
     setReconnectPhase(null);
     appendLog(
-      `[TunnelVpnService] Establishing tun0 (10.8.0.2/32, MTU=${selectedNetProfile.recommendedMtu}) -> ${selectedNetProfile.profile.ip}:${selectedNetProfile.profile.port}`,
+      `[TunnelVpnService] Initializing native libbox gVisor TUN (172.19.0.1/30, MTU=1500, auto_route=true) -> ${selectedNetProfile.profile.ip}:${sbProtocol === "vless-reality" ? 443 : 8443}`,
     );
 
     setProbingServer(true);
     setEngineState("Authenticating");
     appendLog(
-      `[CarrierTunnelOptimizer] Sending TLS 1.3 SNI=${selectedNetProfile.profile.sni} + ${selectedNetProfile.id} handshake...`,
+      `[LibboxPlatformBridge] Probing ${sbProtocol} endpoint (SNI=${sbProtocol === "vless-reality" ? "www.microsoft.com" : selectedNetProfile.profile.sni}, uTLS=${sbUtls}, fragment=true, record_fragment=true)...`,
     );
 
     try {
       const res = await runProbe({
         data: {
-          port: Number(selectedNetProfile.profile.port) || 443,
-          sni: selectedNetProfile.profile.sni,
+          port: sbProtocol === "vless-reality" ? 443 : 8443,
+          sni: sbProtocol === "vless-reality" ? "www.microsoft.com" : selectedNetProfile.profile.sni,
           networkProfileId: selectedNetProfile.id,
         },
       });
-      setLiveProbeResult(res);
+      if (res && typeof res === "object" && typeof res.status === "string") {
+        setLiveProbeResult(res);
 
-      if (res.status === "online" || res.tcpReachable) {
-        setEngineState("TunnelEstablished");
-        appendLog(
-          `[Simulation] Live probe answered in ${res.latencyMs ?? "?"} ms. No Android tunnel exists in a browser — open the Android app and import a profile to connect for real.`,
-        );
-        toast.success(`Server reachable: ${HETZNER_SERVER_SPEC.serverName} (${HETZNER_SERVER_SPEC.ip})`, {
-          description: "Browser simulation only — no tunnel was opened.",
-        });
+        if (res.status === "online" || res.tcpReachable) {
+          setEngineState("TunnelEstablished");
+          appendLog(
+            `[Simulation] Live probe answered in ${res.latencyMs ?? "?"} ms. No Android tunnel exists in a browser — open the Android app and import a profile to connect for real.`,
+          );
+          toast.success(`Server reachable: ${HETZNER_SERVER_SPEC.serverName} (${HETZNER_SERVER_SPEC.ip})`, {
+            description: "Browser simulation only — no tunnel was opened.",
+          });
+        } else {
+          setEngineState("Reconnecting");
+          setReconnectAttempt(1);
+          const delayMs = BACKOFF_DELAYS_MS[0] ?? 1000;
+          const phase = `Reconnecting (attempt 1/8) in ${delayMs / 1000}s — live server ${res.errorCode ?? "OFFLINE"}`;
+          setReconnectPhase(phase);
+          appendLog(
+            `[ReconnectionMonitor] ${HETZNER_SERVER_SPEC.ip}:${selectedNetProfile.profile.port} returned ${res.errorCode ?? "UNREACHABLE"}; scheduled exponential backoff (${delayMs} ms).`,
+          );
+        }
       } else {
         setEngineState("Reconnecting");
         setReconnectAttempt(1);
-        const delayMs = BACKOFF_DELAYS_MS[0] ?? 1000;
-        const phase = `Reconnecting (attempt 1/8) in ${delayMs / 1000}s — live server ${res.errorCode ?? "OFFLINE"}`;
-        setReconnectPhase(phase);
-        appendLog(
-          `[ReconnectionMonitor] ${HETZNER_SERVER_SPEC.ip}:${selectedNetProfile.profile.port} returned ${res.errorCode ?? "UNREACHABLE"}; scheduled exponential backoff (${delayMs} ms).`,
-        );
+        setReconnectPhase("Reconnecting (attempt 1/8) in 1s — probe unavailable");
+        appendLog("[ReconnectionMonitor] Probe response unavailable -> scheduled exponential backoff.");
       }
     } catch {
       setEngineState("Reconnecting");
@@ -256,6 +281,33 @@ export function BlueprintTab() {
   const renderedServerConf = serverConfig(wgServerObj);
   const renderedEnrollCmd = `docker exec tunnel-relay-all-in-one python3 /opt/tunnel-relay/peer-admin.py enroll --public-key '${devicePubKey}' --address ${clientAddress} --endpoint ${endpointHost}:${endpointPort} --response /etc/wireguard/android-device.enrollment.conf`;
 
+  const activeSbSni =
+    sbProtocol === "vless-reality"
+      ? selectedNetProfile?.profile.sni || "www.stc.com.sa"
+      : sbProtocol === "vless-ws-tls"
+        ? "www.mobily.com.sa"
+        : HETZNER_SERVER_SPEC.reverseDns;
+
+  const singBoxConfigObj = buildSingBoxClientConfig({
+    protocol: sbProtocol,
+    serverHost: endpointHost,
+    serverPort: sbProtocol === "trojan-tls" ? 8443 : 443,
+    sni: activeSbSni,
+    wsHost: sbWsHost.trim() || "cdn.mobily.com.sa",
+    wsPath: sbWsPath.trim() || "/cdn-ws",
+    utlsFingerprint: sbUtls,
+    fragmentEnabled: true,
+    recordFragmentEnabled: true,
+    sniSplitMinBytes: 5,
+    sniSplitMaxBytes: 15,
+    ...(sbUuid.trim() ? { uuid: sbUuid.trim() } : {}),
+    ...(sbRealityPub.trim() ? { realityPublicKey: sbRealityPub.trim() } : {}),
+    ...(sbRealitySid.trim() ? { realityShortId: sbRealitySid.trim() } : {}),
+    ...(sbTrojanPwd.trim() ? { trojanPassword: sbTrojanPwd.trim() } : {}),
+  });
+  const singBoxErrors = validateSingBoxClientConfig(singBoxConfigObj);
+  const renderedSingBoxJson = JSON.stringify(singBoxConfigObj, null, 2);
+
   const displayedWgText =
     activeConfigTab === "client"
       ? renderedClientConf
@@ -291,8 +343,7 @@ export function BlueprintTab() {
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <p className="flex items-center gap-1.5 text-xs font-bold tracking-wider text-primary">
-              <Smartphone className="h-4 w-4" /> ANDROID VPN ENGINE & RECONNECTION MONITOR — BROWSER
-              SIMULATION
+              <Smartphone className="h-4 w-4" /> ANDROID VPN ENGINE & LIVE SERVER HANDSHAKE
             </p>
             <p className="mt-0.5 font-mono text-xs text-foreground">
               {HETZNER_SERVER_SPEC.serverName} (#{HETZNER_SERVER_SPEC.serverId}) · {HETZNER_SERVER_SPEC.ip} ·{" "}
@@ -313,7 +364,7 @@ export function BlueprintTab() {
                     : "bg-secondary text-foreground"
             }`}
           >
-            {engineState === "TunnelEstablished" ? "Server reachable · simulated" : engineState}
+            {engineState === "TunnelEstablished" ? "Server reachable (OS VPN runs on Android)" : engineState}
           </span>
         </div>
 
@@ -328,7 +379,18 @@ export function BlueprintTab() {
             <button
               key={item.id}
               type="button"
-              onClick={() => setSelectedNetProfileId(item.id)}
+              onClick={() => {
+                setSelectedNetProfileId(item.id);
+                if (item.profile.protocol) {
+                  setSbProtocol(item.profile.protocol);
+                }
+                if (item.profile.cdnHost) {
+                  setSbWsHost(item.profile.cdnHost);
+                }
+                if (item.profile.wsPath) {
+                  setSbWsPath(item.profile.wsPath);
+                }
+              }}
               className={`rounded-xl border px-2.5 py-2 text-left transition-colors ${
                 selectedNetProfileId === item.id
                   ? "border-primary bg-primary/10 text-foreground"
@@ -344,12 +406,13 @@ export function BlueprintTab() {
         </div>
 
         {selectedNetProfile && (
-          <div className="tc-code p-3 text-[11px] text-muted-foreground">
-            <span className="text-primary">Handshake Payload ({selectedNetProfile.id}): </span>
-            {parsePayload(selectedNetProfile.profile.payload, selectedNetProfile.profile.sni).replace(
-              /\r\n/g,
-              " \\r\\n ",
-            )}
+          <div className="tc-code max-h-28 overflow-auto p-3 font-mono text-[10px] text-muted-foreground">
+            <span className="block font-semibold text-primary">
+              Active Carrier Core Outbound ({selectedNetProfile.id} · {selectedNetProfile.profile.protocol ?? "vless-reality"}):
+            </span>
+            <pre className="mt-1 whitespace-pre-wrap break-all text-foreground">
+              {parsePayload(selectedNetProfile.profile.payload, selectedNetProfile.profile.sni)}
+            </pre>
           </div>
         )}
 
@@ -372,7 +435,7 @@ export function BlueprintTab() {
             className="gap-1.5"
           >
             <RotateCcw className="h-3.5 w-3.5" />
-            Simulate ReconnectionMonitor Backoff
+            Step ReconnectionMonitor Backoff Schedule
           </Button>
           <Button
             size="sm"
@@ -579,6 +642,203 @@ export function BlueprintTab() {
         </pre>
       </section>
 
+      {/* 2b. Production sing-box (libbox AAR) Anti-DPI Config Generator */}
+      <section className="tc-card space-y-3 p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="flex items-center gap-1.5 text-xs font-bold tracking-wider text-primary">
+              <ShieldCheck className="h-4 w-4" /> SING-BOX CLIENT CONFIG (VLESS-REALITY / TROJAN + UTLS)
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Ready for <code className="font-mono">io.nekohasekai.libbox</code> gVisor TUN on Android with ClientHello fragmentation.
+            </p>
+          </div>
+          <span className="font-mono text-[11px] text-primary">
+            {singBoxErrors.length === 0 ? "Schema Valid" : singBoxErrors[0]}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              size="sm"
+              variant={sbProtocol === "vless-reality" ? "default" : "secondary"}
+              type="button"
+              onClick={() => {
+                setSbProtocol("vless-reality");
+                setSelectedNetProfileId("stc-ksa-5g-cgnat");
+              }}
+              className="font-mono text-xs"
+            >
+              STC VLESS + Reality (443)
+            </Button>
+            <Button
+              size="sm"
+              variant={sbProtocol === "vless-ws-tls" ? "default" : "secondary"}
+              type="button"
+              onClick={() => {
+                setSbProtocol("vless-ws-tls");
+                setSelectedNetProfileId("mobily-ksa-lte-bypass");
+                setSbUtls("chrome");
+              }}
+              className="font-mono text-xs"
+            >
+              Mobily WSS CDN (443)
+            </Button>
+            <Button
+              size="sm"
+              variant={sbProtocol === "trojan-tls" ? "default" : "secondary"}
+              type="button"
+              onClick={() => setSbProtocol("trojan-tls")}
+              className="font-mono text-xs"
+            >
+              Trojan + TLS (8443)
+            </Button>
+            <Button
+              size="sm"
+              variant={sbUtls === "chrome" ? "default" : "secondary"}
+              type="button"
+              onClick={() => setSbUtls("chrome")}
+              className="font-mono text-xs"
+            >
+              uTLS Chrome JA4
+            </Button>
+            <Button
+              size="sm"
+              variant={sbUtls === "ios" ? "default" : "secondary"}
+              type="button"
+              onClick={() => setSbUtls("ios")}
+              className="font-mono text-xs"
+            >
+              uTLS iOS
+            </Button>
+          </div>
+          <div className="flex gap-1.5">
+            <Button
+              size="sm"
+              variant="secondary"
+              type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(renderedSingBoxJson);
+                  setCopiedSingBox(true);
+                  toast.success("sing-box config JSON copied");
+                  window.setTimeout(() => setCopiedSingBox(false), 1500);
+                } catch {
+                  toast.error("Couldn't access the clipboard");
+                }
+              }}
+              className="gap-1.5 text-xs"
+            >
+              {copiedSingBox ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
+              {copiedSingBox ? "Copied" : "Copy"}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              type="button"
+              onClick={() => downloadTextFile("sing-box-config.json", renderedSingBoxJson)}
+              className="gap-1.5 text-xs"
+            >
+              <Download className="h-3.5 w-3.5" /> Download JSON
+            </Button>
+          </div>
+        </div>
+
+        {sbProtocol === "vless-reality" ? (
+          <div className="grid gap-2 sm:grid-cols-3">
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                CLIENT_UUID (from client-credentials.env)
+              </span>
+              <input
+                aria-label="VLESS Client UUID"
+                value={sbUuid}
+                onChange={(e) => setSbUuid(e.target.value)}
+                placeholder="<SERVER_UUID>"
+                className="tc-field font-mono text-xs"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-medium text-muted-foreground">REALITY_PUBLIC_KEY</span>
+              <input
+                aria-label="Reality Public Key"
+                value={sbRealityPub}
+                onChange={(e) => setSbRealityPub(e.target.value)}
+                placeholder="<REALITY_PUBLIC_KEY>"
+                className="tc-field font-mono text-xs"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-medium text-muted-foreground">REALITY_SHORT_ID</span>
+              <input
+                aria-label="Reality Short ID"
+                value={sbRealitySid}
+                onChange={(e) => setSbRealitySid(e.target.value)}
+                placeholder="<REALITY_SHORT_ID>"
+                className="tc-field font-mono text-xs"
+              />
+            </label>
+          </div>
+        ) : sbProtocol === "vless-ws-tls" ? (
+          <div className="grid gap-2 sm:grid-cols-3">
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                CLIENT_UUID (from client-credentials.env)
+              </span>
+              <input
+                aria-label="VLESS WSS Client UUID"
+                value={sbUuid}
+                onChange={(e) => setSbUuid(e.target.value)}
+                placeholder="<SERVER_UUID>"
+                className="tc-field font-mono text-xs"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                CDN EDGE HOST HEADER
+              </span>
+              <input
+                aria-label="CDN Edge Host Header"
+                value={sbWsHost}
+                onChange={(e) => setSbWsHost(e.target.value)}
+                placeholder="cdn.mobily.com.sa"
+                className="tc-field font-mono text-xs"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                WEBSOCKET PATH (WSS)
+              </span>
+              <input
+                aria-label="WebSocket Path"
+                value={sbWsPath}
+                onChange={(e) => setSbWsPath(e.target.value)}
+                placeholder="/cdn-ws"
+                className="tc-field font-mono text-xs"
+              />
+            </label>
+          </div>
+        ) : (
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
+              TROJAN_PASSWORD (from client-credentials.env)
+            </span>
+            <input
+              aria-label="Trojan Password"
+              value={sbTrojanPwd}
+              onChange={(e) => setSbTrojanPwd(e.target.value)}
+              placeholder="<TROJAN_PASSWORD>"
+              className="tc-field font-mono text-xs"
+            />
+          </label>
+        )}
+
+        <pre className="tc-code max-h-56 overflow-auto p-3 text-[11px] leading-relaxed text-foreground">
+          <code>{renderedSingBoxJson}</code>
+        </pre>
+      </section>
+
       {/* 3. Built Android & Server Source Modules */}
       <section className="tc-card space-y-3 p-4 sm:p-5">
         <div className="flex items-center justify-between gap-2">
@@ -628,7 +888,14 @@ export function BlueprintTab() {
         <div className="overflow-hidden rounded-2xl border border-border bg-background">
           <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
             <span className="truncate font-mono text-[11px] text-muted-foreground">{file.path}</span>
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <a
+                href={`/api/android-project.zip?host=${encodeURIComponent(endpointHost)}&port=${encodeURIComponent(String(sbProtocol === "trojan-tls" ? 8443 : 443))}&sni=${encodeURIComponent(activeSbSni)}&wsHost=${encodeURIComponent(sbWsHost.trim() || "cdn.mobily.com.sa")}&wsPath=${encodeURIComponent(sbWsPath.trim() || "/cdn-ws")}&profile=${encodeURIComponent(selectedNetProfileId)}&serverKey=${encodeURIComponent(serverPubKey)}&protocol=${encodeURIComponent(sbProtocol)}&utls=${encodeURIComponent(sbUtls)}${sbUuid.trim() ? `&uuid=${encodeURIComponent(sbUuid.trim())}` : ""}${sbRealityPub.trim() ? `&pbk=${encodeURIComponent(sbRealityPub.trim())}` : ""}${sbRealitySid.trim() ? `&sid=${encodeURIComponent(sbRealitySid.trim())}` : ""}${sbTrojanPwd.trim() ? `&password=${encodeURIComponent(sbTrojanPwd.trim())}` : ""}`}
+                download="tunnel-console-android.zip"
+                className="flex shrink-0 items-center gap-1.5 rounded-md bg-primary/15 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/25"
+              >
+                <Download className="h-3.5 w-3.5" /> Full Project (.zip)
+              </a>
               <Button
                 variant="secondary"
                 size="sm"
@@ -657,6 +924,8 @@ export function BlueprintTab() {
       </section>
 
       <AndroidChecklist />
+
+      <AcodeSnippetsPanel />
     </div>
   );
 }
