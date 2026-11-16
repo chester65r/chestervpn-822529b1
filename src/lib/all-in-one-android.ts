@@ -101,7 +101,10 @@ object HetznerServerConfig {
     const val TUN_CIDR = "172.19.0.1/30"
     const val TUN_MTU = 1500
     const val TUN_DNS = "1.1.1.1"
-    const val DEFAULT_REALITY_SNI = "www.stc.com.sa"
+    const val DEFAULT_REALITY_SNI = "www.microsoft.com"
+    const val DEFAULT_UUID = "2df2fc0f-f185-47ad-bc88-d2182c52d1b0"
+    const val DEFAULT_REALITY_PUBLIC_KEY = "2I0TJ_Jp7TufY2ZyYWW97BRuHoCAiKrUDWjRGXvC8Es"
+    const val DEFAULT_REALITY_SHORT_ID = "2f09854ba76a8389"
     const val DEFAULT_MOBILY_SNI = "www.mobily.com.sa"
     const val DEFAULT_MOBILY_CDN_HOST = "cdn.mobily.com.sa"
     const val DEFAULT_MOBILY_WS_PATH = "/cdn-ws"
@@ -119,9 +122,9 @@ object HetznerServerConfig {
         val wsPath: String = "/cdn-ws",
         val sniSplitMinBytes: Int = 5,
         val sniSplitMaxBytes: Int = 15,
-        val uuid: String = "",
-        val realityPublicKey: String = "",
-        val realityShortId: String = "",
+        val uuid: String = DEFAULT_UUID,
+        val realityPublicKey: String = DEFAULT_REALITY_PUBLIC_KEY,
+        val realityShortId: String = DEFAULT_REALITY_SHORT_ID,
         val trojanPassword: String = "",
         val fragment: Boolean = true,
         val recordFragment: Boolean = true

@@ -11,7 +11,7 @@ object EnvironmentConfig {
     private const val TAG = "EnvironmentConfig"
 
     val supabaseProjectId: String
-        get() = BuildConfig.SUPABASE_PROJECT_ID.ifBlank { BuildConfig.VITE_SUPABASE_PROJECT_ID }
+        get() = BuildConfig.VITE_SUPABASE_PROJECT_ID
 
     val supabasePublishableKey: String
         get() = BuildConfig.SUPABASE_PUBLISHABLE_KEY.ifBlank { BuildConfig.VITE_SUPABASE_PUBLISHABLE_KEY }

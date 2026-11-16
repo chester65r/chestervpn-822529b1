@@ -29,5 +29,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Tunnel Console"
+rootProject.name = "ChesterVPN"
 include(":app")

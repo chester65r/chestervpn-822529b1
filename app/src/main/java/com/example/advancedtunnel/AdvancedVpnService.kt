@@ -56,9 +56,9 @@ class AdvancedVpnService : GoBackend.VpnService() {
     private var cdnHost = SingBoxConfigBuilder.DEFAULT_MOBILY_CDN_HOST
     private var wsPath = SingBoxConfigBuilder.DEFAULT_MOBILY_WS_PATH
     private var rawPayloadJson = ""
-    private var uuid = ""
-    private var realityPublicKey = ""
-    private var realityShortId = ""
+    private var uuid = SingBoxConfigBuilder.DEFAULT_UUID
+    private var realityPublicKey = SingBoxConfigBuilder.DEFAULT_REALITY_PUBLIC_KEY
+    private var realityShortId = SingBoxConfigBuilder.DEFAULT_REALITY_SHORT_ID
     private var trojanPassword = ""
     private var killswitchEnabled = false
     private var disallowedApps = ArrayList<String>()
@@ -130,9 +130,12 @@ class AdvancedVpnService : GoBackend.VpnService() {
         wsPath = intent?.getStringExtra("WS_PATH")?.ifBlank { SingBoxConfigBuilder.DEFAULT_MOBILY_WS_PATH }
             ?: SingBoxConfigBuilder.DEFAULT_MOBILY_WS_PATH
         rawPayloadJson = intent?.getStringExtra("PAYLOAD") ?: ""
-        uuid = intent?.getStringExtra("UUID") ?: ""
-        realityPublicKey = intent?.getStringExtra("REALITY_PUBLIC_KEY") ?: ""
-        realityShortId = intent?.getStringExtra("REALITY_SHORT_ID") ?: ""
+        uuid = intent?.getStringExtra("UUID")?.ifBlank { SingBoxConfigBuilder.DEFAULT_UUID }
+            ?: SingBoxConfigBuilder.DEFAULT_UUID
+        realityPublicKey = intent?.getStringExtra("REALITY_PUBLIC_KEY")?.ifBlank { SingBoxConfigBuilder.DEFAULT_REALITY_PUBLIC_KEY }
+            ?: SingBoxConfigBuilder.DEFAULT_REALITY_PUBLIC_KEY
+        realityShortId = intent?.getStringExtra("REALITY_SHORT_ID")?.ifBlank { SingBoxConfigBuilder.DEFAULT_REALITY_SHORT_ID }
+            ?: SingBoxConfigBuilder.DEFAULT_REALITY_SHORT_ID
         trojanPassword = intent?.getStringExtra("TROJAN_PASSWORD") ?: ""
         killswitchEnabled = intent?.getBooleanExtra("KILLSWITCH_ENABLED", false) ?: false
         disallowedApps = intent?.getStringArrayListExtra("DISALLOWED_APPS") ?: ArrayList()

@@ -31,10 +31,41 @@ object TunnelStateHolder {
     val dataTransferred: StateFlow<Long> =
         _dataTransferred.asStateFlow()
 
+    private val _connectedAtMillis = MutableStateFlow<Long?>(null)
+
+    val connectedAtMillis: StateFlow<Long?> =
+        _connectedAtMillis.asStateFlow()
+
+    private val _downloadBytesPerSec = MutableStateFlow(0L)
+
+    val downloadBytesPerSec: StateFlow<Long> =
+        _downloadBytesPerSec.asStateFlow()
+
+    private val _uploadBytesPerSec = MutableStateFlow(0L)
+
+    val uploadBytesPerSec: StateFlow<Long> =
+        _uploadBytesPerSec.asStateFlow()
+
     fun setConnectionState(state: TunnelConnectionState) {
         _connectionState.value = state
-        if (state !is TunnelConnectionState.Reconnecting) {
-            _reconnectPhase.value = null
+        when (state) {
+            is TunnelConnectionState.TunnelEstablished -> {
+                if (_connectedAtMillis.value == null) {
+                    _connectedAtMillis.value = System.currentTimeMillis()
+                }
+                _reconnectPhase.value = null
+            }
+            is TunnelConnectionState.Disconnected,
+            is TunnelConnectionState.Error -> {
+                _connectedAtMillis.value = null
+                _downloadBytesPerSec.value = 0L
+                _uploadBytesPerSec.value = 0L
+                _reconnectPhase.value = null
+            }
+            is TunnelConnectionState.Reconnecting -> Unit
+            else -> {
+                _reconnectPhase.value = null
+            }
         }
     }
 
@@ -45,11 +76,18 @@ object TunnelStateHolder {
         }
     }
 
+    fun updateSpeeds(downloadBps: Long, uploadBps: Long) {
+        _downloadBytesPerSec.value = downloadBps.coerceAtLeast(0L)
+        _uploadBytesPerSec.value = uploadBps.coerceAtLeast(0L)
+    }
+
     fun addData(bytes: Long) {
         _dataTransferred.value += bytes
     }
 
     fun resetData() {
         _dataTransferred.value = 0L
+        _downloadBytesPerSec.value = 0L
+        _uploadBytesPerSec.value = 0L
     }
 }

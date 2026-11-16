@@ -94,7 +94,7 @@ class LibboxPlatformBridge(
         }
 
         val builder = vpnService.Builder()
-            .setSession("Tunnel Console (sing-box)")
+            .setSession("ChesterVPN")
             .setMtu(options.mtu)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

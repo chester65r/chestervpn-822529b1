@@ -18,7 +18,10 @@ object SingBoxConfigBuilder {
     const val DEFAULT_SERVER_HOST = "2.29.8.194"
     const val DEFAULT_VLESS_PORT = 443
     const val DEFAULT_TROJAN_PORT = 8443
-    const val DEFAULT_REALITY_SNI = "www.stc.com.sa"
+    const val DEFAULT_REALITY_SNI = "www.microsoft.com"
+    const val DEFAULT_UUID = "2df2fc0f-f185-47ad-bc88-d2182c52d1b0"
+    const val DEFAULT_REALITY_PUBLIC_KEY = "2I0TJ_Jp7TufY2ZyYWW97BRuHoCAiKrUDWjRGXvC8Es"
+    const val DEFAULT_REALITY_SHORT_ID = "2f09854ba76a8389"
     const val DEFAULT_STC_SNI = "www.stc.com.sa"
     const val DEFAULT_MOBILY_SNI = "www.mobily.com.sa"
     const val DEFAULT_MOBILY_CDN_HOST = "cdn.mobily.com.sa"
@@ -43,9 +46,9 @@ object SingBoxConfigBuilder {
         val serverHost: String = DEFAULT_SERVER_HOST,
         val serverPort: Int = DEFAULT_VLESS_PORT,
         val sniHost: String = DEFAULT_REALITY_SNI,
-        val uuid: String = "",
-        val realityPublicKey: String = "",
-        val realityShortId: String = "",
+        val uuid: String = DEFAULT_UUID,
+        val realityPublicKey: String = DEFAULT_REALITY_PUBLIC_KEY,
+        val realityShortId: String = DEFAULT_REALITY_SHORT_ID,
         val trojanPassword: String = "",
         val wsHost: String = DEFAULT_MOBILY_CDN_HOST,
         val wsPath: String = DEFAULT_MOBILY_WS_PATH,
@@ -87,9 +90,9 @@ object SingBoxConfigBuilder {
         customSni: String? = null,
         customCdnHost: String? = null,
         customWsPath: String? = null,
-        uuid: String = "",
-        realityPublicKey: String = "",
-        realityShortId: String = "",
+        uuid: String = DEFAULT_UUID,
+        realityPublicKey: String = DEFAULT_REALITY_PUBLIC_KEY,
+        realityShortId: String = DEFAULT_REALITY_SHORT_ID,
         trojanPassword: String = "",
         excludePackages: List<String> = emptyList()
     ): ClientConfig {
@@ -303,14 +306,14 @@ object SingBoxConfigBuilder {
         val effectiveSni = config.sniHost.trim().ifEmpty {
             when (config.protocol) {
                 Protocol.VLESS_WS_TLS -> DEFAULT_MOBILY_SNI
-                Protocol.VLESS_REALITY -> DEFAULT_STC_SNI
+                Protocol.VLESS_REALITY -> DEFAULT_REALITY_SNI
                 Protocol.TROJAN_TLS -> "static.194.8.29.2.clients.your-server.de"
             }
         }
         val effectivePort = config.serverPort.coerceIn(1, 65535)
         val effectiveMtu = config.mtu.coerceIn(1280, 1500)
         val effectiveUtls = mapFingerprintProfileToUtls(config.utlsFingerprint)
-        val effectiveUuid = config.uuid.trim().ifEmpty { "<SERVER_UUID>" }
+        val effectiveUuid = config.uuid.trim().ifEmpty { DEFAULT_UUID }
 
         val tlsObject = JSONObject().apply {
             put("enabled", true)
@@ -331,8 +334,8 @@ object SingBoxConfigBuilder {
                         "reality",
                         JSONObject().apply {
                             put("enabled", true)
-                            put("public_key", config.realityPublicKey.trim().ifEmpty { "<REALITY_PUBLIC_KEY>" })
-                            put("short_id", config.realityShortId.trim().ifEmpty { "<REALITY_SHORT_ID>" })
+                            put("public_key", config.realityPublicKey.trim().ifEmpty { DEFAULT_REALITY_PUBLIC_KEY })
+                            put("short_id", config.realityShortId.trim().ifEmpty { DEFAULT_REALITY_SHORT_ID })
                         }
                     )
                 }

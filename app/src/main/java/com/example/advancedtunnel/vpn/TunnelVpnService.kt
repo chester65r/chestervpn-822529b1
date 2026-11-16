@@ -6,8 +6,10 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.TrafficStats
 import android.net.VpnService
 import android.os.Build
+import android.os.Process
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.advancedtunnel.MainActivity
@@ -17,17 +19,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Foreground Android [VpnService] backed by the real native Go `sing-box` core (`io.nekohasekai.libbox`):
+ * Foreground Android [VpnService] backed by the native Go `sing-box` core (`io.nekohasekai.libbox`):
  * - Creates the OS TUN interface inside [LibboxPlatformBridge.openTun] (`172.19.0.1/30`, MTU 1500, `auto_route`, `strict_route`)
- * - Terminates all Layer 3 IPv4/IPv6 TCP + UDP/DNS traffic inside gVisor in native Go
+ * - Terminates Layer 3 IPv4/IPv6 TCP + UDP/DNS traffic inside gVisor in native Go
  * - Protects outbound sockets via `VpnService.protect(fd)` (`autoDetectInterfaceControl`)
- * - Connects to Hetzner CX23 (`2.29.8.194`) via VLESS + XTLS-Vision + Reality (port 443) or Trojan + TLS (port 8443)
- *   with native uTLS (`chrome` / `ios`) and ClientHello fragmentation (`fragment` + `record_fragment`).
+ * - Pre-configured for the active Hetzner Frankfurt endpoint (`2.29.8.194:443`) using
+ *   VLESS + XTLS-Vision + Reality (`www.microsoft.com`) with uTLS (`chrome`) and ClientHello fragmentation.
  */
 class TunnelVpnService : VpnService() {
 
@@ -37,6 +41,7 @@ class TunnelVpnService : VpnService() {
     @Volatile
     private var activeSession: TunPacketForwarder.RunningSession? = null
     private var activeTunnelJob: Job? = null
+    private var telemetryJob: Job? = null
 
     private val isRunning = AtomicBoolean(false)
     private val manualDisconnect = AtomicBoolean(false)
@@ -49,14 +54,14 @@ class TunnelVpnService : VpnService() {
     private var activeCdnHost = SingBoxConfigBuilder.DEFAULT_MOBILY_CDN_HOST
     private var activeWsPath = SingBoxConfigBuilder.DEFAULT_MOBILY_WS_PATH
     private var activePayloadJson = ""
-    private var activeUuid = ""
-    private var activeRealityPublicKey = ""
-    private var activeRealityShortId = ""
+    private var activeUuid = SingBoxConfigBuilder.DEFAULT_UUID
+    private var activeRealityPublicKey = SingBoxConfigBuilder.DEFAULT_REALITY_PUBLIC_KEY
+    private var activeRealityShortId = SingBoxConfigBuilder.DEFAULT_REALITY_SHORT_ID
     private var activeTrojanPassword = ""
     private var activeUtlsFingerprint = "chrome"
     private var activeFragmentEnabled = true
     private var activeRecordFragmentEnabled = true
-    private var activeCarrierProfileId = "stc-ksa-5g-cgnat"
+    private var activeCarrierProfileId = "hetzner-vless-reality"
 
     private val reconnectionMonitor: ReconnectionMonitor by lazy {
         ReconnectionMonitor(
@@ -66,31 +71,32 @@ class TunnelVpnService : VpnService() {
             isSocketDown = { activeSession == null },
             onPrepareReconnect = { reason ->
                 tearDownTunnelResources()
-                updateNotification("Reconnecting…", reason)
+                updateNotification("ChesterVPN Reconnecting…", reason)
                 TunnelStateHolder.setConnectionState(TunnelConnectionState.Reconnecting)
                 TunnelStateHolder.setReconnectPhase("Reconnecting: $reason")
                 true
             },
             onAttemptConnection = { attempt, maxAttempts ->
                 updateNotification(
-                    "Reconnecting ($attempt/$maxAttempts)",
-                    "Dialing $activeHost:$activePort via libbox (${activeProtocol.id})"
+                    "ChesterVPN Reconnecting ($attempt/$maxAttempts)",
+                    "Dialing $activeHost:$activePort"
                 )
                 establishVpnTunnel(isReconnectAttempt = true)
             },
-            onReconnectSucceeded = { attempt ->
+            onReconnectSucceeded = { _ ->
                 TunnelStateHolder.setConnectionState(TunnelConnectionState.TunnelEstablished)
+                startTrafficStatsSampler()
                 updateNotification(
-                    "Tunnel Console Active",
-                    "Recovered on attempt $attempt ($activeHost:$activePort)"
+                    "ChesterVPN Protected",
+                    "Connected to Hetzner Frankfurt ($activeHost)"
                 )
             },
             onReconnectExhausted = { errorMessage ->
                 TunnelStateHolder.setConnectionState(TunnelConnectionState.Error(errorMessage))
-                updateNotification("Connection Error", errorMessage)
+                updateNotification("ChesterVPN Error", errorMessage)
             },
             onStatusUpdate = { statusText ->
-                updateNotification("Tunnel Reconnecting", statusText)
+                updateNotification("ChesterVPN Reconnecting", statusText)
             }
         )
     }
@@ -123,7 +129,7 @@ class TunnelVpnService : VpnService() {
         const val DEFAULT_SNI = SingBoxConfigBuilder.DEFAULT_REALITY_SNI
         const val DEFAULT_MTU = SingBoxConfigBuilder.DEFAULT_TUN_MTU
 
-        const val NOTIFICATION_CHANNEL_ID = "tunnel_console_channel"
+        const val NOTIFICATION_CHANNEL_ID = "chestervpn_tunnel_channel"
         const val NOTIFICATION_ID = 1984
     }
 
@@ -228,8 +234,8 @@ class TunnelVpnService : VpnService() {
 
         createNotificationChannel()
         val notification = buildNotification(
-            "Connecting sing-box (${activeProtocol.id})",
-            "$activeHost:$activePort ($activeSni)"
+            "ChesterVPN Connecting…",
+            "Hetzner Frankfurt ($activeHost:$activePort)"
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -264,9 +270,10 @@ class TunnelVpnService : VpnService() {
             activeSession = session
 
             TunnelStateHolder.setConnectionState(TunnelConnectionState.TunnelEstablished)
+            startTrafficStatsSampler()
             updateNotification(
-                "Tunnel Console Active (${activeProtocol.id})",
-                "$activeHost:$activePort · uTLS=$activeUtlsFingerprint"
+                "ChesterVPN Protected",
+                "Connected to Hetzner Frankfurt ($activeHost)"
             )
             true
         } catch (e: CancellationException) {
@@ -282,7 +289,33 @@ class TunnelVpnService : VpnService() {
         }
     }
 
+    private fun startTrafficStatsSampler() {
+        telemetryJob?.cancel()
+        telemetryJob = serviceScope.launch {
+            val uid = Process.myUid()
+            var lastRx = TrafficStats.getUidRxBytes(uid).let { if (it < 0L) 0L else it }
+            var lastTx = TrafficStats.getUidTxBytes(uid).let { if (it < 0L) 0L else it }
+
+            while (isActive && isRunning.get() && !manualDisconnect.get()) {
+                delay(1000L)
+                val nowRx = TrafficStats.getUidRxBytes(uid).let { if (it < 0L) 0L else it }
+                val nowTx = TrafficStats.getUidTxBytes(uid).let { if (it < 0L) 0L else it }
+
+                val rxDelta = (nowRx - lastRx).coerceAtLeast(0L)
+                val txDelta = (nowTx - lastTx).coerceAtLeast(0L)
+
+                lastRx = nowRx
+                lastTx = nowTx
+
+                TunnelStateHolder.updateSpeeds(downloadBps = rxDelta, uploadBps = txDelta)
+                TunnelStateHolder.addData(rxDelta + txDelta)
+            }
+        }
+    }
+
     private fun tearDownTunnelResources() {
+        telemetryJob?.cancel()
+        telemetryJob = null
         TunPacketForwarder.stopSingBoxCore(activeSession)
         activeSession = null
     }
@@ -295,6 +328,7 @@ class TunnelVpnService : VpnService() {
         activeTunnelJob = null
         serviceJob.cancelChildren()
         tearDownTunnelResources()
+        TunnelStateHolder.resetData()
         TunnelStateHolder.setConnectionState(TunnelConnectionState.Disconnected)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -309,10 +343,10 @@ class TunnelVpnService : VpnService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
-                "Tunnel Console VPN Service",
+                "ChesterVPN Service",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Maintains persistent native sing-box (libbox) gVisor TUN + Anti-DPI tunnel"
+                description = "Maintains persistent Anti-DPI VLESS-Reality VPN tunnel"
             }
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
@@ -334,7 +368,7 @@ class TunnelVpnService : VpnService() {
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
