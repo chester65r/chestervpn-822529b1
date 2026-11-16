@@ -1,0 +1,45 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/lib/android-blueprint.ts"
+      - "src/lib/native-auth-blueprint.ts"
+      - "src/lib/wireguard.ts"
+      - "native/android/**"
+      - ".github/workflows/android-apk.yml"
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Generate Android project from blueprint
+        run: bun native/android/generate-project.ts "$RUNNER_TEMP/tunnel-android"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build debug APK
+        working-directory: ${{ runner.temp }}/tunnel-android
+        run: |
+          gradle wrapper --gradle-version 8.9 --distribution-type bin
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tunnel-console-debug-apk
+          path: ${{ runner.temp }}/tunnel-android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
