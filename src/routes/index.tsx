@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Home, Server, Share2, ShieldCheck, SlidersHorizontal, Plug, Code2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -7,12 +7,6 @@ import { useWebMCP } from "use-webmcp-tool";
 import { runWebMCPTool } from "@/lib/webmcp-telemetry";
 
 import { HomeTab } from "@/components/tunnel/HomeTab";
-import { ConfigTab } from "@/components/tunnel/ConfigTab";
-import { ShareTab } from "@/components/tunnel/ShareTab";
-import { BlueprintTab } from "@/components/tunnel/BlueprintTab";
-import { ServersTab } from "@/components/tunnel/ServersTab";
-import { AdditionalAccount } from "@/components/tunnel/AdditionalAccount";
-import { ServiceOverview } from "@/components/tunnel/ServiceOverview";
 import { useTunnelSim } from "@/lib/use-tunnel-sim";
 import { useAdditionalSession } from "@/lib/use-additional-session";
 import {
@@ -33,6 +27,12 @@ import {
   type SavedProfile,
   type TunnelProfile,
 } from "@/lib/tunnel";
+
+// Keep the initial Home render eager; download other workspaces only when opened.
+const ConfigTab = lazy(() => import("@/components/tunnel/ConfigTab").then((m) => ({ default: m.ConfigTab })));
+const ShareTab = lazy(() => import("@/components/tunnel/ShareTab").then((m) => ({ default: m.ShareTab })));
+const BlueprintTab = lazy(() => import("@/components/tunnel/BlueprintTab").then((m) => ({ default: m.BlueprintTab })));
+const ServersWorkspace = lazy(() => import("@/components/tunnel/ServersWorkspace").then((m) => ({ default: m.ServersWorkspace })));
 
 export const Route = createFileRoute("/")({
   staticData: { sitemap: true },
@@ -401,31 +401,39 @@ function Index() {
               getDiagnostics={getDiagnostics}
             />
           )}
-          {tab === "config" && (
-            <ConfigTab
-              profile={profile}
-              presetId={presetId}
-              networkProfileId={networkProfileId}
-              errors={errors}
-              disabled={sim.status !== "disconnected"}
-              onPreset={choosePreset}
-              onSelectNetworkProfile={applyNetworkProfile}
-              onChange={change}
-            />
-          )}
-          {tab === "servers" && <><ServiceOverview /><AdditionalAccount session={additional} /><h2 className="tc-section-title mb-3 mt-6">Cloud relay servers</h2><ServersTab onUseServer={useServer} /></>}
-          {tab === "share" && (
-            <ShareTab
-              exportedCode={exported}
-              saved={saved}
-              onExport={doExport}
-              onImport={doImport}
-              onSave={saveCurrent}
-              onLoad={loadSaved}
-              onDelete={deleteSaved}
-            />
-          )}
-          {tab === "android" && <BlueprintTab />}
+          <Suspense
+            fallback={
+              <div role="status" className="min-h-64 p-5 text-sm text-muted-foreground">
+                Loading workspace…
+              </div>
+            }
+          >
+            {tab === "config" && (
+              <ConfigTab
+                profile={profile}
+                presetId={presetId}
+                networkProfileId={networkProfileId}
+                errors={errors}
+                disabled={sim.status !== "disconnected"}
+                onPreset={choosePreset}
+                onSelectNetworkProfile={applyNetworkProfile}
+                onChange={change}
+              />
+            )}
+            {tab === "servers" && <ServersWorkspace session={additional} onUseServer={useServer} />}
+            {tab === "share" && (
+              <ShareTab
+                exportedCode={exported}
+                saved={saved}
+                onExport={doExport}
+                onImport={doImport}
+                onSave={saveCurrent}
+                onLoad={loadSaved}
+                onDelete={deleteSaved}
+              />
+            )}
+            {tab === "android" && <BlueprintTab />}
+          </Suspense>
         </main>
 
         <nav aria-label="Workspace" className="grid shrink-0 grid-cols-5 gap-1 border-t border-border bg-card/80 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur">
