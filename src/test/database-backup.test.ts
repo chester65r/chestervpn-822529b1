@@ -97,6 +97,7 @@ function headersOf(call: FetchCall): Record<string, string> {
 describe('database backup over the direct GitHub API', () => {
   beforeEach(() => {
     vi.stubEnv('BACKUP_GITHUB_TOKEN', 'test-backup-token')
+    vi.stubEnv('BACKUP_GITHUB_REPOSITORY', 'chester65r/chestervpn-822529b1')
     vi.spyOn(console, 'error').mockImplementation(() => {})
     adminState.result = { data: [backupRow], error: null, count: 1 }
   })
@@ -104,6 +105,19 @@ describe('database backup over the direct GitHub API', () => {
     vi.unstubAllEnvs()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
+  })
+
+  it.each(['', '../repository', 'owner/..', 'owner/repo/extra', 'https://example.com/repo'])('rejects missing or invalid backup repository %s before making requests', async (repository) => {
+    vi.stubEnv('BACKUP_GITHUB_REPOSITORY', repository)
+    const { fetchMock } = stubGitHub()
+    await expect(runDatabaseBackup()).rejects.toThrow('Configure BACKUP_GITHUB_REPOSITORY')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('does not leak provider error bodies into thrown errors or logs', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('private provider detail', { status: 403 })))
+    await expect(runDatabaseBackup()).rejects.toThrow('GitHub backup request failed [403]')
+    expect(console.error).not.toHaveBeenCalled()
   })
 
   it('fails closed when BACKUP_GITHUB_TOKEN is not configured', async () => {
@@ -129,6 +143,18 @@ describe('database backup over the direct GitHub API', () => {
     const body = JSON.parse(String(put?.init?.body)) as { content: string, sha?: string }
     expect(body.content).toBe(btoa(safeServerCSV([backupRow])))
     expect(body).not.toHaveProperty('sha')
+  })
+
+  it('uses the configured private destination instead of the application repository', async () => {
+    vi.stubEnv('BACKUP_GITHUB_REPOSITORY', 'backup-owner/private-snapshots')
+    const urls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown) => {
+      urls.push(String(input))
+      if (urls.length === 1) return Response.json({ private: true, default_branch: 'main' })
+      return Response.json({ content: btoa(safeServerCSV([backupRow])), sha: 'existing' })
+    }))
+    await expect(runDatabaseBackup()).resolves.toEqual({ rows: 1, changed: false })
+    expect(urls.every(url => url.startsWith('https://api.github.com/repos/backup-owner/private-snapshots'))).toBe(true)
   })
 
   it('short-circuits without a write when the stored snapshot is unchanged', async () => {

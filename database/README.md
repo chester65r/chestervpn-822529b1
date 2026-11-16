@@ -28,6 +28,16 @@ Daily UTC paths are idempotent; incomplete database reads fail without uploading
 The route must be published before its daily schedule is enabled. GitHub reads
 are checked after each upload. No credentials are returned in callback responses.
 
+## Private destination configuration
+
+Set server-only `BACKUP_GITHUB_REPOSITORY` to `owner/repository` for an operator-owned
+**private** repository. Set `BACKUP_GITHUB_TOKEN` to a fine-grained token restricted
+to that destination with repository Contents read/write access. Enter secrets in
+your deployment environment, never in Git or chat. Deploy these settings before
+expecting the scheduled callback to succeed. The callback checks visibility before
+reading database rows and still refuses public repositories. A missing destination
+fails closed; it never falls back to the public application repository.
+
 ## Exclusions and restoration
 
 This backup does not contain authentication accounts, passwords, sessions, access
