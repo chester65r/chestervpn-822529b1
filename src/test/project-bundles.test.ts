@@ -1,7 +1,7 @@
 import { inflateRawSync } from "node:zlib";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ALL_IN_ONE_ANDROID_KOTLIN } from "@/lib/all-in-one-android";
 import { buildAndroidStudioProjectZip } from "@/lib/android-project-bundle";
 import { buildRelayBundleZip, buildRelayInstallerScript } from "@/lib/relay-bundle";
@@ -172,6 +172,22 @@ describe("ZIP builder & Path A (sing-box / libbox) bundles", () => {
     expect(props).not.toContain("\nfoo=bar");
     expect(props).toContain("endpointHost=2.29.8.194evilinjected");
     expect(props).toContain("tunStack=gvisor");
+  });
+
+  it("includes native sources even when the deployed working directory has no repository checkout", () => {
+    const cwd = vi.spyOn(process, "cwd").mockReturnValue("/deployment-without-repository");
+    try {
+      const files = readZipEntries(buildAndroidStudioProjectZip());
+      for (const name of [
+        "SingBoxConfigBuilder", "LibboxPlatformBridge", "TunPacketForwarder",
+        "TunnelVpnService", "ReconnectionMonitor", "TunnelStateHolder",
+      ]) {
+        expect(files.get(`tunnel-console-android/app/src/main/java/com/example/advancedtunnel/vpn/${name}.kt`))
+          .toMatch(/package com\.example\.advancedtunnel\.vpn/);
+      }
+    } finally {
+      cwd.mockRestore();
+    }
   });
 
   it("keeps AllInOneHetznerVpn.kt 100% synced and removes manual raw TUN packet loops across app/", () => {

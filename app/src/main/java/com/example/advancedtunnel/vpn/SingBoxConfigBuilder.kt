@@ -366,6 +366,10 @@ fun buildCarrierConfigJson(
                 wsHost = wsHost,
                 wsPath = wsPath,
                 utlsFingerprint = utlsFp,
+                tlsFragmentEnabled = tls?.optBoolean("fragment", false) ?: false,
+                tlsRecordFragmentEnabled = tls?.optBoolean("record_fragment", false) ?: false,
+                fragmentFallbackDelay = tls?.optString("fragment_fallback_delay", "500ms")
+                    ?.ifBlank { "500ms" } ?: "500ms",
                 tunAddressCidr = tunCidr,
                 mtu = mtu,
                 strictRoute = true,
@@ -393,6 +397,12 @@ fun buildCarrierConfigJson(
         val tlsObject = JSONObject().apply {
             put("enabled", true)
             put("server_name", effectiveSni)
+            // Preserve the caller's choices; default profiles leave both options disabled.
+            put("fragment", config.tlsFragmentEnabled)
+            put("record_fragment", config.tlsRecordFragmentEnabled)
+            if (config.tlsFragmentEnabled) {
+                put("fragment_fallback_delay", config.fragmentFallbackDelay.ifBlank { "500ms" })
+            }
             put(
                 "utls",
                 JSONObject().apply {

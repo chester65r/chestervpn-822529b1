@@ -1,5 +1,9 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import SingBoxConfigBuilderSource from "../../app/src/main/java/com/example/advancedtunnel/vpn/SingBoxConfigBuilder.kt?raw";
+import LibboxPlatformBridgeSource from "../../app/src/main/java/com/example/advancedtunnel/vpn/LibboxPlatformBridge.kt?raw";
+import TunPacketForwarderSource from "../../app/src/main/java/com/example/advancedtunnel/vpn/TunPacketForwarder.kt?raw";
+import TunnelVpnServiceSource from "../../app/src/main/java/com/example/advancedtunnel/vpn/TunnelVpnService.kt?raw";
+import ReconnectionMonitorSource from "../../app/src/main/java/com/example/advancedtunnel/vpn/ReconnectionMonitor.kt?raw";
+import TunnelStateHolderSource from "../../app/src/main/java/com/example/advancedtunnel/vpn/TunnelStateHolder.kt?raw";
 import { BLUEPRINT_FILES } from "./android-blueprint";
 import { ALL_IN_ONE_ANDROID_KOTLIN } from "./all-in-one-android";
 import { buildSingBoxClientConfig, type SingBoxProtocol, type UtlsFingerprint } from "./singbox";
@@ -22,14 +26,15 @@ export type AndroidProjectBundleOptions = {
   wsPath?: string | undefined;
 };
 
-const ANDROID_VPN_FILES = [
-  "app/src/main/java/com/example/advancedtunnel/vpn/SingBoxConfigBuilder.kt",
-  "app/src/main/java/com/example/advancedtunnel/vpn/LibboxPlatformBridge.kt",
-  "app/src/main/java/com/example/advancedtunnel/vpn/TunPacketForwarder.kt",
-  "app/src/main/java/com/example/advancedtunnel/vpn/TunnelVpnService.kt",
-  "app/src/main/java/com/example/advancedtunnel/vpn/ReconnectionMonitor.kt",
-  "app/src/main/java/com/example/advancedtunnel/vpn/TunnelStateHolder.kt",
-] as const;
+// Bundle required sources at build time: serverless deployments need not contain a checkout.
+const ANDROID_VPN_FILES = {
+  "app/src/main/java/com/example/advancedtunnel/vpn/SingBoxConfigBuilder.kt": SingBoxConfigBuilderSource,
+  "app/src/main/java/com/example/advancedtunnel/vpn/LibboxPlatformBridge.kt": LibboxPlatformBridgeSource,
+  "app/src/main/java/com/example/advancedtunnel/vpn/TunPacketForwarder.kt": TunPacketForwarderSource,
+  "app/src/main/java/com/example/advancedtunnel/vpn/TunnelVpnService.kt": TunnelVpnServiceSource,
+  "app/src/main/java/com/example/advancedtunnel/vpn/ReconnectionMonitor.kt": ReconnectionMonitorSource,
+  "app/src/main/java/com/example/advancedtunnel/vpn/TunnelStateHolder.kt": TunnelStateHolderSource,
+};
 
 function sanitizePropertyValue(raw: string | undefined, fallback: string, pattern = /[^a-zA-Z0-9._:/+-]/g): string {
   const cleaned = (raw ?? "")
@@ -174,14 +179,8 @@ export function buildAndroidStudioProjectZip(options: AndroidProjectBundleOption
     content: ALL_IN_ONE_ANDROID_KOTLIN,
   });
 
-  for (const relPath of ANDROID_VPN_FILES) {
-    const diskPath = resolve(process.cwd(), relPath);
-    if (existsSync(diskPath)) {
-      entries.push({
-        path: `${rootPrefix}/${relPath}`,
-        content: readFileSync(diskPath, "utf8"),
-      });
-    }
+  for (const [relPath, content] of Object.entries(ANDROID_VPN_FILES)) {
+    entries.push({ path: `${rootPrefix}/${relPath}`, content });
   }
 
   entries.push({
