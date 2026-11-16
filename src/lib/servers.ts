@@ -92,13 +92,15 @@ export type RelayServerRow = {
   port: number;
   transport: string;
   notes: string | null;
-  status: "unknown" | "online" | "offline" | "degraded";
+  status: string;
   last_checked_at: string | null;
   last_latency_ms: number | null;
   created_at: string;
 };
 
 export function rowToServer(row: RelayServerRow): RelayServer {
+  const validStatuses = ["unknown", "online", "offline", "degraded"] as const;
+  const status = validStatuses.find((candidate) => candidate === row.status) ?? "unknown";
   return {
     id: row.id,
     name: row.name,
@@ -106,7 +108,7 @@ export function rowToServer(row: RelayServerRow): RelayServer {
     port: row.port,
     transport: row.transport,
     notes: row.notes ?? "",
-    status: row.status,
+    status,
     lastCheckedAt: row.last_checked_at ? Date.parse(row.last_checked_at) : null,
     lastLatencyMs: row.last_latency_ms,
     createdAt: Date.parse(row.created_at),

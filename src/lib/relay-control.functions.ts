@@ -1,5 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { z } from "zod";
+
+const RelayHealthCheckSchema = z.object({
+  id: z.string().uuid(),
+  host: z.string().trim().min(1).max(253),
+  port: z.number().int().min(1).max(65535),
+  transport: z.string().trim().min(1).max(32),
+});
 
 const HEALTH_CHECK_WINDOW_MS = 60_000;
 const HEALTH_CHECK_LIMIT = 10;
@@ -21,11 +29,8 @@ function isBlockedHost(host: string): boolean {
 
 export const checkRelayServer = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context, data }) => {
-    const input = data as { id: string; host: string; port: number; transport: string };
-    if (!input.id || !input.host || !Number.isInteger(input.port) || input.port < 1 || input.port > 65535) {
-      throw new Error("Invalid relay server input");
-    }
+  .validator((data: unknown) => RelayHealthCheckSchema.parse(data))
+  .handler(async ({ context, data: input }) => {
     if (input.transport === "wireguard") {
       throw new Error("WireGuard health checks require a UDP probe and are not available from the web control plane yet.");
     }

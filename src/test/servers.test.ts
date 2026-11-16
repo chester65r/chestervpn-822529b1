@@ -56,6 +56,22 @@ describe("deployment commands", () => {
 });
 
 describe("rowToServer", () => {
+  it("maps unknown database statuses to a safe default", () => {
+    const server = rowToServer({
+      id: "abc",
+      name: "n",
+      host: "relay.example.com",
+      port: 443,
+      transport: "websocket",
+      notes: null,
+      status: "unexpected",
+      last_checked_at: null,
+      last_latency_ms: null,
+      created_at: "2026-10-31T00:00:00Z",
+    });
+    expect(server.status).toBe("unknown");
+  });
+
   it("maps a database row to a RelayServer", () => {
     const server = rowToServer({
       id: "abc",
@@ -64,6 +80,9 @@ describe("rowToServer", () => {
       port: 443,
       transport: "websocket",
       notes: "",
+      status: "unknown",
+      last_checked_at: null,
+      last_latency_ms: null,
       created_at: "2026-10-31T00:00:00Z",
     });
     expect(server).toMatchObject({ id: "abc", host: "relay.example.com", port: 443 });
