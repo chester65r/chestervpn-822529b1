@@ -15,6 +15,9 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
+import { Route as ApiAndroidProjectDotzipRouteImport } from './routes/api/android-project[.]zip'
+import { Route as ApiRelayBundleDotzipRouteImport } from './routes/api/relay-bundle[.]zip'
+import { Route as ApiRelaySetupDotshRouteImport } from './routes/api/relay-setup[.]sh'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 import { Route as ApiPublicDatabaseBackupRouteImport } from './routes/api/public/database-backup'
 
@@ -49,6 +52,21 @@ const Char91DotwellKnownChar93OauthProtectedResourceRoute =
     path: '/.well-known/oauth-protected-resource',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiAndroidProjectDotzipRoute = ApiAndroidProjectDotzipRouteImport.update({
+  id: '/api/android-project.zip',
+  path: '/api/android-project.zip',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRelayBundleDotzipRoute = ApiRelayBundleDotzipRouteImport.update({
+  id: '/api/relay-bundle.zip',
+  path: '/api/relay-bundle.zip',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRelaySetupDotshRoute = ApiRelaySetupDotshRouteImport.update({
+  id: '/api/relay-setup.sh',
+  path: '/api/relay-setup.sh',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
   id: '/.lovable/oauth/consent',
   path: '/.lovable/oauth/consent',
@@ -67,6 +85,9 @@ export interface FileRoutesByFullPath {
   '/mcp': typeof McpRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/api/android-project.zip': typeof ApiAndroidProjectDotzipRoute
+  '/api/relay-bundle.zip': typeof ApiRelayBundleDotzipRoute
+  '/api/relay-setup.sh': typeof ApiRelaySetupDotshRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/database-backup': typeof ApiPublicDatabaseBackupRoute
 }
@@ -77,6 +98,9 @@ export interface FileRoutesByTo {
   '/mcp': typeof McpRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/api/android-project.zip': typeof ApiAndroidProjectDotzipRoute
+  '/api/relay-bundle.zip': typeof ApiRelayBundleDotzipRoute
+  '/api/relay-setup.sh': typeof ApiRelaySetupDotshRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/database-backup': typeof ApiPublicDatabaseBackupRoute
 }
@@ -88,6 +112,9 @@ export interface FileRoutesById {
   '/mcp': typeof McpRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/api/android-project.zip': typeof ApiAndroidProjectDotzipRoute
+  '/api/relay-bundle.zip': typeof ApiRelayBundleDotzipRoute
+  '/api/relay-setup.sh': typeof ApiRelaySetupDotshRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/api/public/database-backup': typeof ApiPublicDatabaseBackupRoute
 }
@@ -100,6 +127,9 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/sitemap.xml'
     | '/.well-known/oauth-protected-resource'
+    | '/api/android-project.zip'
+    | '/api/relay-bundle.zip'
+    | '/api/relay-setup.sh'
     | '/.lovable/oauth/consent'
     | '/api/public/database-backup'
   fileRoutesByTo: FileRoutesByTo
@@ -110,6 +140,9 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/sitemap.xml'
     | '/.well-known/oauth-protected-resource'
+    | '/api/android-project.zip'
+    | '/api/relay-bundle.zip'
+    | '/api/relay-setup.sh'
     | '/.lovable/oauth/consent'
     | '/api/public/database-backup'
   id:
@@ -120,6 +153,9 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/sitemap.xml'
     | '/.well-known/oauth-protected-resource'
+    | '/api/android-project.zip'
+    | '/api/relay-bundle.zip'
+    | '/api/relay-setup.sh'
     | '/.lovable/oauth/consent'
     | '/api/public/database-backup'
   fileRoutesById: FileRoutesById
@@ -131,6 +167,9 @@ export interface RootRouteChildren {
   McpRoute: typeof McpRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  ApiAndroidProjectDotzipRoute: typeof ApiAndroidProjectDotzipRoute
+  ApiRelayBundleDotzipRoute: typeof ApiRelayBundleDotzipRoute
+  ApiRelaySetupDotshRoute: typeof ApiRelaySetupDotshRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
   ApiPublicDatabaseBackupRoute: typeof ApiPublicDatabaseBackupRoute
 }
@@ -179,6 +218,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/android-project.zip': {
+      id: '/api/android-project.zip'
+      path: '/api/android-project.zip'
+      fullPath: '/api/android-project.zip'
+      preLoaderRoute: typeof ApiAndroidProjectDotzipRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/relay-bundle.zip': {
+      id: '/api/relay-bundle.zip'
+      path: '/api/relay-bundle.zip'
+      fullPath: '/api/relay-bundle.zip'
+      preLoaderRoute: typeof ApiRelayBundleDotzipRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/relay-setup.sh': {
+      id: '/api/relay-setup.sh'
+      path: '/api/relay-setup.sh'
+      fullPath: '/api/relay-setup.sh'
+      preLoaderRoute: typeof ApiRelaySetupDotshRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/.lovable/oauth/consent': {
       id: '/.lovable/oauth/consent'
       path: '/.lovable/oauth/consent'
@@ -204,6 +264,9 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
+  ApiAndroidProjectDotzipRoute: ApiAndroidProjectDotzipRoute,
+  ApiRelayBundleDotzipRoute: ApiRelayBundleDotzipRoute,
+  ApiRelaySetupDotshRoute: ApiRelaySetupDotshRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
   ApiPublicDatabaseBackupRoute: ApiPublicDatabaseBackupRoute,
 }
