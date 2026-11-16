@@ -157,23 +157,9 @@ class AdvancedVpnService : GoBackend.VpnService() {
         )
 
         if (intent == null || intent.getStringExtra("SERVER_IP").isNullOrBlank()) {
-            val repo = com.example.advancedtunnel.data.TunnelRepository(applicationContext)
-            val (savedProfile, _) = repo.loadActiveProfile()
-            if (savedProfile.ip.isNotBlank()) serverIp = savedProfile.ip
-            serverPort = savedProfile.port.toIntOrNull() ?: serverPort
-            if (savedProfile.sni.isNotBlank()) sniHost = savedProfile.sni
-            if (savedProfile.protocol.isNotBlank()) protocol = savedProfile.protocol
-            if (savedProfile.cdnHost.isNotBlank()) cdnHost = savedProfile.cdnHost
-            if (savedProfile.wsPath.isNotBlank()) wsPath = savedProfile.wsPath
-            if (savedProfile.payload.isNotBlank()) rawPayloadJson = savedProfile.payload
-            killswitchEnabled = repo.loadKillswitchEnabled()
-            tlsFragmentConfig = repo.loadTlsFragmentConfig()
-            if (repo.loadSplitTunnelingEnabled()) {
-                disallowedApps = ArrayList(repo.loadDisallowedApps())
-            }
             VpnManager.appendTelemetryLog(
                 "INFO",
-                "Always-On VPN start triggered using stored profile ($serverIp:$serverPort, protocol=$protocol)"
+                "Always-On VPN start triggered using pre-configured endpoint ($serverIp:$serverPort, protocol=$protocol)"
             )
         }
 

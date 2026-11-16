@@ -16,14 +16,12 @@ import android.net.VpnService
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.ParcelFileDescriptor
-import android.os.Process
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.system.OsConstants
 import android.util.AtomicFile
 import android.util.Log
 import io.nekohasekai.libbox.BoxService
-import io.nekohasekai.libbox.ConnectionOwner
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LocalDNSTransport
@@ -514,20 +512,13 @@ class UnifiedLibboxBridge(
         sourcePort: Int,
         destinationAddress: String,
         destinationPort: Int
-    ): ConnectionOwner {
-        val owner = ConnectionOwner()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val uid = connectivity.getConnectionOwnerUid(
-                ipProtocol,
-                InetSocketAddress(sourceAddress, sourcePort),
-                InetSocketAddress(destinationAddress, destinationPort)
-            )
-            owner.userId = uid
-            if (uid != Process.INVALID_UID) {
-                packageManager.getPackagesForUid(uid)?.firstOrNull()?.let { owner.androidPackageName = it }
-            }
-        }
-        return owner
+    ): Int {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return -1
+        return connectivity.getConnectionOwnerUid(
+            ipProtocol,
+            InetSocketAddress(sourceAddress, sourcePort),
+            InetSocketAddress(destinationAddress, destinationPort)
+        )
     }
 
     override fun packageNameByUid(uid: Int): String =

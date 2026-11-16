@@ -11,10 +11,8 @@ import android.net.VpnService
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.ParcelFileDescriptor
-import android.os.Process
 import android.system.OsConstants
 import android.util.Log
-import io.nekohasekai.libbox.ConnectionOwner
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LocalDNSTransport
@@ -185,24 +183,13 @@ class LibboxPlatformBridge(
         sourcePort: Int,
         destinationAddress: String,
         destinationPort: Int
-    ): ConnectionOwner {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            return ConnectionOwner()
-        }
-        val uid = connectivity.getConnectionOwnerUid(
+    ): Int {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return -1
+        return connectivity.getConnectionOwnerUid(
             ipProtocol,
             InetSocketAddress(sourceAddress, sourcePort),
             InetSocketAddress(destinationAddress, destinationPort)
         )
-        val owner = ConnectionOwner()
-        owner.userId = uid
-        if (uid != Process.INVALID_UID) {
-            val pkgs = packageManager.getPackagesForUid(uid)
-            if (!pkgs.isNullOrEmpty()) {
-                owner.androidPackageName = pkgs[0]
-            }
-        }
-        return owner
     }
 
     override fun packageNameByUid(uid: Int): String {

@@ -2,12 +2,12 @@ package com.example.advancedtunnel.vpn
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.VpnService
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import androidx.core.content.ContextCompat
 import com.example.advancedtunnel.MainActivity
-import com.example.advancedtunnel.data.TunnelRepository
-import com.example.advancedtunnel.model.TunnelUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Android System Quick Settings TileService (`TunnelTileService`) allowing one-tap VPN
- * connection toggling directly from the notification shade without opening the app.
+ * connection toggling for ChesterVPN directly from the notification shade.
  */
 class TunnelTileService : TileService() {
 
@@ -29,7 +29,7 @@ class TunnelTileService : TileService() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         tileScope = scope
         stateCollectorJob = scope.launch {
-            VpnManager.vpnState.collect { state ->
+            TunnelStateHolder.connectionState.collect { state ->
                 syncTileWithState(state)
             }
         }
@@ -45,56 +45,65 @@ class TunnelTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
-        val currentState = VpnManager.vpnState.value
-        if (currentState is RealVpnState.Connected || currentState is RealVpnState.Connecting) {
-            VpnManager.stopVpn(applicationContext)
-            syncTileWithState(RealVpnState.Disconnected)
+        val currentState = TunnelStateHolder.connectionState.value
+        val isActiveOrConnecting = currentState is TunnelConnectionState.TunnelEstablished ||
+            currentState is TunnelConnectionState.Connecting ||
+            currentState is TunnelConnectionState.Authenticating ||
+            currentState is TunnelConnectionState.Reconnecting
+
+        if (isActiveOrConnecting) {
+            val stopIntent = Intent(applicationContext, TunnelVpnService::class.java).apply {
+                action = TunnelVpnService.ACTION_DISCONNECT
+            }
+            applicationContext.startService(stopIntent)
+            syncTileWithState(TunnelConnectionState.Disconnected)
             return
         }
 
-        val repository = TunnelRepository(applicationContext)
-        val (profile, _) = repository.loadActiveProfile()
-        val validationErrors = TunnelUtils.validateProfile(profile)
-
-        if (validationErrors.isNotEmpty() || !VpnManager.isVpnPrepared(applicationContext)) {
+        if (VpnService.prepare(applicationContext) != null) {
             openMainActivityFromTile()
             return
         }
 
-        val killswitch = repository.loadKillswitchEnabled()
-        val splitEnabled = repository.loadSplitTunnelingEnabled()
-        val disallowed = if (splitEnabled) repository.loadDisallowedApps().toList() else emptyList()
-
-        VpnManager.startVpn(
-            context = applicationContext,
-            profile = profile,
-            killswitchEnabled = killswitch,
-            disallowedApps = disallowed
-        )
+        val connectIntent = Intent(applicationContext, TunnelVpnService::class.java).apply {
+            action = TunnelVpnService.ACTION_CONNECT
+            putExtra(TunnelVpnService.EXTRA_HOST, SingBoxConfigBuilder.DEFAULT_SERVER_HOST)
+            putExtra(TunnelVpnService.EXTRA_PORT, SingBoxConfigBuilder.DEFAULT_VLESS_PORT)
+            putExtra(TunnelVpnService.EXTRA_PROTOCOL, SingBoxConfigBuilder.Protocol.VLESS_REALITY.id)
+            putExtra(TunnelVpnService.EXTRA_SNI, SingBoxConfigBuilder.DEFAULT_REALITY_SNI)
+            putExtra(TunnelVpnService.EXTRA_UUID, SingBoxConfigBuilder.DEFAULT_UUID)
+            putExtra(TunnelVpnService.EXTRA_REALITY_PUBLIC_KEY, SingBoxConfigBuilder.DEFAULT_REALITY_PUBLIC_KEY)
+            putExtra(TunnelVpnService.EXTRA_REALITY_SHORT_ID, SingBoxConfigBuilder.DEFAULT_REALITY_SHORT_ID)
+            putExtra(TunnelVpnService.EXTRA_UTLS_FINGERPRINT, "chrome")
+        }
+        ContextCompat.startForegroundService(applicationContext, connectIntent)
     }
 
-    private fun syncTileWithState(state: RealVpnState) {
+    private fun syncTileWithState(state: TunnelConnectionState) {
         val tile = qsTile ?: return
         when (state) {
-            is RealVpnState.Connected -> {
+            is TunnelConnectionState.TunnelEstablished -> {
                 tile.state = Tile.STATE_ACTIVE
-                tile.label = "Tunnel Active"
+                tile.label = "ChesterVPN"
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    tile.subtitle = state.serverEndpoint
+                    tile.subtitle = "Protected & Encrypted"
                 }
             }
-            is RealVpnState.Connecting, is RealVpnState.Reconnecting -> {
+            is TunnelConnectionState.Connecting,
+            is TunnelConnectionState.Authenticating,
+            is TunnelConnectionState.Reconnecting -> {
                 tile.state = Tile.STATE_ACTIVE
-                tile.label = "Connecting…"
+                tile.label = "ChesterVPN"
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    tile.subtitle = "Establishing TUN"
+                    tile.subtitle = "Connecting…"
                 }
             }
-            is RealVpnState.Disconnected, is RealVpnState.Failed -> {
+            is TunnelConnectionState.Disconnected,
+            is TunnelConnectionState.Error -> {
                 tile.state = Tile.STATE_INACTIVE
-                tile.label = "Tunnel Console"
+                tile.label = "ChesterVPN"
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    tile.subtitle = "Tap to connect"
+                    tile.subtitle = "Tap to Connect"
                 }
             }
         }
