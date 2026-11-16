@@ -80,6 +80,10 @@ android {
 secrets {
     propertiesFileName = ".env"
     defaultPropertiesFileName = ".env.example"
+    ignoreList.add("AI_HELP_.*")
+    ignoreList.add("CRON_SECRET.*")
+    ignoreList.add("BACKUP_GITHUB_TOKEN")
+    ignoreList.add("SUPABASE_SERVICE_ROLE_KEY")
 }
 
 dependencies {
