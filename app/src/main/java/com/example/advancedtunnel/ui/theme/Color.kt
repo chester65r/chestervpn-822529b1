@@ -19,11 +19,11 @@ val TextSecondary = Color(0xFF94A3B8)        // Muted cool gray for subheadings,
 val TextMuted = Color(0xFF475569)            // Disabled / inactive slate gray
 
 // 4. Status & Aerospace Accent Colors
-val CyanPrimary = Color(0xFF38BDF8)          // Active / Connected (Online): Starlink Cyan / Sky Blue
-val CyanPrimaryLight = Color(0xFF7DD3FC)
-val CyanPrimaryDark = Color(0xFF0284C7)      // Interactive Focus Ring: Clean electric blue
-val InteractiveFocusRing = Color(0xFF0284C7)
-val TealAccent = Color(0xFF38BDF8)
+val CyanPrimary = Color(0xFF68E3B0)          // Connected state and primary action
+val CyanPrimaryLight = Color(0xFFA4F2D0)
+val CyanPrimaryDark = Color(0xFF28B982)
+val InteractiveFocusRing = Color(0xFF68E3B0)
+val TealAccent = Color(0xFF68E3B0)
 
 val AccentOrange = Color(0xFFF59E0B)         // Warning / Connecting: Amber / Aerospace orange
 val DestructiveRed = Color(0xFFEF4444)       // Error / Disconnected / Offline: Precise crimson red

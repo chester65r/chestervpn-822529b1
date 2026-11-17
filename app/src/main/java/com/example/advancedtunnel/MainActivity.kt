@@ -92,7 +92,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -119,6 +118,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.example.advancedtunnel.ui.theme.TunnelTheme
 import com.example.advancedtunnel.vpn.SingBoxConfigBuilder
 import com.example.advancedtunnel.vpn.TunnelConnectionState
 import com.example.advancedtunnel.vpn.TunnelStateHolder
@@ -154,17 +154,7 @@ class MainActivity : ComponentActivity() {
         prefs = getSharedPreferences("chestervpn_settings", Context.MODE_PRIVATE)
 
         setContent {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
-                    background = Color(0xFF070B14),
-                    surface = Color(0xFF101827),
-                    surfaceVariant = Color(0xFF162032),
-                    onBackground = Color(0xFFF8FAFC),
-                    onSurface = Color(0xFFF8FAFC),
-                    primary = Color(0xFF10B981),
-                    secondary = Color(0xFF38BDF8)
-                )
-            ) {
+            TunnelTheme {
                 ChesterVpnMainApp(
                     prefs = prefs,
                     onConnectRequest = ::connectWithVpnConsent,
@@ -331,10 +321,10 @@ private fun ChesterVpnMainApp(
     } }
 
     Scaffold(
-        containerColor = Color(0xFF070B14),
+        containerColor = Color(0xFF080D18),
         bottomBar = {
             NavigationBar(
-                containerColor = Color(0xFF0B1322),
+                containerColor = Color(0xFF101827),
                 contentColor = Color(0xFF94A3B8),
                 tonalElevation = 0.dp
             ) {
@@ -492,7 +482,7 @@ private fun HomeScreen(
         targetValue = when (phase) {
             UiTunnelPhase.CONNECTED -> Color(0xFF064E3B)
             UiTunnelPhase.CONNECTING -> Color(0xFF451A03)
-            UiTunnelPhase.DISCONNECTED -> Color(0xFF162032)
+            UiTunnelPhase.DISCONNECTED -> Color(0xFF18253A)
         },
         animationSpec = tween(durationMillis = 350),
         label = "buttonFillColor"
@@ -543,7 +533,7 @@ private fun HomeScreen(
                     Icon(
                         imageVector = Icons.Default.Shield,
                         contentDescription = "ChesterVPN Logo",
-                        tint = if (phase == UiTunnelPhase.CONNECTED) emerald else Color(0xFF38BDF8),
+                        tint = if (phase == UiTunnelPhase.CONNECTED) emerald else Color(0xFF68E3B0),
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -571,7 +561,7 @@ private fun HomeScreen(
             ) {
                 Text(
                     text = activeConfig.protocol.id.uppercase(),
-                    color = Color(0xFF38BDF8),
+                    color = Color(0xFF68E3B0),
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
@@ -705,7 +695,7 @@ private fun HomeScreen(
             ) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = Color(0xFF101827),
+                    color = Color(0xFF111B2B),
                     shape = RoundedCornerShape(16.dp),
                     border = BorderStroke(1.dp, emerald.copy(alpha = 0.35f))
                 ) {
@@ -717,7 +707,7 @@ private fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         StatCell(icon = Icons.Default.Timer, label = "DURATION", value = formatDuration(sessionSeconds), tint = emerald)
-                        StatCell(icon = Icons.Default.ArrowDownward, label = "DOWNLOAD", value = formatSpeed(downloadBps), tint = Color(0xFF38BDF8))
+                        StatCell(icon = Icons.Default.ArrowDownward, label = "DOWNLOAD", value = formatSpeed(downloadBps), tint = Color(0xFF68E3B0))
                         StatCell(icon = Icons.Default.ArrowUpward, label = "UPLOAD", value = formatSpeed(uploadBps), tint = Color(0xFFA78BFA))
                     }
                 }
@@ -728,7 +718,7 @@ private fun HomeScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onChangeServerTap() },
-                color = Color(0xFF101827),
+                color = Color(0xFF111B2B),
                 shape = RoundedCornerShape(16.dp),
                 border = BorderStroke(1.dp, Color(0xFF1E293B))
             ) {
@@ -756,7 +746,7 @@ private fun HomeScreen(
                                 Icon(
                                     imageVector = Icons.Default.Public,
                                     contentDescription = "Server",
-                                    tint = Color(0xFF38BDF8),
+                                    tint = Color(0xFF68E3B0),
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -820,7 +810,7 @@ private fun HomeScreen(
                         )
                         Text(
                             text = "uTLS ${activeConfig.utlsFingerprint.uppercase()}",
-                            color = Color(0xFF38BDF8),
+                            color = Color(0xFF68E3B0),
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Medium
@@ -917,7 +907,7 @@ private fun ServersScreen(
     if (showImportDialog) {
         AlertDialog(
             onDismissRequest = { showImportDialog = false },
-            containerColor = Color(0xFF101827),
+            containerColor = Color(0xFF111B2B),
             titleContentColor = Color(0xFFF8FAFC),
             title = { Text("Import VLESS-Reality Link") },
             text = {
@@ -985,7 +975,7 @@ private fun ServerItemCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onSelect() },
-        color = if (isSelected) Color(0xFF0F2321) else Color(0xFF101827),
+        color = if (isSelected) Color(0xFF0F2321) else Color(0xFF111B2B),
         shape = RoundedCornerShape(14.dp),
         border = BorderStroke(
             1.dp,
@@ -1029,7 +1019,7 @@ private fun ServerItemCard(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    color = Color(0xFF162032),
+                    color = Color(0xFF18253A),
                     shape = RoundedCornerShape(6.dp),
                     modifier = Modifier.clickable {
                         scope.launch {
@@ -1113,7 +1103,7 @@ private fun SettingsScreen(
             // SNI Camouflage Section
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF101827)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF111B2B)),
                     shape = RoundedCornerShape(14.dp),
                     border = BorderStroke(1.dp, Color(0xFF1E293B))
                 ) {
@@ -1125,7 +1115,7 @@ private fun SettingsScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf("www.microsoft.com", "www.stc.com.sa", "www.mobily.com.sa").forEach { preset ->
                                 Surface(
-                                    color = if (sniInput == preset) Color(0xFF0F2E23) else Color(0xFF162032),
+                                    color = if (sniInput == preset) Color(0xFF0F2E23) else Color(0xFF18253A),
                                     shape = RoundedCornerShape(8.dp),
                                     border = BorderStroke(1.dp, if (sniInput == preset) Color(0xFF10B981) else Color(0xFF1E293B)),
                                     modifier = Modifier.clickable { sniInput = preset }
@@ -1161,7 +1151,7 @@ private fun SettingsScreen(
             // uTLS Fingerprint Section
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF101827)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF111B2B)),
                     shape = RoundedCornerShape(14.dp),
                     border = BorderStroke(1.dp, Color(0xFF1E293B))
                 ) {
@@ -1176,7 +1166,7 @@ private fun SettingsScreen(
                         ) {
                             listOf("chrome", "ios", "firefox", "safari").forEach { fp ->
                                 Surface(
-                                    color = if (selectedUtls == fp) Color(0xFF0F2E23) else Color(0xFF162032),
+                                    color = if (selectedUtls == fp) Color(0xFF0F2E23) else Color(0xFF18253A),
                                     shape = RoundedCornerShape(8.dp),
                                     border = BorderStroke(1.dp, if (selectedUtls == fp) Color(0xFF10B981) else Color(0xFF1E293B)),
                                     modifier = Modifier.clickable { selectedUtls = fp }
@@ -1198,7 +1188,7 @@ private fun SettingsScreen(
             // MTU and DNS Section
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF101827)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF111B2B)),
                     shape = RoundedCornerShape(14.dp),
                     border = BorderStroke(1.dp, Color(0xFF1E293B))
                 ) {
@@ -1228,7 +1218,7 @@ private fun SettingsScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf("1.1.1.1" to "Cloudflare", "8.8.8.8" to "Google", "9.9.9.9" to "Quad9").forEach { (ip, label) ->
                                 Surface(
-                                    color = if (dnsInput == ip) Color(0xFF0F2E23) else Color(0xFF162032),
+                                    color = if (dnsInput == ip) Color(0xFF0F2E23) else Color(0xFF18253A),
                                     shape = RoundedCornerShape(8.dp),
                                     border = BorderStroke(1.dp, if (dnsInput == ip) Color(0xFF10B981) else Color(0xFF1E293B)),
                                     modifier = Modifier.clickable { dnsInput = ip }
@@ -1250,7 +1240,7 @@ private fun SettingsScreen(
             // Strict Route / Kill Switch
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF101827)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF111B2B)),
                     shape = RoundedCornerShape(14.dp),
                     border = BorderStroke(1.dp, Color(0xFF1E293B))
                 ) {
@@ -1350,7 +1340,7 @@ private fun LogsScreen() {
                     clipboard.setPrimaryClip(ClipData.newPlainText("ChesterVPN Logs", text))
                     Toast.makeText(context, "Logs copied to clipboard", Toast.LENGTH_SHORT).show()
                 }) {
-                    Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF38BDF8))
+                    Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF68E3B0))
                 }
                 IconButton(onClick = { TunnelStateHolder.clearLogs() }) {
                     Icon(imageVector = Icons.Default.DeleteOutline, contentDescription = "Clear", tint = Color(0xFFF87171))
