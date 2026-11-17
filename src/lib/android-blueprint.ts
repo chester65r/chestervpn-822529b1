@@ -209,6 +209,7 @@ object TunnelController {
 
 const mainActivity = String.raw`package com.example.advancedtunnel
 
+import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
 import android.os.Handler
@@ -218,6 +219,7 @@ import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.example.advancedtunnel.databinding.ActivityMainBinding
+import java.time.Instant
 
 class MainActivity : AppCompatActivity() {
 
@@ -233,6 +235,11 @@ class MainActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == RESULT_OK) startTunnel()
             else showState("VPN permission denied")
+        }
+
+    private val enrollmentPicker =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) importEnrollment(uri)
         }
 
     // UI state is always derived from TunnelController; the activity keeps no running flag.
@@ -256,6 +263,9 @@ class MainActivity : AppCompatActivity() {
                 main.post { if (ok) binding.tvDevicePublicKey.text = key else toast("Stop the tunnel first, or identity unavailable") }
             }
         }
+        binding.btnImport.setOnClickListener { enrollmentPicker.launch(arrayOf("text/plain", "application/octet-stream")) }
+        binding.btnShareIdentity.setOnClickListener { shareDeviceIdentity() }
+        binding.btnShareDiagnostics.setOnClickListener { shareDiagnostics() }
 
         binding.btnSave.setOnClickListener { validateAndSave() }
         binding.btnToggle.setOnClickListener {
@@ -290,6 +300,62 @@ class MainActivity : AppCompatActivity() {
         main.removeCallbacks(poll)
         binding.etWgConfig.setText("")
         super.onPause()
+    }
+
+    private fun importEnrollment(uri: android.net.Uri) {
+        try {
+            val bytes = contentResolver.openInputStream(uri)?.use { input ->
+                val buffer = ByteArray(65537)
+                var total = 0
+                try {
+                    while (total < buffer.size) {
+                        val count = input.read(buffer, total, buffer.size - total)
+                        if (count < 0) break
+                        if (count == 0) continue
+                        total += count
+                    }
+                    require(total <= 65536) { "Enrollment file is too large" }
+                    buffer.copyOf(total)
+                } finally { buffer.fill(0) }
+            } ?: error("Could not open the selected file")
+            try {
+                binding.etWgConfig.setText(String(bytes, Charsets.UTF_8))
+                toast("Enrollment loaded. Verify the server key before saving.")
+            } finally { bytes.fill(0) }
+        } catch (_: Exception) {
+            binding.etWgConfig.setText("")
+            toast("Could not import enrollment file")
+        }
+    }
+
+    private fun shareDeviceIdentity() {
+        var publicKey = ""
+        TunnelController.whileIdle({ publicKey = enrollment.publicKey() }) { ok ->
+            main.post {
+                if (!ok) return@post toast("Stop the tunnel first, or identity unavailable")
+                binding.tvDevicePublicKey.text = publicKey
+                shareText("Tunnel Console device public key (not a secret):\n$publicKey")
+            }
+        }
+    }
+
+    private fun shareDiagnostics() {
+        val report = listOf(
+            "Tunnel Console diagnostics",
+            "Status: ${"$"}{binding.tvStatusInfo.text}",
+            "Download: ${"$"}{binding.tvDownloadSpeed.text}",
+            "Upload: ${"$"}{binding.tvUploadSpeed.text}",
+            "Captured: ${"$"}{Instant.now()}"
+        ).joinToString("\n")
+        shareText(report)
+    }
+
+    private fun shareText(text: String) {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(send, "Share safely reviewed information"))
     }
 
     private fun validateAndSave() {
@@ -401,6 +467,9 @@ const layout = String.raw`<?xml version="1.0" encoding="utf-8"?>
         <Button android:id="@+id/btnIdentity"
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:text="Generate device public identity" />
+        <Button android:id="@+id/btnShareIdentity"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Share public identity" />
         <TextView android:id="@+id/tvDevicePublicKey"
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:textIsSelectable="true" android:saveEnabled="false" />
@@ -410,6 +479,9 @@ const layout = String.raw`<?xml version="1.0" encoding="utf-8"?>
             android:importantForAutofill="no" android:saveEnabled="false"
             android:inputType="textNoSuggestions" />
         <!-- Enrollment response contains a secret PSK but NEVER the device private key. -->
+        <Button android:id="@+id/btnImport"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Import enrollment file" />
         <EditText android:id="@+id/etWgConfig"
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:hint="Enrollment response from your administrator"
@@ -434,6 +506,10 @@ const layout = String.raw`<?xml version="1.0" encoding="utf-8"?>
                 android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:text="DISCONNECTED" android:gravity="center" />
         </LinearLayout>
+
+        <Button android:id="@+id/btnShareDiagnostics"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Share connection diagnostics" />
 
         <Button android:id="@+id/btnToggle"
             android:layout_width="match_parent" android:layout_height="wrap_content"

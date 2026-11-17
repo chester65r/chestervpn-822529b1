@@ -310,9 +310,15 @@ App/MCP account tokens are NOT VPN credentials. No credentials enter the web das
    Enter the response and confirmed public server key on Android, then save enrollment.
    Delete the transferred response after enrollment. Only encrypted native files persist.
 4. Grant VPN consent and connect. CONNECTED requires an authenticated server handshake.
-5. Revoke immediately (removes live peer and persists config):
+5. Import enrollment responses from the Android file picker or paste the response into the app.
+   The response contains a PSK: keep delivery confidential, verify the server key independently,
+   and delete the source file after enrollment. The app can share the public device identity and
+   a sanitized connection report (state and traffic rates); it never exports the private key or
+   stored enrollment profile. A selected enrollment file is read into the secure enrollment flow,
+   not re-shared by the app.
+6. Revoke immediately (removes live peer and persists config):
    python3 peer-admin.py revoke --public-key '<DEVICE_PUBLIC_KEY>'
-6. Rotate the PSK (old profile stops working; securely deliver a new response):
+7. Rotate the PSK (old profile stops working; securely deliver a new response):
    python3 peer-admin.py rotate --public-key '<DEVICE_PUBLIC_KEY>' --address 10.66.66.2/32 --endpoint vpn.example.com:51820 --response /root/device.rotated.conf
    To rotate the device key, revoke the old public key first, stop/delete the native identity,
    generate a new one, and enroll again. WireGuard has no automatic credential expiry.

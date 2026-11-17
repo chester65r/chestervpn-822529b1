@@ -30,6 +30,17 @@ describe("Android client fails closed (source assertions, not device evidence)",
     expect(controller).toContain("it.address is Inet6Address");
     expect(controller).toContain("mask == 32");
   });
+
+  it("imports bounded enrollment files without exposing stored credentials in shares", () => {
+    const activity = file("MainActivity.kt");
+    expect(activity).toContain("ActivityResultContracts.OpenDocument()");
+    expect(activity).toContain("require(total <= 65536)");
+    expect(activity).toContain("buffer.fill(0)");
+    expect(activity).toContain("shareDeviceIdentity()");
+    expect(activity).toContain("shareDiagnostics()");
+    const shareDiagnostics = activity.slice(activity.indexOf("private fun shareDiagnostics()"), activity.indexOf("private fun shareText("));
+    expect(shareDiagnostics).not.toMatch(/etWgConfig|serverKey|publicKey|privateKey/);
+  });
 });
 
 describe("server setup isolates and persists its firewall", () => {
