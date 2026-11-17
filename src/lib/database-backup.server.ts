@@ -1,9 +1,14 @@
 import { BACKUP_COLUMNS, backupPath, safeServerCSV } from './database-backup'
 
-const REPO = '/repos/chester65r/chestervpn-822529b1'
 const GITHUB_API_ORIGIN = 'https://api.github.com'
 
 export async function runDatabaseBackup() {
+  const repository = process.env['BACKUP_GITHUB_REPOSITORY']?.trim()
+  if (!repository || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)
+      || repository.split('/').some(part => part === '.' || part === '..')) {
+    throw new Error('Configure BACKUP_GITHUB_REPOSITORY as owner/repository for a private backup repository')
+  }
+  const REPO = `/repos/${repository}`
   // Direct GitHub API access with a project-owned, repo-scoped fine-grained
   // token; no third-party gateway sits between this deployment and GitHub.
   const token = process.env['BACKUP_GITHUB_TOKEN']
@@ -16,9 +21,8 @@ export async function runDatabaseBackup() {
     const response = await fetch(`${GITHUB_API_ORIGIN}${path}`, { ...init, headers })
     if (allowMissing && response.status === 404) return null
     if (!response.ok) {
-      const body = await response.text()
-      console.error(`GitHub backup request failed [${response.status}]: ${body}`)
-      throw new Error(`GitHub request failed [${response.status}]: ${body}`)
+      // Provider error bodies can contain private paths or request details.
+      throw new Error(`GitHub backup request failed [${response.status}]`)
     }
     return response.json()
   }

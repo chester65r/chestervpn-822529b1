@@ -32,3 +32,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local shell history and Android debugging credentials
+.bash_history
+.zsh_history
+.android/
