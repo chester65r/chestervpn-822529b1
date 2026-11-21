@@ -1,32 +1,67 @@
 // @vitest-environment node
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { isValidSnippetLanguageId, parseAcodeSnippets } from "../lib/acode-snippets";
+import { listSnippetLanguages, readSnippetLanguage } from "../lib/acode-snippet-library.server";
 
-describe(".acode-snippets parser and repository bundle", () => {
-  it("parses kotlin.snippets from the repository .acode-snippets directory", () => {
-    const raw = readFileSync(resolve(".acode-snippets/kotlin.snippets"), "utf8");
-    const parsed = parseAcodeSnippets(raw, "kotlin");
-    expect(parsed.length).toBeGreaterThan(10);
-    expect(parsed.some((s) => s.trigger === "fun" && s.body.includes("fun "))).toBe(true);
-    expect(parsed.some((s) => s.trigger === "data_class")).toBe(true);
+describe("Acode parser and bundled library", () => {
+  it("loads Kotlin templates from the application bundle", () => {
+    const { snippets } = readSnippetLanguage("kotlin");
+    expect(snippets.length).toBeGreaterThan(10);
+    expect(snippets.some((s) => s.trigger === "fun" && s.body.includes("fun "))).toBe(true);
+    expect(snippets.some((s) => s.trigger === "data_class")).toBe(true);
   });
 
-  it("parses typescript.snippets and sh.snippets cleanly", () => {
-    const tsRaw = readFileSync(resolve(".acode-snippets/typescript.snippets"), "utf8");
-    const tsSnippets = parseAcodeSnippets(tsRaw, "typescript");
-    expect(tsSnippets.some((s) => s.trigger === "class")).toBe(true);
-
-    const shRaw = readFileSync(resolve(".acode-snippets/sh.snippets"), "utf8");
-    const shSnippets = parseAcodeSnippets(shRaw, "sh");
-    expect(shSnippets.some((s) => s.trigger === "#!")).toBe(true);
+  it("loads TypeScript and shell templates", () => {
+    expect(readSnippetLanguage("typescript").snippets.some((s) => s.trigger === "class")).toBe(
+      true,
+    );
+    expect(readSnippetLanguage("sh").snippets.some((s) => s.trigger === "#!")).toBe(true);
   });
 
-  it("blocks path traversal in language identifiers", () => {
+  it("lists all six UI language packs with matching nonempty contents", () => {
+    const languages = listSnippetLanguages();
+    expect(languages.map((lang) => lang.id)).toEqual([
+      "kotlin",
+      "python",
+      "sh",
+      "sql",
+      "tsx",
+      "typescript",
+    ]);
+    for (const lang of languages) {
+      const { snippets } = readSnippetLanguage(lang.id);
+      expect(lang.filename).toBe(`${lang.id}.snippets`);
+      expect(lang.snippetCount).toBeGreaterThan(0);
+      expect(snippets).toHaveLength(lang.snippetCount);
+      expect(snippets.every((snippet) => snippet.language === lang.id)).toBe(true);
+    }
+  });
+
+  it("does not depend on the runtime working directory", () => {
+    const cwd = vi.spyOn(process, "cwd").mockImplementation(() => {
+      throw new Error("Source tree unavailable");
+    });
+    try {
+      expect(listSnippetLanguages()).toHaveLength(6);
+      expect(readSnippetLanguage(" kotlin ").snippets.length).toBeGreaterThan(10);
+    } finally {
+      cwd.mockRestore();
+    }
+  });
+
+  it("parses CRLF input and preserves placeholders", () => {
+    expect(
+      parseAcodeSnippets("snippet fun\r\n\tfun ${1:name}() {\r\n\t\t$0\r\n\t}\r\n", "kotlin"),
+    ).toEqual([{ trigger: "fun", language: "kotlin", body: "fun ${1:name}() {\n\t$0\n}" }]);
+  });
+
+  it("rejects missing packs and path traversal", () => {
+    expect(() => readSnippetLanguage("missing")).toThrow("Unknown snippet language");
+    for (const lang of ["../package", "kotlin.snippets", "../kotlin", ""]) {
+      expect(() => readSnippetLanguage(lang)).toThrow("Invalid snippet language identifier");
+    }
     expect(isValidSnippetLanguageId("kotlin")).toBe(true);
     expect(isValidSnippetLanguageId("c_cpp")).toBe(true);
     expect(isValidSnippetLanguageId("../package")).toBe(false);
-    expect(isValidSnippetLanguageId("kotlin.snippets")).toBe(false);
   });
 });
