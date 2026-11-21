@@ -87,8 +87,8 @@ export function AcodeSnippetsPanel() {
           </p>
           <p className="text-[11px] text-muted-foreground">
             {languages.length > 0
-              ? `${languages.length} language packs loaded from repository (.acode-snippets/)`
-              : "Repository .acode-snippets templates"}
+              ? `${languages.length} bundled language packs`
+              : "Bundled .snippets templates"}
           </p>
         </div>
         <select
